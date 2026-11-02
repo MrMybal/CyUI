@@ -30,7 +30,10 @@ class UnrealPackage(unittest.TestCase):
             self.assertIn('"CODE", "DIFF"', rules)
             self.assertNotIn('/*CYUI_MODULES*/', rules)
             sources = list((output/'Source/CyUI/Private').glob('CyUILibrary_*.cpp'))
-            self.assertEqual(len(sources), 9)  # 3 core + 2 selected + 4 imgui
+            syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
+            self.assertEqual(len(sources), 9+len(syntax_units))
+            self.assertTrue((output/'ThirdParty/CyUI/third_party/code-syntax.lock.json').is_file())
+            self.assertTrue((output/'ThirdParty/CyUI/third_party/lexilla/License.txt').is_file())
             for source in sources:
                 include = '../../../ThirdParty/'+source.read_text().split('#include "../../../ThirdParty/')[1].split('"')[0]
                 self.assertTrue((source.parent/include).is_file(), include)
@@ -67,7 +70,10 @@ class UnrealPackage(unittest.TestCase):
             relocated.parent.mkdir(parents=True)
             output.rename(relocated)
             bridges = list((relocated/'Private').glob('CyUILibrary_*.cpp'))
-            self.assertEqual(len(bridges), 9)
+            syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
+            self.assertEqual(len(bridges), 9+len(syntax_units))
+            self.assertFalse(list((relocated/'Library').rglob('*.cxx')))
+            self.assertTrue((relocated/'Library/src/modules/code/CodeSyntax.inl').is_file())
             for bridge in bridges:
                 include = bridge.read_text().split('#include "../Library/')[1].split('"')[0]
                 self.assertTrue((relocated/'Library'/include).is_file(), include)
@@ -100,6 +106,7 @@ class UnrealPackage(unittest.TestCase):
             output = Path(directory)/'Source/MyToolCyUI'
             package.prepare_module(output, ['Core'], module_name='MyToolCyUI')
             self.assertFalse((output/'CyUI.Build.cs').exists())
+            self.assertFalse((output/'Library/third_party/lexilla').exists())
             rules = (output/'MyToolCyUI.Build.cs').read_text()
             self.assertIn('public class MyToolCyUI : ModuleRules', rules)
             self.assertIn('public MyToolCyUI(ReadOnlyTargetRules Target)', rules)

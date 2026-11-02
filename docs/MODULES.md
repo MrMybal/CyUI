@@ -18,7 +18,7 @@ notifications. Modules link Core automatically. The following targets are implem
 | `CyUI::Nodes` | `modules/Nodes.h` | Cards, pins, links, layout, move/connect/remove requests | Canvas |
 | `CyUI::Timeline` | `modules/Timeline.h` | Lanes, clips, markers, ruler, move/trim, range selection | Canvas |
 | `CyUI::AudioViews` | `modules/AudioViews.h` | Waveforms, spectrum, oscilloscope, stereo scope | Plots |
-| `CyUI::Code` | `modules/Code.h` | Source viewer, lexical colors, semantic overlays, annotations, search | Core |
+| `CyUI::Code` | `modules/Code.h` | Source viewer, 101 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
 | `CyUI::Diff` | `modules/Diff.h` | Unified/split diff, line numbers, hunk navigation, inline ranges | Code |
 | `CyUI::CodeEditor` | `modules/CodeEditor.h` | Native editable source, Undo/Redo, multiple cursors, completion hooks | Code + MIT TextEditor, C++20 |
 | `CyUI::Inspector` | `modules/Inspector.h` | Typed properties, exact int64, validation, draft edits | Core |
@@ -89,7 +89,10 @@ retain their original ON defaults; disable those explicitly when not used.
 Without CMake, compile the three Core sources and only the selected
 `src/modules/<Name>.cpp` files plus their dependency closure. Define the matching
 `CYUI_HAS_<NAME>` macros for Gallery/CyUI.h. CodeEditor also needs TextEditor.cpp,
-its include directory and C++20. `build_demo.bat` is the complete Windows demo build.
+its include directory and C++20. Code and its dependents additionally compile
+`src/modules/code/*.cpp`, the bundled `third_party/lexilla/lexlib/*.cxx` and
+`lexers/*.cxx`, with Lexilla include/lexlib and Scintilla include directories.
+Define `CYUI_CODE_LANGUAGE_CATALOGUE=1` for the extended C++ catalogue API. `build_demo.bat` is the complete Windows demo build.
 
 ## Shared data and edit contract
 
@@ -222,3 +225,6 @@ GitHub Actions is configured for Windows, Linux and macOS native builds. A workf
 file is not evidence that remote jobs have run. The local build/render validation
 for this revision uses Windows/MSVC; platform-specific CEF packaging still needs
 validation on each target OS. See [WEB.md](WEB.md) and [LICENSING.md](LICENSING.md).
+
+See [CODE.md](CODE.md) for the C++ syntax catalogue, plugin extension contract,
+UTF-8 span rules, caching and reproducible lexer updates.

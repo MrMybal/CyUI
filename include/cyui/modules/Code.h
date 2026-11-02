@@ -3,25 +3,55 @@
 #include "cyui/Interaction.h"
 #include <string>
 #include <string_view>
+#include <functional>
+#include <optional>
 
 namespace cyui {
-enum class CodeLanguage {
-    plain,
-    cpp,
-    csharp,
-    python,
-    javascript,
-    typescript,
-    rust,
-    glsl,
-    hlsl,
-    json,
-    ini,
-    sql,
-    lua,
-    markdown
+// Values 0..13 remain source/ABI compatible; plugin IDs use the high bit.
+enum class CodeLanguage : std::uint32_t {
+#include "cyui/detail/CodeLanguageList.inc"
 };
-enum class TokenRole { text, keyword, type, number, string, comment, preprocessor, function };
+enum class TokenRole {
+    text, keyword, type, number, string, comment, preprocessor, function,
+    added, removed, heading, warning, error,
+    ansiBlack, ansiRed, ansiGreen, ansiYellow, ansiBlue, ansiMagenta, ansiCyan, ansiWhite,
+    count
+};
+struct CodeToken { std::size_t start = 0, length = 0; TokenRole role = TokenRole::text; };
+struct CodeLanguageInfo {
+    CodeLanguage language = CodeLanguage::plain;
+    std::string id, name;
+    std::vector<std::string> extensions, filenames;
+    bool builtin = true;
+};
+struct CodeSyntaxRules {
+    std::vector<std::string> keywords, types, functions;
+    std::string lineComment, blockCommentStart, blockCommentEnd;
+    std::string quotes = "\"'";
+    char escape = '\\';
+    bool caseSensitive = true;
+};
+struct CodeLanguageDefinition {
+    std::string id, name;
+    std::vector<std::string> extensions, filenames;
+    CodeLanguage base = CodeLanguage::plain;
+    // Replaces selected Lexilla word sets (0-based). Empty entries inherit the base.
+    std::vector<std::string> wordLists;
+    std::vector<std::pair<std::string,std::string>> properties;
+    std::optional<CodeSyntaxRules> rules;
+    // Raw UTF-8 byte offsets. The host owns/pins any plugin code captured here.
+    std::function<std::vector<CodeToken>(std::string_view)> highlight;
+};
+// Snapshots own their strings. Registration is independent of ImGui contexts and file loading.
+CYUI_API std::vector<CodeLanguageInfo> codeLanguages();
+CYUI_API CodeLanguageInfo codeLanguageInfo(CodeLanguage);
+CYUI_API CodeLanguage codeLanguageForPath(std::string_view path);
+CYUI_API CodeLanguage codeLanguageFromName(std::string_view idOrName);
+CYUI_API std::uint64_t codeLanguageRevision();
+CYUI_API CodeLanguage registerCodeLanguage(const CodeLanguageDefinition &);
+CYUI_API bool unregisterCodeLanguage(std::string_view id);
+// Throws on invalid plugin spans; does not modify source bytes. Maximum source size: 32 MiB.
+CYUI_API std::vector<CodeToken> highlightCode(std::string_view, CodeLanguage);
 struct CodeSpan {
     std::size_t start = 0, length = 0;
     TokenRole role = TokenRole::text;
@@ -65,6 +95,7 @@ class CYUI_API CodeDocument {
     std::uint64_t revision_ = 0;
     CodeLanguage language_ = CodeLanguage::plain;
     std::size_t columns_ = 0;
+    std::uint64_t syntaxRevision_ = 0;
 };
 CYUI_API ImU32 tokenColor(TokenRole, ImU32 background = 0);
 CYUI_API void paintCodeLine(ImDrawList *, ImVec2, const CodeLine &, ImU32 background = 0);

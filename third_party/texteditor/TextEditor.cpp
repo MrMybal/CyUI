@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cmath>
 #include <set>
+#include <stdexcept>
 
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -642,7 +643,7 @@ void TextEditor::renderText() {
 			// handle regular glyphs
 			} else {
 				if (column >= firstRenderableColumn) {
-					font->RenderChar(drawList, fontSize, glyphPos, palette.get(glyph.color), codepoint);
+					font->RenderChar(drawList, fontSize, glyphPos, palette.get(sharedSyntaxVersion == transactions.getVersion() && glyph.sharedSyntaxColor != Color::count ? glyph.sharedSyntaxColor : glyph.color), codepoint);
 				}
 			}
 
@@ -4487,7 +4488,7 @@ size_t TextEditor::Document::getSpacesToTab(const Config& config, const Line& li
 void TextEditor::Transactions::reset() {
 	clear();
 	undoIndex = 0;
-	version = 0;
+	++version;
 }
 
 
@@ -14244,4 +14245,25 @@ const TextEditor::Language* TextEditor::Language::Sql() {
 	}
 
 	return &language;
+}
+
+// CyUI lexical spans are separate from native tokenizer/completion state.
+void TextEditor::SetSharedSyntaxTokens(const std::vector<SharedSyntaxToken>& tokens) {
+    size_t line=0,end=0;bool first=true;
+    for (const auto& token : tokens) {
+        if (token.line>=document.size() || token.start>=token.end || token.end>document[token.line].size() ||
+            token.color<Color::text || token.color>=Color::count ||
+            (!first && (token.line<line || (token.line==line && token.start<end))))
+            throw std::invalid_argument("Invalid shared syntax token");
+        line=token.line;end=token.end;first=false;
+    }
+    for (auto& row : document) for (auto& glyph : row) glyph.sharedSyntaxColor=Color::count;
+    for (const auto& token : tokens) for (size_t at=token.start;at<token.end;++at)
+        document[token.line][at].sharedSyntaxColor=token.color;
+    sharedSyntaxVersion=transactions.getVersion();
+}
+TextEditor::Color TextEditor::GetSharedSyntaxColor(DocPos position) const {
+    if (position.line>=document.size() || position.index>=document[position.line].size()) return Color::text;
+    const auto& glyph=document[position.line][position.index];
+    return sharedSyntaxVersion==transactions.getVersion() && glyph.sharedSyntaxColor!=Color::count ? glyph.sharedSyntaxColor : glyph.color;
 }

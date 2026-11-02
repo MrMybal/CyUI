@@ -15,6 +15,11 @@ class CYUI_API CodeEditor {
     void setText(const std::string &);
     std::string text() const;
     void setLanguage(CodeLanguage);
+    CodeLanguage language() const;
+    void setLanguageForPath(std::string_view);
+    // Enable/disable common spans when a host supplies richer native overlays.
+    void setSyntaxEnabled(bool);
+    void refreshSyntax();
     void setReadOnly(bool);
     bool draw(const char *id, ImVec2 size = {}); // true when the document changed
     TextEditor &native();                        // advanced host hooks; include TextEditor.h when used

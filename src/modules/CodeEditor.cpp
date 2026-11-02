@@ -7,7 +7,10 @@ struct CodeEditor::Impl {
     TextEditor::Language custom;
     bool changed = false;
     std::string original, baseline;
-    bool crlf = false;
+    bool crlf = false, syntaxEnabled = true;
+    CodeLanguage language = CodeLanguage::plain;
+    std::size_t parsedVersion = ~std::size_t(0);
+    std::uint64_t languageRevision = 0;
 };
 CodeEditor::CodeEditor() : impl_(std::make_unique<Impl>()) {
     impl_->editor.SetInsertSpacesOnTabs(false);
@@ -21,6 +24,7 @@ void CodeEditor::setText(const std::string &value) {
     impl_->baseline = impl_->editor.GetText();
     impl_->crlf = value.find("\r\n") != std::string::npos;
     impl_->changed = false;
+    impl_->parsedVersion = ~std::size_t(0);
 }
 std::string CodeEditor::text() const {
     const auto current = impl_->editor.GetText();
@@ -42,61 +46,71 @@ TextEditor &CodeEditor::native() {
 void CodeEditor::setReadOnly(bool value) {
     impl_->editor.SetReadOnlyEnabled(value);
 }
+CodeLanguage CodeEditor::language() const { return impl_->language; }
+void CodeEditor::setLanguageForPath(std::string_view path) { setLanguage(codeLanguageForPath(path)); }
+void CodeEditor::setSyntaxEnabled(bool enabled) {
+    impl_->syntaxEnabled=enabled;impl_->parsedVersion=~std::size_t(0);
+    if (!enabled) impl_->editor.ClearSharedSyntaxTokens();
+}
 void CodeEditor::setLanguage(CodeLanguage language) {
-    const TextEditor::Language *definition = nullptr;
-    switch (language) {
-    case CodeLanguage::cpp:
-        definition = TextEditor::Language::Cpp();
-        break;
-    case CodeLanguage::csharp:
-        definition = TextEditor::Language::Cs();
-        break;
-    case CodeLanguage::python:
-        definition = TextEditor::Language::Python();
-        break;
-    case CodeLanguage::glsl:
-        definition = TextEditor::Language::Glsl();
-        break;
-    case CodeLanguage::hlsl:
-        definition = TextEditor::Language::Hlsl();
-        break;
-    case CodeLanguage::json:
-        definition = TextEditor::Language::Json();
-        break;
-    case CodeLanguage::lua:
-        definition = TextEditor::Language::Lua();
-        break;
-    case CodeLanguage::sql:
-        definition = TextEditor::Language::Sql();
-        break;
-    case CodeLanguage::markdown:
-        definition = TextEditor::Language::Markdown();
-        break;
-    default:
-        break;
-    }
-    if (language == CodeLanguage::javascript || language == CodeLanguage::typescript ||
-        language == CodeLanguage::rust) {
-        if (impl_->editor.GetLanguage() != &impl_->custom ||
-            impl_->custom.name != (language == CodeLanguage::rust         ? "Rust"
-                                   : language == CodeLanguage::typescript ? "TypeScript"
-                                                                          : "JavaScript")) {
-            impl_->custom = *TextEditor::Language::Cpp();
-            impl_->custom.name = language == CodeLanguage::rust         ? "Rust"
-                                 : language == CodeLanguage::typescript ? "TypeScript"
-                                                                        : "JavaScript";
-            for (const char *word :
-                 {"let",    "const", "var",       "function", "async",      "await",   "export",
-                  "import", "from",  "interface", "type",     "implements", "extends", "pub",
-                  "fn",     "impl",  "trait",     "match",    "mut",        "self",    "Self"})
-                impl_->custom.keywords.insert(word);
+    impl_->language=language;impl_->parsedVersion=~std::size_t(0);
+    impl_->custom=*TextEditor::Language::Cpp();
+    impl_->custom.name=codeLanguageInfo(language).name;
+    impl_->custom.keywords.clear();impl_->custom.declarations.clear();impl_->custom.identifiers.clear();
+    impl_->custom.preprocess=0;
+    impl_->editor.SetLanguage(language==CodeLanguage::plain ? nullptr : &impl_->custom);
+    impl_->editor.ClearSharedSyntaxTokens();
+}
+void CodeEditor::refreshSyntax() {
+    if (!impl_->syntaxEnabled) return;
+    const auto revision=impl_->editor.GetTextRevision();
+    const auto languageRevision=codeLanguageRevision();
+    if (impl_->parsedVersion==revision && impl_->languageRevision==languageRevision) return;
+    const auto raw=impl_->editor.GetText();
+    const auto tokens=highlightCode(raw,impl_->language);
+    std::vector<TextEditor::SharedSyntaxToken> spans;
+    using C=TextEditor::Color;
+    auto nativeRole=[](TokenRole role) {
+        switch (role) {
+        case TokenRole::keyword:return C::keyword;
+        case TokenRole::type:return C::declaration;
+        case TokenRole::number:return C::number;
+        case TokenRole::string:return C::string;
+        case TokenRole::comment:return C::comment;
+        case TokenRole::preprocessor:return C::preprocessor;
+        case TokenRole::function:return C::sharedFunction;
+        case TokenRole::added:return C::sharedAdded;
+        case TokenRole::removed:return C::sharedRemoved;
+        case TokenRole::heading:return C::sharedHeading;
+        case TokenRole::warning:return C::sharedWarning;
+        case TokenRole::error:return C::sharedError;
+        default:
+            if (role>=TokenRole::ansiBlack && role<=TokenRole::ansiWhite)
+                return C(int(C::sharedAnsiBlack)+int(role)-int(TokenRole::ansiBlack));
+            return C::text;
         }
-        definition = &impl_->custom;
+    };
+    std::size_t byte=0,line=0,glyph=0;
+    auto advance=[&](std::size_t target) {
+        while (byte<target) {
+            const auto c=static_cast<unsigned char>(raw[byte++]);
+            if (c=='\n') { ++line;glyph=0; }
+            else if (c!='\r' && (c&0xc0)!=0x80) ++glyph;
+        }
+    };
+    for (const auto &token : tokens) {
+        advance(token.start);const auto end=token.start+token.length;
+        while (byte<end) {
+            const auto row=line,start=glyph;
+            while (byte<end && raw[byte]!='\n') advance(byte+1);
+            if (glyph>start) spans.push_back({row,start,glyph,nativeRole(token.role)});
+            if (byte<end) advance(byte+1);
+        }
     }
-    if (impl_->editor.GetLanguage() != definition)
-        impl_->editor.SetLanguage(definition);
+    impl_->editor.SetSharedSyntaxTokens(spans);impl_->parsedVersion=revision;impl_->languageRevision=languageRevision;
 }
 bool CodeEditor::draw(const char *id, ImVec2 size) {
+    refreshSyntax();
     auto &p = impl_->editor;
     TextEditor::Palette colors;
     colors.fill(palette().text);
@@ -109,6 +123,11 @@ bool CodeEditor::draw(const char *id, ImVec2 size) {
     put(C::preprocessor, tokenColor(TokenRole::preprocessor));
     put(C::comment, tokenColor(TokenRole::comment));
     put(C::knownIdentifier, tokenColor(TokenRole::type));
+    put(C::sharedFunction, tokenColor(TokenRole::function));
+    put(C::sharedAdded, tokenColor(TokenRole::added));put(C::sharedRemoved, tokenColor(TokenRole::removed));
+    put(C::sharedHeading, tokenColor(TokenRole::heading));put(C::sharedWarning, tokenColor(TokenRole::warning));
+    put(C::sharedError, tokenColor(TokenRole::error));
+    for (int i=0;i<8;++i) put(C(int(C::sharedAnsiBlack)+i),tokenColor(TokenRole(int(TokenRole::ansiBlack)+i)));
     put(C::background, palette().bg0);
     put(C::cursor, palette().text);
     put(C::selection, palette().selection);

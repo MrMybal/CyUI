@@ -772,3 +772,23 @@ nav keys; otherwise Unreal, so editor shortcuts never run twice. All drawing run
 editor game thread; host transactions and expensive data preparation remain the
 tool's responsibility. See [UNREAL.md](UNREAL.md) for complete recipes, lifecycle,
 automation tests, platform validation and current input/backend limitations.
+
+
+## Shared C++ syntax catalogue and plugin engines
+
+`CyUI::Code` owns 101 built-in syntax modes, including HLSL and GLSL. CodeEditor,
+CodeDocument and Diff share it. Read [CODE.md](CODE.md) before implementing a host
+syntax extension. Use `codeLanguages()` for menus and `codeLanguageForPath()` for
+associations; avoid maintaining a second list in the application.
+
+Register `CodeLanguageDefinition` with declarative rules, a built-in base and word
+lists, or a host callback returning validated UTF-8 byte spans. Registration and
+removal increment `codeLanguageRevision()`; cached views re-highlight on that
+revision. Registration never edits the document or adds an Undo transaction.
+CyUI does not load plugin DLLs or parse application manifests. Hosts retain those
+responsibilities, pin callbacks and their libraries during calls, and unregister
+definitions before unloading plugins. Built-in IDs cannot be overwritten.
+
+Gallery's Code page includes a syntax selector for the shared registry. The
+native backend accepts shared display spans without replacing its lexical state;
+hosts with richer syntax overlays can use `CodeEditor::setSyntaxEnabled(false)`.

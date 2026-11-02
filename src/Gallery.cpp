@@ -644,6 +644,12 @@ void codePage()
                        "}\n");
         initialized = true;
     }
+    const auto catalogue=codeLanguages();
+    const auto current=codeLanguageInfo(editor.language());
+    if (ImGui::BeginCombo("Syntax##shared-language",current.name.c_str())) {
+        for (const auto &item : catalogue) if (ImGui::Selectable(item.name.c_str(),item.language==editor.language())) editor.setLanguage(item.language);
+        ImGui::EndCombo();
+    }
     editor.draw("##editable", dp(0, 275));
 #endif
 }

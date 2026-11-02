@@ -105,6 +105,16 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
         source = f'third_party/imgui/{name}.cpp'
         shutil.copy2(ROOT/source, library/source)
         sources.append(source)
+    if 'Code' in selected:
+        shutil.copytree(ROOT/'data', library/'data')
+        syntax = ROOT/'src/modules/code'
+        shutil.copytree(syntax, library/'src/modules/code')
+        sources += [source.relative_to(ROOT).as_posix() for source in sorted(syntax.glob('*.cpp'))]
+        for name in ('lexilla', 'scintilla'):
+            shutil.copytree(ROOT/'third_party'/name, library/'third_party'/name)
+        for name in ('code-syntax.lock.json', 'SciTE-Properties-License.txt'):
+            shutil.copy2(ROOT/'third_party'/name, library/'third_party'/name)
+        sources += [source.relative_to(ROOT).as_posix() for source in sorted((ROOT/'third_party/lexilla').rglob('*.cxx'))]
     if 'CodeEditor' in selected:
         shutil.copytree(ROOT/'third_party/texteditor', library/'third_party/texteditor')
         sources.append('third_party/texteditor/TextEditor.cpp')
@@ -149,7 +159,7 @@ def prepare_module(output, modules=('Core',), gallery=False, module_name='CyUI')
         library = output/'Library'
         shutil.copytree(staging/'ThirdParty/CyUI', library)
         sources = {}
-        for source in sorted(library.rglob('*.cpp')):
+        for source in sorted([*library.rglob('*.cpp'), *library.rglob('*.cxx')]):
             target = source.with_suffix('.inl')
             sources[source.relative_to(library).as_posix()] = target.relative_to(library).as_posix()
             source.rename(target)

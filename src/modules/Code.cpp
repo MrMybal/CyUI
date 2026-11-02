@@ -41,128 +41,6 @@ std::string expandTabs(std::string_view text, unsigned tabs) {
     return out;
 }
 namespace {
-bool identifier(unsigned char c) {
-    return c >= 128 || std::isalnum(c) || c == '_';
-}
-bool keyword(std::string_view s) {
-    static const std::set<std::string_view> words = {
-        "alignas",   "async",    "await",    "break",   "case",      "catch",  "class",   "const",
-        "constexpr", "continue", "def",      "default", "delete",    "do",     "else",    "enum",
-        "export",    "extern",   "false",    "finally", "fn",        "for",    "from",    "function",
-        "if",        "impl",     "import",   "in",      "interface", "let",    "match",   "namespace",
-        "new",       "None",     "null",     "nullptr", "override",  "pass",   "private", "protected",
-        "pub",       "public",   "raise",    "return",  "self",      "sizeof", "static",  "struct",
-        "super",     "switch",   "template", "this",    "throw",     "trait",  "true",    "try",
-        "type",      "typedef",  "using",    "var",     "virtual",   "void",   "while",   "with",
-        "yield"};
-    return words.count(s) != 0;
-}
-bool typeWord(std::string_view s) {
-    static const std::set<std::string_view> words = {
-        "auto",     "bool",     "byte", "char",   "double",  "float",   "float2",   "float3",
-        "float4",   "float4x4", "half", "int",    "int32_t", "int64_t", "long",     "short",
-        "signed",   "size_t",   "std",  "string", "String",  "uint",    "uint32_t", "uint64_t",
-        "unsigned", "Vec2",     "Vec3", "vec2",   "vec3",    "vec4"};
-    return words.count(s) != 0;
-}
-std::vector<CodeSpan> tokenize(const std::string &text, CodeLanguage language, bool &comment,
-                               std::string &quote) {
-    std::vector<CodeSpan> spans;
-    if (language == CodeLanguage::plain) {
-        spans.push_back({0, text.size(), TokenRole::text});
-        return spans;
-    }
-    const bool hash = language == CodeLanguage::python || language == CodeLanguage::ini;
-    const bool dash = language == CodeLanguage::sql || language == CodeLanguage::lua;
-    std::size_t i = 0;
-    auto add = [&](std::size_t a, std::size_t b, TokenRole role) {
-        if (b > a)
-            spans.push_back({a, b - a, role});
-    };
-    while (i < text.size()) {
-        const auto start = i;
-        if (comment) {
-            const auto at = text.find("*/", i);
-            i = at == std::string::npos ? text.size() : at + 2;
-            comment = at == std::string::npos;
-            add(start, i, TokenRole::comment);
-            continue;
-        }
-        if (!quote.empty()) {
-            const auto at = text.find(quote, i);
-            i = at == std::string::npos ? text.size() : at + quote.size();
-            if (at != std::string::npos)
-                quote.clear();
-            add(start, i, TokenRole::string);
-            continue;
-        }
-        if ((hash && text[i] == '#') || (dash && text.compare(i, 2, "--") == 0) ||
-            (language == CodeLanguage::ini && text[i] == ';') ||
-            (!hash && !dash && text.compare(i, 2, "//") == 0)) {
-            add(i, text.size(), TokenRole::comment);
-            break;
-        }
-        if (!hash && text.compare(i, 2, "/*") == 0) {
-            comment = true;
-            i += 2;
-            const auto at = text.find("*/", i);
-            i = at == std::string::npos ? text.size() : at + 2;
-            comment = at == std::string::npos;
-            add(start, i, TokenRole::comment);
-            continue;
-        }
-        if (text[i] == '#' && !hash) {
-            add(i, text.size(), TokenRole::preprocessor);
-            break;
-        }
-        if (text[i] == '\'' || text[i] == '"' || text[i] == '`') {
-            const char q = text[i++];
-            if (language == CodeLanguage::python && text.compare(start, 3, std::string(3, q)) == 0) {
-                quote = std::string(3, q);
-                i = start + 3;
-                const auto at = text.find(quote, i);
-                i = at == std::string::npos ? text.size() : at + 3;
-                if (at != std::string::npos)
-                    quote.clear();
-            } else {
-                while (i < text.size()) {
-                    const char c = text[i++];
-                    if (c == '\\' && i < text.size())
-                        ++i;
-                    else if (c == q)
-                        break;
-                }
-            }
-            add(start, i, TokenRole::string);
-            continue;
-        }
-        if (std::isdigit(static_cast<unsigned char>(text[i]))) {
-            ++i;
-            while (i < text.size() && (identifier(static_cast<unsigned char>(text[i])) || text[i] == '.'))
-                ++i;
-            add(start, i, TokenRole::number);
-            continue;
-        }
-        if (identifier(static_cast<unsigned char>(text[i]))) {
-            ++i;
-            while (i < text.size() && identifier(static_cast<unsigned char>(text[i])))
-                ++i;
-            const std::string_view word(text.data() + start, i - start);
-            std::size_t next = i;
-            while (next < text.size() && std::isspace(static_cast<unsigned char>(text[next])))
-                ++next;
-            add(start, i,
-                keyword(word)                             ? TokenRole::keyword
-                : typeWord(word)                          ? TokenRole::type
-                : next < text.size() && text[next] == '(' ? TokenRole::function
-                                                          : TokenRole::text);
-            continue;
-        }
-        ++i;
-        add(start, i, TokenRole::text);
-    }
-    return spans;
-}
 double luminance(ImU32 color) {
     const auto v = vec(color);
     auto l = [](float c) { return c <= .04045f ? c / 12.92 : std::pow((c + .055) / 1.055, 2.4); };
@@ -172,36 +50,45 @@ double luminance(ImU32 color) {
 bool CodeDocument::setText(const std::string &text, CodeLanguage language, std::uint64_t revision) {
     if (text.size() > 32 * 1024 * 1024)
         throw std::length_error("CodeDocument exceeds 32 MiB; supply a paged document");
-    if (text_ == text && language_ == language && !lines_.empty()) {
+    const auto syntaxRevision=codeLanguageRevision();
+    if (text_ == text && language_ == language && syntaxRevision_==syntaxRevision && !lines_.empty()) {
         if (revision && revision != revision_) {
             revision_ = revision;
-            for (auto &l : lines_)
-                l.overlays.clear();
+            for (auto &l : lines_) l.overlays.clear();
         }
         return false;
     }
-    text_ = text;
-    language_ = language;
-    revision_ = revision ? revision : revision_ + 1;
-    columns_ = 0;
-    lines_.clear();
-    bool comment = false;
-    std::string quote;
-    std::size_t start = 0;
+    // Prepare before replacing the cache: a failing plugin must leave the old document intact.
+    const auto tokens=highlightCode(text,language);
+    std::vector<CodeLine> lines;
+    std::size_t columns=0,start=0,tokenIndex=0;
     do {
-        const auto end = text.find('\n', start);
-        std::string raw = text.substr(start, end == std::string::npos ? end : end - start);
-        if (!raw.empty() && raw.back() == '\r')
-            raw.pop_back();
-        auto display = expandTabs(raw);
-        columns_ = std::max(columns_, display.size());
-        auto spans = tokenize(display, language, comment, quote);
-        lines_.push_back({std::move(display), std::move(spans), {}});
-        if (end == std::string::npos)
-            break;
-        start = end + 1;
-    } while (start <= text.size());
-    return true;
+        const auto newline=text.find('\n',start);
+        auto end=newline==std::string::npos ? text.size() : newline;
+        if (end>start && text[end-1]=='\r') --end;
+        const std::string_view raw(text.data()+start,end-start);
+        auto display=expandTabs(raw);columns=std::max(columns,display.size());
+        std::vector<CodeSpan> spans;
+        std::size_t rawAt=0,displayAt=0,column=0;
+        auto offset=[&](std::size_t target) {
+            while (rawAt<target) {
+                const auto c=static_cast<unsigned char>(raw[rawAt++]);
+                if (c=='\t') { const auto n=4-column%4;displayAt+=n;column+=n; }
+                else { ++displayAt;if ((c&0xc0)!=0x80) ++column; }
+            }return displayAt;
+        };
+        while (tokenIndex<tokens.size() && tokens[tokenIndex].start+tokens[tokenIndex].length<=start) ++tokenIndex;
+        for (auto i=tokenIndex;i<tokens.size() && tokens[i].start<end;++i) {
+            const auto &token=tokens[i];
+            const auto from=std::max(start,token.start),to=std::min(end,token.start+token.length);
+            if (to>from) { const auto a=offset(from-start),b=offset(to-start);spans.push_back({a,b-a,token.role}); }
+        }
+        lines.push_back({std::move(display),std::move(spans),{}});
+        if (newline==std::string::npos) break;
+        start=newline+1;
+    } while (start<=text.size());
+    text_=text;language_=language;revision_=revision ? revision : revision_+1;
+    syntaxRevision_=syntaxRevision;columns_=columns;lines_=std::move(lines);return true;
 }
 bool CodeDocument::setOverlays(ArrayView<SourceSpan> spans, std::uint64_t revision) {
     if (revision != revision_)
@@ -256,6 +143,14 @@ ImU32 tokenColor(TokenRole role, ImU32 background) {
     case TokenRole::function:
         c = mix(p.text, p.warning, .4f);
         break;
+    case TokenRole::added: case TokenRole::ansiGreen: c=p.success;break;
+    case TokenRole::removed: case TokenRole::error: case TokenRole::ansiRed: c=p.error;break;
+    case TokenRole::heading: case TokenRole::ansiBlue: c=p.info;break;
+    case TokenRole::warning: case TokenRole::ansiYellow: c=p.warning;break;
+    case TokenRole::ansiMagenta: c=categorical(4);break;
+    case TokenRole::ansiCyan: c=mix(p.info,p.success,.5f);break;
+    case TokenRole::ansiBlack: c=p.textFaint;break;
+    case TokenRole::ansiWhite: c=p.text;break;
     default:
         break;
     }

@@ -22,6 +22,13 @@ public class CyUI : ModuleRules
         PublicSystemIncludePaths.Add(Path.Combine(Library, "third_party/imgui"));
         if (Directory.Exists(Path.Combine(Library, "third_party/texteditor")))
             PublicSystemIncludePaths.Add(Path.Combine(Library, "third_party/texteditor"));
+        if (Directory.Exists(Path.Combine(Library, "third_party/lexilla")))
+        {
+            PrivateSystemIncludePaths.Add(Path.Combine(Library, "third_party/lexilla/lexlib"));
+            PrivateSystemIncludePaths.Add(Path.Combine(Library, "third_party/lexilla/include"));
+            PrivateSystemIncludePaths.Add(Path.Combine(Library, "third_party/scintilla/include"));
+            PublicDefinitions.Add("CYUI_CODE_LANGUAGE_CATALOGUE=1");
+        }
         // Name-independent, so a renamed copy (package_unreal.py --module-name) only renames
         // this class/file: UBT defines <NAME>_API for the module, CyUI code uses CYUI_API.
         PublicDefinitions.Add("CYUI_UNREAL_MODULE=" + Name);

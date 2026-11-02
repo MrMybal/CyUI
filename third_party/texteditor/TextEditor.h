@@ -221,6 +221,7 @@ public:
 	inline bool CanUndo() const { return !config.readOnly && transactions.canUndo(); };
 	inline bool CanRedo() const { return !config.readOnly && transactions.canRedo(); };
 	inline size_t GetUndoIndex() const { return transactions.getUndoIndex(); };
+	inline size_t GetTextRevision() const { return transactions.getVersion(); }
 
 	// manipulate cursors and selections (line numbers are zero-based)
 	inline void SelectAll() { selectAll(); }
@@ -565,6 +566,8 @@ public:
 		currentLineNumber,
 		currentLineHighlight,
 		currentLineHighlightBorder,
+		sharedFunction, sharedAdded, sharedRemoved, sharedHeading, sharedWarning, sharedError,
+		sharedAnsiBlack, sharedAnsiRed, sharedAnsiGreen, sharedAnsiYellow, sharedAnsiBlue, sharedAnsiMagenta, sharedAnsiCyan, sharedAnsiWhite,
 		count
 	};
 
@@ -574,6 +577,11 @@ public:
 
 	inline void SetPalette(const Palette& newPalette) { paletteBase = newPalette; paletteAlpha = -1.0f; }
 	inline const Palette& GetPalette() const { return paletteBase; }
+	// CyUI shared lexical engine: display-only, revisioned, never changes text/Undo.
+	struct SharedSyntaxToken { size_t line, start, end; Color color; };
+	void SetSharedSyntaxTokens(const std::vector<SharedSyntaxToken>& tokens);
+	void ClearSharedSyntaxTokens() { sharedSyntaxVersion = ~size_t(0); }
+	Color GetSharedSyntaxColor(DocPos position) const;
 	static inline void SetDefaultPalette(const Palette& aValue) { defaultPalette = aValue; }
 	static inline Palette& GetDefaultPalette() { return defaultPalette; }
 
@@ -601,6 +609,7 @@ public:
 		// color for this glyph if a language is specified
 		// maintained by the Colorizer and the Bracketeer overlays
 		Color color = Color::text;
+		Color sharedSyntaxColor = Color::count;
 
 		// maintained by the TypeSetter overlay
 		BreakOption breakOption = BreakOption::undefined;
@@ -2117,4 +2126,5 @@ protected:
 	Palette palette;
 	Palette miniMapPalette;
 	float paletteAlpha;
+	size_t sharedSyntaxVersion = ~size_t(0);
 };
