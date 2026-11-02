@@ -41,11 +41,11 @@ try:
         web.place(((0, 0), (800, 600)), ((0, 0), (800, 600)))
         assert not web.navigate('file:///private.txt')
         assert not web.post_json('invalid JSON')
-        ready = reply = typed = sent_input = focused = sent_typing = False
+        ready = reply = typed = localized = sent_input = focused = sent_typing = False
         input_position = (100, 100)
         start = time.monotonic()
         end = start+25
-        while time.monotonic() < end and not (reply and frames and typed):
+        while time.monotonic() < end and not (reply and frames and typed and localized):
             runtime.pump()
             while (event := web.poll()) is not None:
                 if event['kind'] == 'message':
@@ -54,9 +54,14 @@ try:
                         ready = True
                         input_position = message['payload']['input']['x'], message['payload']['input']['y']
                     typed |= message.get('type') == 'test.input' and message.get('payload', {}).get('text') == '音楽'
+                    if message.get('type') == 'test.locale':
+                        payload = message['payload']
+                        localized = payload['locale'] == payload['language'] == 'fr' and payload['heading'] == 'Panneau web CyUI'
+                        input_position = payload['input']['x'], payload['input']['y']
                     reply |= message.get('type') == 'test.reply'
                     focused |= message.get('type') == 'test.focus'
             if ready and web.post_json({'protocol': 'cyui.web', 'version': 1, 'type': 'host.reply', 'payload': {'python': True}}):
+                assert web.post_json({'protocol': 'cyui.web', 'version': 1, 'type': 'locale', 'payload': {'locale': 'fr'}})
                 ready = False
             if reply and not sent_input and time.monotonic()-start > 2:
                 web.input('focus', down=True)
@@ -71,7 +76,7 @@ try:
                 web.input('text', codepoint=0x697d)
                 sent_typing = True
             time.sleep(.005)
-        assert reply and frames and typed, 'Python CEF page/paint/message round trip timed out'
+        assert reply and frames and typed and localized, 'Python CEF page/paint/message/locale round trip timed out'
         assert web.texture() == 42
         runtime.begin_frame(); runtime.end_frame()  # hidden panel lifetime
         web.close()

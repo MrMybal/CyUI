@@ -263,9 +263,9 @@ void DiffDocument::prepare(CodeLanguage language) {
 DiffResult diffViewer(const char *id, DiffState &s, const DiffDocument &doc, ImVec2 size) {
     ScopedID scope(id);
     DiffResult result;
-    ImGui::Checkbox("Side by side", &s.split);
+    ImGui::Checkbox(trLabel("Side by side").c_str(), &s.split);
     ImGui::SameLine();
-    if (ghostButton("Next change") && !doc.hunks().empty()) {
+    if (ghostButton(trLabel("Next change").c_str()) && !doc.hunks().empty()) {
         s.hunk = (s.hunk + 1) % int(doc.hunks().size());
         s.focus = doc.hunks()[std::size_t(s.hunk)];
     }
@@ -273,7 +273,7 @@ DiffResult diffViewer(const char *id, DiffState &s, const DiffDocument &doc, ImV
     ImGui::SetNextItemWidth(dp(180));
     detail::inputText("##find", s.query);
     ImGui::SameLine();
-    if (ghostButton("Find next") && !s.query.empty()) {
+    if (ghostButton(trLabel("Find next").c_str()) && !s.query.empty()) {
         for (std::size_t n = 1; n <= doc.rows().size(); ++n) {
             const auto i = (std::size_t(std::max(-1, s.selected) + 1) + n - 1) % doc.rows().size();
             if (doc.rows()[i].code.text.find(s.query) != std::string::npos) {
@@ -345,7 +345,10 @@ DiffResult diffViewer(const char *id, DiffState &s, const DiffDocument &doc, ImV
                 else
                     std::snprintf(number, sizeof(number), "%6d", side == 0 ? r.oldLine : r.newLine);
                 d->AddText({p.x + dp(4), p.y}, palette().textFaint, number);
-                paintCodeLine(d, {p.x + gutter, p.y}, r.code, bg);
+                if (r.kind == DiffKind::notice)
+                    d->AddText({p.x + gutter, p.y}, palette().textDim, tr(r.code.text.c_str()).c_str());
+                else
+                    paintCodeLine(d, {p.x + gutter, p.y}, r.code, bg);
                 if (ImGui::IsItemClicked()) {
                     s.selected = index;
                     result = {index, r.oldLine, r.newLine};
@@ -353,7 +356,7 @@ DiffResult diffViewer(const char *id, DiffState &s, const DiffDocument &doc, ImV
                 if (!s.query.empty() && r.code.text.find(s.query) != std::string::npos)
                     d->AddRect(p, {p.x + width, p.y + height}, palette().warning, 0, 0, dp(1));
                 if (ImGui::BeginPopupContextItem()) {
-                    if (ImGui::MenuItem("Copy line"))
+                    if (ImGui::MenuItem(trLabel("Copy line").c_str()))
                         ImGui::SetClipboardText(r.code.text.c_str());
                     ImGui::EndPopup();
                 }

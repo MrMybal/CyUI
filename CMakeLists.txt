@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.16...3.31)
-project(CyUI VERSION 1.1.0 LANGUAGES CXX)
+project(CyUI VERSION 1.2.0 LANGUAGES CXX)
+
+# Catalog edits must rebuild Core even when a compiler's include scanner cannot
+# discover generated .inc dependencies (for example localized MSVC output).
+set_property(SOURCE src/Theme.cpp APPEND PROPERTY OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/cyui/detail/LocaleFrench.inc")
 
 # A host's plain set(CYUI_...) before add_subdirectory() must win over the cache defaults
 # below, on the first configure too: otherwise the bundled ImGui is linked next to the

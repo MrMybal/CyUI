@@ -34,6 +34,17 @@ std::vector<std::size_t> rankCommands(ArrayView<Command> commands, const std::st
     return result;
 }
 ItemId commandPalette(const char *id, bool &open, CommandState &s, ArrayView<Command> commands, ImVec2 size) {
+    const auto title = trLabel(id);
+    id = title.c_str();
+    std::vector<Command> translated;
+    translated.reserve(commands.count);
+    for (std::size_t i = 0; i < commands.count; ++i) {
+        auto command = commands[i];
+        command.label = tr(command.label.c_str());
+        command.category = tr(command.category.c_str());
+        translated.push_back(std::move(command));
+    }
+    commands = {translated.data(), translated.size()};
     ItemId request = 0;
     if (open && !s.wasOpen) {
         ImGui::OpenPopup(id);

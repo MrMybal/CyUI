@@ -212,7 +212,7 @@ CodeViewResult codeViewer(const char *id, CodeViewState &s, const CodeDocument &
     ImGui::SetNextItemWidth(-dp(100));
     detail::inputText("##find", s.query);
     ImGui::SameLine();
-    if (ghostButton("Next") && !s.matches.empty()) {
+    if (ghostButton(trLabel("Next").c_str()) && !s.matches.empty()) {
         s.match = (s.match + 1) % int(s.matches.size());
         s.focusLine = s.matches[std::size_t(s.match)];
     }
@@ -258,7 +258,7 @@ CodeViewResult codeViewer(const char *id, CodeViewState &s, const CodeDocument &
                         result.annotation = annotations[j].id;
                 }
             if (ImGui::BeginPopupContextItem()) {
-                if (ImGui::MenuItem("Copy line"))
+                if (ImGui::MenuItem(trLabel("Copy line").c_str()))
                     ImGui::SetClipboardText(doc.lines()[std::size_t(i)].text.c_str());
                 ImGui::EndPopup();
             }

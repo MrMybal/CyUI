@@ -23,8 +23,8 @@
 #include "cyui/Widgets.h"
 #include "cyui/Gallery.h"
 
-#define CYUI_VERSION "1.1.0"
-#define CYUI_VERSION_NUM 10100
+#define CYUI_VERSION "1.2.0"
+#define CYUI_VERSION_NUM 10200
 
 // Optional modules selected by the linked CMake targets.
 #if defined(CYUI_HAS_CANVAS)

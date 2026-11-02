@@ -171,16 +171,16 @@ class DiffState:
 def diff_viewer(identifier, state, document, size=(0, 320)):
     i, c = ui()
     i.push_id(identifier)
-    _, state.split = i.checkbox('Side by side', state.split)
+    _, state.split = i.checkbox(c.tr_label('Side by side'), state.split)
     i.same_line()
-    if c.ghost_button('Next change') and document.hunks:
+    if c.ghost_button(c.tr_label('Next change')) and document.hunks:
         state.hunk = (state.hunk+1) % len(document.hunks)
         state.focus = document.hunks[state.hunk]
     i.same_line()
     i.set_next_item_width(c.dp(180))
     _, state.query = i.input_text('##find', state.query)
     i.same_line()
-    if c.ghost_button('Find next') and state.query and document.rows:
+    if c.ghost_button(c.tr_label('Find next')) and state.query and document.rows:
         count = len(document.rows)
         for n in range(1, count+1):
             index = (max(-1, state.selected)+n) % count
@@ -220,7 +220,10 @@ def diff_viewer(identifier, state, document, size=(0, 320)):
                 background = c.mix(p.bg0, tint, .14)
                 draw.add_rect_filled(pos, (pos[0]+row_width, pos[1]+row_height), p.selection if state.selected == index else background)
                 draw.add_text(pos, p.textFaint, f'{row.old_line:5} {row.new_line:5}' if side < 0 else str(row.old_line if side == 0 else row.new_line))
-                paint_line(draw, (pos[0]+c.dp(88), pos[1]), row.code, background)
+                if row.kind == 'notice':
+                    draw.add_text((pos[0]+c.dp(88), pos[1]), p.textDim, c.tr(row.code.text))
+                else:
+                    paint_line(draw, (pos[0]+c.dp(88), pos[1]), row.code, background)
                 if state.query and state.query in row.code.text:
                     draw.add_rect(pos, (pos[0]+row_width, pos[1]+row_height), p.warning, 0, 0, c.dp(1))
                 if i.is_item_clicked():

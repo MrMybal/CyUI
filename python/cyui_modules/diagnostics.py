@@ -77,14 +77,14 @@ def log_view(identifier, state, buffer, size=(0, 320)):
     i.set_next_item_width(c.dp(180))
     _, state.query = i.input_text('##filter', state.query)
     i.same_line()
-    _, state.follow = i.checkbox('Follow', state.follow)
+    _, state.follow = i.checkbox(c.tr_label('Follow'), state.follow)
     i.same_line()
-    if i.button('Copy visible'):
+    if i.button(c.tr_label('Copy visible')):
         i.set_clipboard_text('\n'.join(e.text for e in state.rows if e.level in state.levels and state.query.casefold() in (e.text+' '+e.source).casefold()))
     for level in ('debug', 'info', 'warning', 'error'):
         if level != 'debug':
             i.same_line()
-        toggle, on = i.checkbox(level, level in state.levels)
+        toggle, on = i.checkbox(c.tr_label(level), level in state.levels)
         if toggle:
             state.levels.add(level) if on else state.levels.discard(level)
     i.begin_child('##log', (size[0], max(c.dp(1), size[1]-2*i.get_frame_height_with_spacing()) if size[1] else 0), 0, i.WindowFlags_.horizontal_scrollbar)

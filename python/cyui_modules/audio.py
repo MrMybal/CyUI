@@ -66,7 +66,7 @@ def knob(identifier, value, minimum, maximum, default, diameter=34., label='', l
     if modulation is not None:
         angle = start+sweep*max(0, min(1, modulation))
         d.add_circle_filled((center[0]+cos(angle)*(radius+c.dp(3)), center[1]+sin(angle)*(radius+c.dp(3))), c.dp(2), p.info)
-    text = f'{value:.3g}' if hovered or active else label
+    text = f'{value:.3g}' if hovered or active else c.tr(label)
     d.add_text((origin.x, origin.y+height), p.text if hovered else p.textDim, text)
     i.pop_id()
     return changed, value

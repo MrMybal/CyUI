@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from .common import ui, item_id
 
 
@@ -31,6 +31,8 @@ def rank_commands(commands, query):
 def command_palette(identifier, opened, state, commands, size=(560, 400)):
     """Returns (open, requested_id). The host executes the requested command."""
     i, c = ui()
+    identifier = c.tr_label(identifier)
+    commands = [replace(command, label=c.tr(command.label), category=c.tr(command.category)) for command in commands]
     request = 0
     if opened and not state.was_open:
         i.open_popup(identifier)

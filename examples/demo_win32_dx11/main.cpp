@@ -16,6 +16,7 @@
 #include <shellapi.h>
 
 #include <cmath>
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -27,12 +28,15 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace {
+using cyui::tr;
+using cyui::trLabel;
 
 ID3D11Device* gDevice {};
 ID3D11DeviceContext* gContext {};
 IDXGISwapChain* gSwapChain {};
 ID3D11RenderTargetView* gTarget {};
 ID3D11ShaderResourceView* gGalleryTexture {};
+std::array<ID3D11ShaderResourceView*, 4> gImagePreviews {};
 ID3D11Texture2D* gWebTexture {};
 ID3D11ShaderResourceView* gWebView {};
 int gWebWidth=0,gWebHeight=0;
@@ -58,6 +62,75 @@ void createGalleryTexture() {
     for(int y=0;y<256;++y)for(int x=0;x<256;++x){const float k=float(x)/255;const float signal=.5f+.5f*std::sin(float(x*x+y*y)*.0007f);const auto color=cyui::mix(cyui::mix(p.bg0,p.info,k),p.accent,signal*.65f);pixels[std::size_t(y)*256+x]=color;}
     D3D11_TEXTURE2D_DESC desc{};desc.Width=desc.Height=256;desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_IMMUTABLE;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;D3D11_SUBRESOURCE_DATA data{};data.pSysMem=pixels.data();data.SysMemPitch=256*4;ID3D11Texture2D* texture=nullptr;
     if(SUCCEEDED(gDevice->CreateTexture2D(&desc,&data,&texture))){if(FAILED(gDevice->CreateShaderResourceView(texture,nullptr,&gGalleryTexture)))gGalleryTexture=nullptr;texture->Release();}
+}
+// Synthetic host-owned preview images. These pixel colors are image data, not UI colors.
+// No file decoder, third-party artwork or image-processing engine is required by CyUI.
+void createImagePreviews()
+{
+    constexpr int width = 256, height = 160;
+    std::array<std::vector<ImVec4>, 4> images;
+    for (auto& image : images)
+        image.resize(width * height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float u = float(x) / (width - 1), v = float(y) / (height - 1);
+            ImVec4 pixel{.17f + .48f * v, .38f + .35f * v, .64f + .18f * v, 1};
+            const float sun = std::hypot(u - .76f, (v - .22f) * .625f);
+            if (sun < .065f)
+                pixel = {.98f, .85f, .58f, 1};
+            const float farRidge = .45f + .08f * std::sin(u * 9) + .04f * std::sin(u * 22);
+            const float nearRidge = .62f + .08f * std::sin(u * 7 + 1) + .035f * std::sin(u * 18);
+            if (v > farRidge)
+                pixel = {.22f + .09f * u, .38f + .12f * u, .44f + .09f * u, 1};
+            if (v > nearRidge)
+                pixel = {.07f + .1f * u, .24f + .15f * u, .27f + .1f * u, 1};
+            if (v > .78f + .015f * std::sin(u * 12)) {
+                const float reflection = .5f + .5f * std::sin(v * 190 + u * 15);
+                pixel = {.12f + .07f * reflection, .34f + .08f * reflection, .46f + .09f * reflection, 1};
+            }
+            const auto index = std::size_t(y * width + x);
+            images[0][index] = pixel;
+            images[1][index] = {std::clamp(pixel.x * 1.18f + .045f, 0.f, 1.f),
+                                std::clamp(pixel.y * 1.04f + .015f, 0.f, 1.f), pixel.z * .83f, 1};
+        }
+    }
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            ImVec4 blurred{};
+            for (int dy = -2; dy <= 2; ++dy)
+                for (int dx = -2; dx <= 2; ++dx) {
+                    const auto& pixel = images[1][std::size_t(std::clamp(y + dy, 0, height - 1) * width +
+                                                             std::clamp(x + dx, 0, width - 1))];
+                    blurred.x += pixel.x / 25;
+                    blurred.y += pixel.y / 25;
+                    blurred.z += pixel.z / 25;
+                }
+            blurred.w = 1;
+            const auto index = std::size_t(y * width + x);
+            images[2][index] = blurred;
+            const float u = float(x) / (width - 1) - .5f, v = float(y) / (height - 1) - .5f;
+            const float vignette = 1 - .65f * (u * u + v * v);
+            images[3][index] = {blurred.x * vignette, blurred.y * vignette, blurred.z * vignette, 1};
+        }
+    }
+    for (std::size_t i = 0; i < images.size(); ++i) {
+        std::vector<ImU32> pixels;
+        pixels.reserve(width * height);
+        for (const auto& pixel : images[i])
+            pixels.push_back(ImGui::ColorConvertFloat4ToU32(pixel));
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = width; desc.Height = height; desc.MipLevels = desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_IMMUTABLE; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SUBRESOURCE_DATA data{};
+        data.pSysMem = pixels.data(); data.SysMemPitch = width * 4;
+        ID3D11Texture2D* texture = nullptr;
+        if (SUCCEEDED(gDevice->CreateTexture2D(&desc, &data, &texture))) {
+            if (FAILED(gDevice->CreateShaderResourceView(texture, nullptr, &gImagePreviews[i])))
+                gImagePreviews[i] = nullptr;
+            texture->Release();
+        }
+    }
 }
 UINT gResizeWidth {}, gResizeHeight {};
 bool gOccluded = false;
@@ -110,6 +183,8 @@ bool createDevice(HWND hwnd)
 void releaseDevice()
 {
     if(gGalleryTexture)gGalleryTexture->Release();
+    for (auto* preview : gImagePreviews)
+        if (preview) preview->Release();
     retireWeb();
     releaseRetiredWeb();
     releaseTarget();
@@ -232,23 +307,23 @@ struct App {
     {
         if (!ImGui::BeginMainMenuBar())
             return;
-        if (ImGui::BeginMenu("File")) {
-            ImGui::MenuItem("New", "Ctrl+N");
-            ImGui::MenuItem("Open...", "Ctrl+O");
-            ImGui::MenuItem("Save", "Ctrl+S");
+        if (ImGui::BeginMenu(trLabel("File").c_str())) {
+            ImGui::MenuItem(trLabel("New").c_str(), "Ctrl+N");
+            ImGui::MenuItem(trLabel("Open...").c_str(), "Ctrl+O");
+            ImGui::MenuItem(trLabel("Save").c_str(), "Ctrl+S");
             ImGui::Separator();
-            if (ImGui::MenuItem("Quit", "Alt+F4"))
+            if (ImGui::MenuItem(trLabel("Quit").c_str(), "Alt+F4"))
                 ::PostQuitMessage(0);
             ImGui::EndMenu();
         }
-        if (ImGui::BeginMenu("View")) {
-            ImGui::MenuItem("CyUI gallery", nullptr, &gallery);
-            ImGui::MenuItem("Theme editor", nullptr, &themeEditor);
-            ImGui::MenuItem("Dear ImGui demo", nullptr, &imguiDemo);
+        if (ImGui::BeginMenu(trLabel("View").c_str())) {
+            ImGui::MenuItem(trLabel("CyUI gallery").c_str(), nullptr, &gallery);
+            ImGui::MenuItem(trLabel("Theme editor").c_str(), nullptr, &themeEditor);
+            ImGui::MenuItem(trLabel("Dear ImGui demo").c_str(), nullptr, &imguiDemo);
             ImGui::Separator();
-            if (ImGui::BeginMenu("Theme")) {
+            if (ImGui::BeginMenu(trLabel("Theme").c_str())) {
                 for (const auto& theme : cyui::builtInThemes())
-                    if (ImGui::MenuItem(theme.name.c_str(), nullptr, theme.key == cyui::currentThemeKey()))
+                    if (ImGui::MenuItem(trLabel(theme.name.c_str()).c_str(), nullptr, theme.key == cyui::currentThemeKey()))
                         cyui::setTheme(theme.key.c_str());
                 ImGui::EndMenu();
             }
@@ -283,15 +358,15 @@ struct App {
     void statusBar()
     {
         if (cyui::beginStatusBar("##statusBar")) {
-            cyui::statusText(cyui::Tone::neutral, "Ready");
+            cyui::statusText(cyui::Tone::neutral, tr("Ready").c_str());
             ImGui::SameLine(0.0f, cyui::dp(18.0f));
-            cyui::statusText(cyui::Tone::success, "Audio: 48 kHz, 256 samples");
+            cyui::statusText(cyui::Tone::success, tr("Audio: 48 kHz, 256 samples").c_str());
             char fps[32];
             std::snprintf(fps, sizeof(fps), "%.0f fps", ImGui::GetIO().Framerate);
             ImGui::SameLine();
             cyui::ScopedFont font(nullptr, 0.86f);
             cyui::alignRight(ImGui::CalcTextSize(fps).x);
-            cyui::textFaint("%s", fps);
+            cyui::textFaint(tr("%s").c_str(), fps);
         }
         cyui::endStatusBar();
     }
@@ -301,14 +376,14 @@ struct App {
         if (cyui::beginSidebar("##sidebar")) {
             cyui::sidebarHeader("CYUI DEMO", "1.1");
             cyui::sidebarGroup("WORKSPACE");
-            if (cyui::sidebarItem(cyui::icon::home, "Home", page == 0))
+            if (cyui::sidebarItem(cyui::icon::home, trLabel("Home").c_str(), page == 0))
                 page = 0;
-            if (cyui::sidebarItem(cyui::icon::library, "Library", page == 1, "12"))
+            if (cyui::sidebarItem(cyui::icon::library, trLabel("Library").c_str(), page == 1, "12"))
                 page = 1;
-            if (cyui::sidebarItem(cyui::icon::equalizer, "Mixer", page == 2))
+            if (cyui::sidebarItem(cyui::icon::equalizer, trLabel("Mixer").c_str(), page == 2))
                 page = 2;
             cyui::sidebarGroup("SYSTEM");
-            if (cyui::sidebarItem(cyui::icon::settings, "Settings", page == 3))
+            if (cyui::sidebarItem(cyui::icon::settings, trLabel("Settings").c_str(), page == 3))
                 page = 3;
         }
         cyui::endSidebar();
@@ -316,18 +391,18 @@ struct App {
 
     void panels()
     {
-        if (ImGui::Begin("Inspector")) {
-            cyui::panelHeader("Inspector", "Kick drum - Track 1");
+        if (ImGui::Begin(trLabel("Inspector").c_str())) {
+            cyui::panelHeader(tr("Inspector").c_str(), "Kick drum - Track 1");
             cyui::divider();
-            if (cyui::beginSection("Track")) {
+            if (cyui::beginSection(trLabel("Track").c_str())) {
                 static float volume = -3.0f, pan = 0.0f;
                 static bool mute = false;
                 if (cyui::beginProperties("##track")) {
-                    cyui::property("Volume");
+                    cyui::property(tr("Volume").c_str());
                     cyui::sliderBar("##volume", &volume, -60.0f, 6.0f, "%.1f dB", -1.0f);
-                    cyui::property("Pan");
+                    cyui::property(tr("Pan").c_str());
                     cyui::sliderBar("##pan", &pan, -1.0f, 1.0f, "%.2f", -1.0f, cyui::palette().info);
-                    cyui::property("Mute");
+                    cyui::property(tr("Mute").c_str());
                     cyui::toggleSwitch("##mute", &mute);
                     cyui::endProperties();
                 }
@@ -336,18 +411,18 @@ struct App {
         }
         ImGui::End();
 
-        if (ImGui::Begin("Devices")) {
+        if (ImGui::Begin(trLabel("Devices").c_str())) {
             if (cyui::beginToolbar("##devicesToolbar")) {
                 cyui::iconButton(cyui::icon::add, "Add a device");
                 ImGui::SameLine(0.0f, cyui::dp(2.0f));
                 cyui::iconButton(cyui::icon::presets, "Presets");
                 cyui::toolbarSeparator();
-                cyui::badge("3 DEVICES");
+                cyui::badge(tr("3 DEVICES").c_str());
             }
             cyui::endToolbar();
             cyui::space(6.0f);
             static float drive = 0.4f, tone = 0.6f, mix = 1.0f;
-            if (cyui::beginCard("##saturator", "Saturator")) {
+            if (cyui::beginCard("##saturator", tr("Saturator").c_str())) {
                 cyui::knob("##drive", &drive, 0.0f, 1.0f, 0.4f, { 36.0f, 0, "Drive" });
                 ImGui::SameLine();
                 cyui::knob("##tone", &tone, 0.0f, 1.0f, 0.5f, { 36.0f, cyui::palette().info, "Tone" });
@@ -358,8 +433,8 @@ struct App {
         }
         ImGui::End();
 
-        if (ImGui::Begin("Browser")) {
-            cyui::emptyState("Nothing here yet", "Drop files to add them to the library", cyui::icon::folder);
+        if (ImGui::Begin(trLabel("Browser").c_str())) {
+            cyui::emptyState(tr("Nothing here yet").c_str(), tr("Drop files to add them to the library").c_str(), cyui::icon::folder);
         }
         ImGui::End();
     }
@@ -417,8 +492,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     // --capture out.bmp [--theme key] [--comfortable] [--tab n]: renders a few
     // frames, writes the window to a BMP and quits.
     std::wstring capturePath,webUrl;
-    bool cefNoSandbox=false, galleryOnly=false;
+    bool cefNoSandbox=false, galleryOnly=false, imageGraph=false;
     std::string themeKey = "mid-grey";
+    std::string language = "en";
     auto comfortable = false;
     auto tab = -1;
     {
@@ -429,6 +505,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             const auto next = [&]() { return i + 1 < count ? std::wstring(args[++i]) : std::wstring(); };
             if(arg==L"--web-url")webUrl=next();
             else if(arg==L"--gallery-only")galleryOnly=true;
+            else if(arg==L"--image-graph")imageGraph=true;
+            else if(arg==L"--locale") {
+                language.clear();
+                for (const auto c : next()) {
+                    if (c > 127) { language = "?"; break; }
+                    language += static_cast<char>(c);
+                }
+            }
             else if(arg==L"--cef-no-sandbox")cefNoSandbox=true; // Accepted; the demo is never sandboxed.
             else if (arg == L"--capture")
                 capturePath = next();
@@ -476,6 +560,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     config.density = comfortable ? cyui::Density::comfortable : cyui::Density::compact;
     config.dpiScale = dpiScale;
     cyui::apply(config);
+    cyui::setLocale(language.c_str());
     cyui::loadFonts();
 
     ImGui_ImplWin32_Init(hwnd);
@@ -485,8 +570,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         io.IniFilename = nullptr;
 
     createGalleryTexture();
+    createImagePreviews();
     App app;
     app.resources.texture=ImTextureID(reinterpret_cast<std::uintptr_t>(gGalleryTexture));app.resources.width=app.resources.height=256;
+    for (std::size_t i = 0; i < gImagePreviews.size(); ++i)
+        app.resources.imagePreviews[i] = ImTextureID(reinterpret_cast<std::uintptr_t>(gImagePreviews[i]));
+    app.resources.previewImageGraph = imageGraph;
 #if defined(CYUI_DEMO_CEF)
     std::unique_ptr<cyui::WebBackend> web;
     if(!webUrl.empty()){
@@ -502,7 +591,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 #endif
     app.galleryTab = tab;
     app.resources.previewCommands = !capturePath.empty() && tab == 16;
-    cyui::notify("Welcome to the CyUI demo", cyui::Tone::accent);
+    cyui::notify(tr("Welcome to the CyUI demo").c_str(), cyui::Tone::accent);
     auto done = false;
     auto frames = 0;
     const auto captureStart=GetTickCount64();

@@ -146,9 +146,9 @@ void inlineText(const std::vector<DocumentInline> &runs, DocumentResult &result)
             if (linkText(label.c_str()))
                 result.link = run.target;
         } else if (mono)
-            textColoured(palette().accent, "%s", label.c_str());
+            textColoured(palette().accent, tr("%s").c_str(), label.c_str());
         else if (emphasis)
-            textDim("%s", label.c_str());
+            textDim(tr("%s").c_str(), label.c_str());
         else
             ImGui::TextWrapped("%s", label.c_str());
         if (font)
@@ -178,9 +178,9 @@ DocumentResult content(DocumentState &s, const Document &doc) {
             inlineText(b.inlines, result);
             break;
         case DocumentBlockKind::code: {
-            textFaint("%s", b.language.c_str());
+            textFaint(tr("%s").c_str(), b.language.c_str());
             ImGui::SameLine();
-            if (ghostButton("Copy")) {
+            if (ghostButton(trLabel("Copy").c_str())) {
                 ImGui::SetClipboardText(b.text.c_str());
                 result.copiedBlock = int(n);
             }
@@ -258,8 +258,8 @@ TranscriptResult transcript(const char *id, TranscriptState &s, ArrayView<Transc
         const float top = ImGui::GetCursorPosY();
         heading(m.role.c_str(), 3);
         ImGui::SameLine();
-        textFaint("%s", m.time.c_str());
-        if (ghostButton("Copy message")) {
+        textFaint(tr("%s").c_str(), m.time.c_str());
+        if (ghostButton(trLabel("Copy message").c_str())) {
             ImGui::SetClipboardText(m.content.c_str());
             result.copy = m.id;
         }

@@ -1,5 +1,6 @@
 #include "cyui/modules/Audio.h"
 #include "ModuleInternal.h"
+#include "cyui/Locale.h"
 
 #include <imgui_internal.h>
 
@@ -151,7 +152,7 @@ bool knob(const char* id, float* value, const float minimum, const float maximum
     }
     if (labelHeight > 0.0f) {
         const auto showValue = hovered || active;
-        const auto text = showValue ? formatValue(*value, style) : std::string(style.label != nullptr ? style.label : "");
+        const auto text = showValue ? formatValue(*value, style) : tr(style.label != nullptr ? style.label : "");
         ScopedFont font(nullptr, 0.82f);
         const auto room = width + dp(12.0f);
         const auto size = ImGui::CalcTextSize(text.c_str());

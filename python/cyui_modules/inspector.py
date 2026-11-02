@@ -49,9 +49,9 @@ def inspector(identifier, state, properties, revision=0, validate=None):
             state.drafts[key] = deepcopy(prop.value)
         value = state.drafts[key]
         i.push_id(item_id(key))
-        i.text_unformatted(prop.label)
+        i.text_unformatted(c.tr(prop.label))
         if prop.help and i.is_item_hovered():
-            i.set_tooltip(prop.help)
+            i.set_tooltip(c.tr(prop.help))
         i.set_next_item_width(-1)
         i.begin_disabled(prop.read_only)
         immediate = False
@@ -69,7 +69,7 @@ def inspector(identifier, state, properties, revision=0, validate=None):
             changed, value = i.input_double('##value', value, 0., 0., '%.9g')
         elif prop.choices:
             index = prop.choices.index(value) if value in prop.choices else -1
-            changed, index = i.combo('##value', index, list(prop.choices))
+            changed, index = i.combo('##value', index, [c.tr(choice) for choice in prop.choices])
             if changed:
                 value = prop.choices[index]
             immediate = True

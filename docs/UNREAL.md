@@ -275,6 +275,11 @@ The generic Web module may be selected, but WebCEF is not packaged into Unreal.
 Unreal may already load its own browser runtime; a Web backend for Unreal must
 follow that engine's browser lifecycle and version requirements.
 
+CyUI's English/French localization is included through Core. Set the panel's
+language within `RunInContext` or its draw callback; separate panel contexts keep
+separate languages. Slate tool/menu entries still use Unreal localization. See
+[LOCALIZATION.md](LOCALIZATION.md) for the catalog and stable-label API.
+
 ## License
 
 CyUI's connector and packaging script remain MIT. Dear ImGui and the optional

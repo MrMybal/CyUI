@@ -24,8 +24,19 @@ bool FCyUILifecycleTest::RunTest(const FString &) {
     TestTrue(TEXT("Register tool"), Module.RegisterTool(Id, Label, Draw));
     TestFalse(TEXT("Reject duplicate registration"), Module.RegisterTool(Id, Label, Draw));
     ImGuiContext *Before = ImGui::GetCurrentContext();
-    auto First = Module.MakePanel(Draw);
-    auto Second = Module.MakePanel(Draw);
+    auto First = StaticCastSharedRef<SCyUIPanel>(Module.MakePanel(Draw));
+    auto Second = StaticCastSharedRef<SCyUIPanel>(Module.MakePanel(Draw));
+    First->RunInContext([this] {
+        TestTrue(TEXT("Panel starts in English"), cyui::locale() == "en");
+        TestTrue(TEXT("Panel can switch to French"), cyui::setLocale("fr"));
+        TestTrue(TEXT("French catalog is available inside Unreal"), cyui::tr("Save") == "Enregistrer");
+    });
+    Second->RunInContext([this] {
+        TestTrue(TEXT("Another panel keeps English"), cyui::locale() == "en");
+    });
+    First->RunInContext([this] {
+        TestTrue(TEXT("Panel keeps its selected language"), cyui::locale() == "fr");
+    });
     TestTrue(TEXT("Panel creation restores the caller context"), Before == ImGui::GetCurrentContext());
     TestTrue(TEXT("Open registered dockable tab"), Module.OpenTool(Id));
     Module.UnregisterTool(Id);

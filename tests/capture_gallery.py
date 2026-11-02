@@ -9,12 +9,17 @@ root = Path(__file__).resolve().parents[1]
 themes = ['mid-grey', 'light-grey', 'amber-night', 'violet', 'navy']
 
 
-def capture(executable, folder, theme, density, tab, force=False):
+def capture(executable, folder, theme, density, tab, force=False, locale='en', gallery_only=False, image_graph=False):
     name = f'{tab:02}-{theme}-{density}'
     bitmap, output = folder/(name+'.bmp'), folder/(name+'.png')
     if output.is_file() and not force:
         return output
     command = [str(executable), '--capture', str(bitmap), '--theme', theme, '--tab', str(tab)]
+    command += ['--locale', locale]
+    if gallery_only:
+        command.append('--gallery-only')
+    if image_graph:
+        command.append('--image-graph')
     if density == 'comfortable':
         command.append('--comfortable')
     startup = subprocess.STARTUPINFO(); startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW; startup.wShowWindow = 0
@@ -34,10 +39,15 @@ if __name__ == '__main__':
     parser.add_argument('--themes', nargs='+', default=themes)
     parser.add_argument('--densities', nargs='+', default=['compact', 'comfortable'])
     parser.add_argument('--force', action='store_true', help='Refresh existing captures')
-    args = parser.parse_args(); folder = root/'build/gallery-review'; folder.mkdir(parents=True, exist_ok=True)
+    parser.add_argument('--locale', choices=['en', 'fr'], default='en')
+    parser.add_argument('--gallery-only', action='store_true')
+    parser.add_argument('--image-graph', action='store_true')
+    args = parser.parse_args()
+    suffix = '' if args.locale == 'en' and not args.gallery_only and not args.image_graph else '-'+args.locale+('-gallery' if args.gallery_only else '')+('-images' if args.image_graph else '')
+    folder = root/('build/gallery-review'+suffix); folder.mkdir(parents=True, exist_ok=True)
     jobs = [(theme, density, tab) for tab in args.tabs for density in args.densities for theme in args.themes]
     with ThreadPoolExecutor(max_workers=2) as pool:
-        pending = [pool.submit(capture, args.exe.resolve(), folder, *job, args.force) for job in jobs]
+        pending = [pool.submit(capture, args.exe.resolve(), folder, *job, args.force, args.locale, args.gallery_only, args.image_graph) for job in jobs]
         for n, task in enumerate(as_completed(pending), 1):
             task.result()
             if n % 10 == 0:

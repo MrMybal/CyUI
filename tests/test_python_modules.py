@@ -205,6 +205,23 @@ except ImportError as error:
 
 
 class Environment(unittest.TestCase):
+    def test_locale_catalogs_and_contexts(self):
+        from cyui_modules.locale import locale, tr, tr_label, set_locale, register_translations, locale_scope
+        self.assertEqual(locale(), 'en')
+        with locale_scope('fr-CA'):
+            self.assertEqual(tr('Save'), 'Enregistrer')
+            self.assertEqual(tr('unknown', 'English fallback'), 'English fallback')
+            self.assertTrue(tr_label('Save###document').endswith('###document'))
+            self.assertFalse(set_locale('unknown'))
+            self.assertEqual(locale(), 'fr')
+            self.assertTrue(register_translations('fr', {'app.export': 'Exporter'}))
+            self.assertEqual(tr('app.export', 'Export'), 'Exporter')
+        self.assertEqual(locale(), 'en')
+        self.assertTrue(register_translations('de', {'Save': 'Speichern'}, 'Deutsch'))
+        with locale_scope('de-DE'):
+            self.assertEqual(tr('Save'), 'Speichern')
+            self.assertEqual(tr('Missing'), 'Missing')
+
     def test_ui_tests_can_run_when_required(self):
         if os.environ.get('CYUI_REQUIRE_UI') == '1' and i is None:
             self.fail(f'CYUI_REQUIRE_UI=1 but imgui-bundle could not be imported: {_ui_error}')
@@ -212,6 +229,16 @@ class Environment(unittest.TestCase):
 
 @unittest.skipIf(i is None, 'imgui-bundle is required for real UI frame tests')
 class Frames(unittest.TestCase):
+    def test_live_language_switch_keeps_widget_ids(self):
+        from cyui_modules.locale import locale_scope
+        english = self.frame(lambda: i.get_id(c.tr_label('Save')))
+        with locale_scope('fr'):
+            french = self.frame(lambda: i.get_id(c.tr_label('Save')))
+            self.assertEqual(english, french)
+            from cyui_modules.diff import DiffDocument, DiffState, diff_viewer
+            doc = DiffDocument(); doc.set_texts('a\n', 'b\n')
+            self.frame(lambda: diff_viewer('localized-diff', DiffState(), doc))
+
     @classmethod
     def setUpClass(cls):
         i.create_context()

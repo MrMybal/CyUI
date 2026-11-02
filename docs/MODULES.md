@@ -1,8 +1,15 @@
 # CyUI optional modules
 
-CyUI 1.1 provides a common Dear ImGui foundation and independently selectable
+CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
 interface modules. All CyUI code is MIT licensed. Applications own their models,
 engines, files, services, validation and Undo history.
+
+## Localization in every integration
+
+Core includes English (default), French and extensible translation catalogs.
+Use stable translated labels when migrating application interfaces. C++, Python,
+Web and Unreal usage, font requirements and host responsibilities are described
+in [LOCALIZATION.md](LOCALIZATION.md).
 
 ## Targets and dependencies
 

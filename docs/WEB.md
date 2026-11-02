@@ -239,6 +239,12 @@ garbage collector does not initialize or shut down a browser on an arbitrary thr
 
 ## Deployment and checks
 
+Native `webThemeJson()` and Python `theme_message()` also carry the current UI
+locale (English by default). Send a fresh theme after changing languages. The
+JavaScript bridge translates only marked interface elements and exposes a catalog
+for TypeScript components; see [LOCALIZATION.md](LOCALIZATION.md). Bundle the
+bridge's `cyui-i18n.js` and `cyui-locales.js` imports with the main bridge module.
+
 - Windows: ship matching libcef/Chromium runtime files, resources/locales, helper
   executable and supported sandbox setup. The optional test/demo CMake staging
   copies the selected SDK's Release/Resources into the build output.

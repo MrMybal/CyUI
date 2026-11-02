@@ -29,6 +29,12 @@ class FCyUIToolExampleModule : public IModuleInterface {
         if (IsRunningCommandlet())
             return;
         FCyUIModule::Get();
+        cyui::registerTranslations("fr", {
+            {"CyUI inside another plugin", "CyUI dans un autre plugin"},
+            {"This callback and its state belong to CyUIToolExample.", "Le plugin utilisateur gère ce rappel et son état."},
+            {"Strength", "Intensité"}, {"Run tool", "Exécuter l’outil"},
+            {"Open gallery", "Ouvrir la galerie"},
+            {"Consuming plugin action received", "Action du plugin utilisateur reçue"}});
         FGlobalTabmanager::Get()
             ->RegisterNomadTabSpawner(ExampleTabId,
                                       FOnSpawnTab::CreateRaw(this, &FCyUIToolExampleModule::SpawnTab))
@@ -87,21 +93,25 @@ class FCyUIToolExampleModule : public IModuleInterface {
     }
     void Draw() {
         ++DrawCalls;
-        cyui::heading("CyUI inside another plugin");
-        cyui::textDim("This callback and its state belong to CyUIToolExample.");
+        int Language = cyui::locale() == "fr" ? 1 : 0;
+        const char* Languages[]{"English", "Français"};
+        if (cyui::combo("##language", &Language, Languages, 2))
+            cyui::setLocale(Language == 1 ? "fr" : "en");
+        cyui::heading(cyui::tr("CyUI inside another plugin").c_str());
+        cyui::textDim("%s", cyui::tr("This callback and its state belong to CyUIToolExample.").c_str());
         if (cyui::beginProperties("Plugin properties")) {
-            cyui::property("Name");
+            cyui::property(cyui::tr("Name").c_str());
             cyui::textField("##name", Name, sizeof(Name));
-            cyui::property("Enabled");
+            cyui::property(cyui::tr("Enabled").c_str());
             cyui::toggleSwitch("##enabled", &Enabled);
-            cyui::property("Strength");
+            cyui::property(cyui::tr("Strength").c_str());
             cyui::sliderBar("##strength", &Strength, 0, 1);
             cyui::endProperties();
         }
-        if (cyui::primaryButton("Run tool"))
-            cyui::notify("Consuming plugin action received", cyui::Tone::success);
+        if (cyui::primaryButton(cyui::trLabel("Run tool").c_str()))
+            cyui::notify(cyui::tr("Consuming plugin action received").c_str(), cyui::Tone::success);
 #if defined(CYUI_HAS_GALLERY)
-        if (cyui::ghostButton("Open gallery"))
+        if (cyui::ghostButton(cyui::trLabel("Open gallery").c_str()))
             ShowGallery = true;
         if (ShowGallery)
             cyui::showGallery(&ShowGallery);

@@ -1,4 +1,5 @@
 #include "cyui/Layout.h"
+#include "cyui/Locale.h"
 
 #include "cyui/Icons.h"
 
@@ -149,6 +150,7 @@ bool sidebarItem(const char* iconText, const char* label, const bool active, con
         x += ImGui::GetFontSize() + dp(10.0f);
     }
     auto room = max.x - x - dp(8.0f);
+    const std::string visible(label, ImGui::FindRenderedTextEnd(label));
     if (badgeText != nullptr) {
         ScopedFont font(boldFont(), 0.74f);
         const auto size = ImGui::CalcTextSize(badgeText);
@@ -161,9 +163,9 @@ bool sidebarItem(const char* iconText, const char* label, const bool active, con
     }
     if (active) {
         ScopedFont font(boldFont(), 1.0f);
-        clippedText(list, ImVec2(x, y), room, textColour, label);
+        clippedText(list, ImVec2(x, y), room, textColour, visible.c_str());
     } else {
-        clippedText(list, ImVec2(x, y), room, textColour, label);
+        clippedText(list, ImVec2(x, y), room, textColour, visible.c_str());
     }
     ImGui::Dummy(ImVec2(0.0f, dp(1.0f)));
     return clicked;
@@ -250,6 +252,10 @@ void endModal()
 
 int modalButtons(const char* confirm, const char* cancel, const bool danger)
 {
+    const auto translatedConfirm = trLabel(confirm);
+    confirm = translatedConfirm.c_str();
+    const auto translatedCancel = cancel ? trLabel(cancel) : std::string{};
+    if (cancel) cancel = translatedCancel.c_str();
     space(10.0f);
     const auto& style = ImGui::GetStyle();
     const auto confirmWidth = std::max(dp(84.0f), buttonWidth(confirm));

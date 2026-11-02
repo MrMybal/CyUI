@@ -26,6 +26,7 @@ import time
 from types import SimpleNamespace
 
 from imgui_bundle import imgui
+from cyui_modules.locale import set_locale, locale, available_locales, register_translations, tr, tr_label, locale_scope
 
 ImVec2 = imgui.ImVec2
 # ImDrawFlags_RoundCornersLeft: imgui_bundle has named it both ways across releases.
@@ -578,6 +579,7 @@ def kbd(keys):
 
 def tooltip(text):
     """A delayed, wrapped tooltip for the last item."""
+    text = tr(text) if text else text
     if not text:
         return
     if not imgui.is_item_hovered(imgui.HoveredFlags_.delay_short | imgui.HoveredFlags_.no_shared_delay):
@@ -742,6 +744,7 @@ def toggle_switch(label, value):
 
 def segmented(identifier, labels, current, width=0.0):
     """Joined buttons, one selected (view modes, units). Returns (changed, current)."""
+    labels = [tr(label) for label in labels]
     p = palette()
     style = imgui.get_style()
     imgui.push_id(identifier)
@@ -865,6 +868,7 @@ def _draw_cross(draw, centre, size, colour):
 
 def search_field(identifier, text, hint='Search', width=0.0):
     """A search box: magnifier, hint, a clear button. Returns (changed, text)."""
+    hint = tr(hint or '')
     p = palette()
     style = imgui.get_style()
     height = imgui.get_frame_height()
@@ -896,6 +900,7 @@ def search_field(identifier, text, hint='Search', width=0.0):
 
 
 def text_field(identifier, text, hint='', width=0.0):
+    hint = tr(hint or '')
     if width != 0.0:
         imgui.set_next_item_width(width)
     return imgui.input_text_with_hint(identifier, hint or '', text)
@@ -904,7 +909,7 @@ def text_field(identifier, text, hint='', width=0.0):
 def combo(identifier, current, items, width=0.0):
     if width != 0.0:
         imgui.set_next_item_width(width)
-    return imgui.combo(identifier, current, list(items))
+    return imgui.combo(identifier, current, [tr(item) for item in items])
 
 
 # ---- Containers ------------------------------------------------------------------------------
@@ -1326,6 +1331,7 @@ def sidebar_item(glyph, label, active, badge_text=''):
         draw.add_text(ImVec2(x, y), _faded(p.accent) if active else colour, glyph)
         x += imgui.get_font_size() + dp(10.0)
     room = maximum.x - x - dp(8.0)
+    label = label.split('##', 1)[0]
     if badge_text:
         with scoped_font(bold_font(), 0.74):
             size = imgui.calc_text_size(badge_text)
@@ -1441,6 +1447,8 @@ def modal_buttons(confirm, cancel='Cancel', danger=False):
     """
     space(10.0)
     style = imgui.get_style()
+    cancel = tr_label(cancel) if cancel else cancel
+    confirm = tr_label(confirm)
     confirm_width = max(dp(84.0), button_width(confirm))
     cancel_width = max(dp(84.0), button_width(cancel)) if cancel else 0.0
     align_right(confirm_width + ((cancel_width + style.item_spacing.x) if cancel else 0.0))

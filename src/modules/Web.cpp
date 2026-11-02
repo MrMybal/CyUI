@@ -188,7 +188,7 @@ std::vector<WebEvent> webPanel(const char *id, WebBackend &backend, ImVec2 size,
     placement.focus = o.focus;
     d->AddRectFilled(a, b, palette().bg0);
     if (!backend.ready())
-        centredText(d, a, b, palette().textDim, "Web view loading...");
+        centredText(d, a, b, palette().textDim, tr("Web view loading...").c_str());
     backend.place(placement);
     if (backend.texture())
         d->AddImage(backend.texture(), a, b);
@@ -275,7 +275,7 @@ std::string webThemeJson() {
     std::ostringstream stream;
     stream.imbue(std::locale::classic());
     stream << "{\"protocol\":\"cyui.web\",\"version\":1,\"type\":\"theme\",\"payload\":{\"scale\":" << dp(1)
-           << ",\"colors\":{";
+           << ",\"locale\":" << quote(locale()) << ",\"colors\":{";
     bool first = true;
     auto color = [&](const char *name, ImU32 value) {
         if (!first)

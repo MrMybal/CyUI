@@ -162,7 +162,7 @@ def code_viewer(identifier, state, document, size=(0, 300), annotations=()):
     i.set_next_item_width(-c.dp(100))
     _, state.query = i.input_text('##find', state.query)
     i.same_line()
-    if i.button('Next') and state.query:
+    if i.button(c.tr_label('Next')) and state.query:
         for offset in range(1, len(document.lines)+1):
             index = (state.selected_line+offset) % len(document.lines)
             if state.query in document.lines[index].text:

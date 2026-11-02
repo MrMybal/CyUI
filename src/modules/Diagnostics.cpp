@@ -82,7 +82,7 @@ ItemId logView(const char *id, LogState &s, const LogBuffer &buffer, ImVec2 size
     ImGui::SetNextItemWidth(-dp(90));
     detail::inputText("##filter", s.query);
     ImGui::SameLine();
-    ImGui::Checkbox("Follow", &s.follow);
+    ImGui::Checkbox(trLabel("Follow").c_str(), &s.follow);
     ItemId request = 0;
     ScopedFont font(monoFont());
     ImGui::BeginChild("##log", size, ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
@@ -121,7 +121,7 @@ ItemId logView(const char *id, LogState &s, const LogBuffer &buffer, ImVec2 size
                 request = row.id;
             }
             if (ImGui::BeginPopupContextItem()) {
-                if (ImGui::MenuItem("Copy"))
+                if (ImGui::MenuItem(trLabel("Copy").c_str()))
                     ImGui::SetClipboardText(row.text.c_str());
                 ImGui::EndPopup();
             }
@@ -135,9 +135,9 @@ ItemId diagnosticList(const char *id, ArrayView<Diagnostic> rows, ImVec2 size) {
     ItemId request = 0;
     if (ImGui::BeginTable(id, 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
                           size)) {
-        ImGui::TableSetupColumn("Source");
-        ImGui::TableSetupColumn("Position");
-        ImGui::TableSetupColumn("Message");
+        ImGui::TableSetupColumn(trLabel("Source").c_str());
+        ImGui::TableSetupColumn(trLabel("Position").c_str());
+        ImGui::TableSetupColumn(trLabel("Message").c_str());
         ImGui::TableHeadersRow();
         ImGuiListClipper clip;
         clip.Begin(int(rows.count));
@@ -152,9 +152,9 @@ ItemId diagnosticList(const char *id, ArrayView<Diagnostic> rows, ImVec2 size) {
                     request = row.id;
                 ImGui::GetWindowDrawList()->AddText(pos, palette().text, row.source.c_str());
                 ImGui::TableNextColumn();
-                ImGui::Text("%d:%d", row.line, row.column);
+                ImGui::Text(tr("%d:%d").c_str(), row.line, row.column);
                 ImGui::TableNextColumn();
-                textColoured(logColor(row.level), "%s", row.message.c_str());
+                textColoured(logColor(row.level), tr("%s").c_str(), row.message.c_str());
             }
         ImGui::EndTable();
     }

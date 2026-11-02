@@ -8,9 +8,9 @@ AssetResult assetBrowser(const char *id, AssetState &s, ArrayView<AssetItem> ite
     ImGui::SetNextItemWidth(-dp(140));
     result.queryChanged = detail::inputText("##search", s.query);
     ImGui::SameLine();
-    ImGui::Checkbox("Grid", &s.grid);
+    ImGui::Checkbox(trLabel("Grid").c_str(), &s.grid);
     ImGui::SameLine();
-    if (ghostButton("Up")) {
+    if (ghostButton(trLabel("Up").c_str())) {
         for (std::size_t i = 0; i < items.count; ++i)
             if (items[i].id == s.folder) {
                 s.folder = items[i].parent;
@@ -55,7 +55,7 @@ AssetResult assetBrowser(const char *id, AssetState &s, ArrayView<AssetItem> ite
                         d->AddRectFilled({p.x + dp(8), p.y + dp(4)}, {p.x + cell - dp(12), p.y + dp(78)},
                                          palette().bg3, dp(3));
                         d->AddText({p.x + dp(20), p.y + dp(26)}, palette().textFaint,
-                                   item.folder ? "Folder" : item.type.c_str());
+                                   item.folder ? tr("Folder").c_str() : item.type.c_str());
                     }
                     clippedText(d, {p.x + dp(8), p.y + dp(84)}, cell - dp(16), palette().text,
                                 item.label.c_str());
@@ -86,7 +86,7 @@ AssetResult assetBrowser(const char *id, AssetState &s, ArrayView<AssetItem> ite
                         {"Rename", AssetAction::rename},
                         {"Remove", AssetAction::remove}};
                     for (const auto &action : actions)
-                        if (ImGui::MenuItem(action.first))
+                        if (ImGui::MenuItem(trLabel(action.first).c_str()))
                             result.action = action.second;
                     ImGui::EndPopup();
                 }

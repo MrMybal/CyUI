@@ -1,4 +1,5 @@
 #include "cyui/CoreWidgets.h"
+#include "cyui/Locale.h"
 
 #include "cyui/Icons.h"
 
@@ -219,6 +220,8 @@ void kbd(const char* keys)
 
 void tooltip(const char* text)
 {
+    const auto translated = tr(text);
+    text = translated.c_str();
     if (text == nullptr || text[0] == 0)
         return;
     if (!ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort | ImGuiHoveredFlags_NoSharedDelay))
@@ -325,6 +328,8 @@ bool iconButton(const char* icon, const char* tip, const bool active, const ImU3
     const auto held = ImGui::IsItemActive();
     ImGui::PopID();
     ImGui::PopID();
+    const auto translatedTip = tr(tip);
+    tip = translatedTip.c_str();
     auto* list = ImGui::GetWindowDrawList();
     const auto colour = activeColour != 0 ? activeColour : p.accent;
     const auto rounding = ImGui::GetStyle().FrameRounding;
@@ -423,6 +428,13 @@ bool toggleSwitch(const char* label, bool* value)
 
 bool segmented(const char* id, const char* const labels[], const int count, int* current, const float width)
 {
+    std::vector<std::string> translated;
+    std::vector<const char*> translatedLabels;
+    translated.reserve(std::size_t(std::max(0, count)));
+    translatedLabels.reserve(std::size_t(std::max(0, count)));
+    for (int i = 0; i < count; ++i) translated.push_back(tr(labels[i]));
+    for (const auto& label : translated) translatedLabels.push_back(label.c_str());
+    labels = translatedLabels.data();
     const auto& p = palette();
     const auto& style = ImGui::GetStyle();
     ImGui::PushID(id);
@@ -774,6 +786,8 @@ bool sliderBar(const char* id, float* value, const float minimum, const float ma
 
 bool searchField(const char* id, char* buffer, const int bufferSize, const char* hint, const float width)
 {
+    const auto translatedHint = tr(hint);
+    hint = translatedHint.c_str();
     const auto& p = palette();
     const auto& style = ImGui::GetStyle();
     const auto height = ImGui::GetFrameHeight();
@@ -813,6 +827,8 @@ bool searchField(const char* id, char* buffer, const int bufferSize, const char*
 
 bool textField(const char* id, char* buffer, const int bufferSize, const char* hint, const float width)
 {
+    const auto translatedHint = tr(hint);
+    hint = translatedHint.c_str();
     if (width != 0.0f)
         ImGui::SetNextItemWidth(width);
     return ImGui::InputTextWithHint(id, hint != nullptr ? hint : "", buffer, static_cast<std::size_t>(bufferSize));
@@ -820,9 +836,15 @@ bool textField(const char* id, char* buffer, const int bufferSize, const char* h
 
 bool combo(const char* id, int* current, const char* const items[], const int count, const float width)
 {
+    std::vector<std::string> translated;
+    std::vector<const char*> translatedItems;
+    translated.reserve(std::size_t(std::max(0, count)));
+    translatedItems.reserve(std::size_t(std::max(0, count)));
+    for (int i = 0; i < count; ++i) translated.push_back(tr(items[i]));
+    for (const auto& item : translated) translatedItems.push_back(item.c_str());
     if (width != 0.0f)
         ImGui::SetNextItemWidth(width);
-    return ImGui::Combo(id, current, items, count);
+    return ImGui::Combo(id, current, translatedItems.data(), count);
 }
 
 // ---- Containers ----------------------------------------------------------------

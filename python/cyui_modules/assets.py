@@ -26,10 +26,10 @@ def asset_browser(identifier, state, assets, size=(0, 320)):
     i, c = ui()
     result = {'id': 0, 'action': 'none', 'query_changed': False}
     i.push_id(identifier)
-    if i.button('Up'):
+    if i.button(c.tr_label('Up')):
         state.folder = next((a.parent for a in assets if a.id == state.folder), 0)
     i.same_line()
-    _, state.grid = i.checkbox('Grid', state.grid)
+    _, state.grid = i.checkbox(c.tr_label('Grid'), state.grid)
     i.same_line()
     i.set_next_item_width(-1)
     result['query_changed'], state.query = i.input_text('##search', state.query)
@@ -70,7 +70,7 @@ def asset_browser(identifier, state, assets, size=(0, 320)):
                 i.end_drag_drop_source()
             if i.begin_popup_context_item('##context'):
                 for label, action in (('Open', 'open'), ('Toggle favorite', 'favorite'), ('Rename', 'rename'), ('Remove', 'remove')):
-                    if i.menu_item(label, '', False)[0]:
+                    if i.menu_item(c.tr_label(label), '', False)[0]:
                         result.update(id=asset.id, action=action)
                 i.end_popup()
             i.pop_id()

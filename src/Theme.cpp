@@ -3,6 +3,7 @@
 #endif
 
 #include "cyui/Theme.h"
+#include "cyui/Locale.h"
 
 #include <imgui_internal.h>
 
@@ -80,6 +81,8 @@ const Metrics kComfortable {
 struct ThemeState {
     Palette palette = kMidGrey;
     std::string themeKey = defaultThemeKey;
+    std::string locale = "en";
+    std::vector<std::string> localizedImGui;
     Density density = Density::compact;
     Metrics metrics = kCompact;
     bool squareWindows = false;
@@ -94,6 +97,7 @@ struct ThemeState {
     Density styledDensity = Density::compact;
     bool hooked = false;  // released with its context
 };
+void applyLocale(ThemeState& state);
 
 // Contexts may live on different threads: the map is locked, and each thread
 // caches its last lookup, valid while no context was released since.
@@ -150,6 +154,7 @@ ThemeState& themeState()
     if (inserted) {
         state.palette = gDefaults.palette;
         state.themeKey = gDefaults.themeKey;
+        state.locale = gDefaults.locale;
         state.density = gDefaults.density;
         state.metrics = gDefaults.metrics;
         state.squareWindows = gDefaults.squareWindows;
@@ -161,6 +166,8 @@ ThemeState& themeState()
     tCachedContext = state.hooked ? context : nullptr;
     tCached = &state;
     tCachedGeneration = gThemes.generation.load();
+    if (inserted)
+        applyLocale(state);
     return state;
 }
 
@@ -186,6 +193,68 @@ void change(F&& apply)
         apply(themeState());
     }
     ImGui::SetCurrentContext(nullptr);
+}
+
+struct LocaleRegistry {
+    std::mutex mutex;
+    std::unordered_map<std::string, TranslationCatalog> catalogs{{"en", {}}, {"fr", {
+#define CYUI_TRANSLATION(key, value) {key, value},
+#include "cyui/detail/LocaleFrench.inc"
+#undef CYUI_TRANSLATION
+    }}};
+    std::unordered_map<std::string, std::string> names{{"en", "English"}, {"fr", "Français"}};
+};
+LocaleRegistry& localeRegistry() { static LocaleRegistry registry; return registry; }
+std::string translateForLocale(const std::string& language, const char* key, const char* englishFallback = nullptr)
+{
+    auto& registry = localeRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    const auto catalog = registry.catalogs.find(language);
+    if (catalog != registry.catalogs.end()) {
+        const auto item = catalog->second.find(key);
+        if (item != catalog->second.end()) return item->second;
+    }
+    const auto base = registry.catalogs.find(language.substr(0, language.find('-')));
+    if (base != registry.catalogs.end()) {
+        const auto item = base->second.find(key);
+        if (item != base->second.end()) return item->second;
+    }
+    const auto& english = registry.catalogs.at("en");
+    const auto fallback = english.find(key);
+    return fallback != english.end() ? fallback->second : englishFallback ? englishFallback : key;
+}
+void applyLocale(ThemeState& state)
+{
+    const std::pair<ImGuiLocKey, const char*> entries[]{
+        {ImGuiLocKey_TableSizeOne, "Size column to fit###SizeOne"},
+        {ImGuiLocKey_TableSizeAllFit, "Size all columns to fit###SizeAll"},
+        {ImGuiLocKey_TableSizeAllDefault, "Size all columns to default###SizeAll"},
+        {ImGuiLocKey_TableReset, "Reset"},
+        {ImGuiLocKey_TableResetOrder, "Reset order###ResetOrder"},
+        {ImGuiLocKey_TableResetVisibility, "Reset visibility###ResetVisibility"}};
+    state.localizedImGui.clear();
+    for (const auto& entry : entries) {
+        const std::string key(entry.second);
+        const auto marker = key.find("###");
+        const auto visible = key.substr(0, marker);
+        state.localizedImGui.push_back(translateForLocale(state.locale, visible.c_str()) + "###" +
+                                      (marker == std::string::npos ? key : key.substr(marker + 3)));
+    }
+    for (std::size_t i = 0; i < state.localizedImGui.size(); ++i) {
+        ImGuiLocEntry entry{entries[i].first, state.localizedImGui[i].c_str()};
+        ImGui::LocalizeRegisterEntries(&entry, 1);
+    }
+}
+std::string normalizeLocale(const char* code)
+{
+    std::string result;
+    if (!code) return result;
+    for (const unsigned char c : std::string(code)) {
+        if (result.size() >= 35 || !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                                    (c >= '0' && c <= '9') || c == '-' || c == '_')) return {};
+        result += c == '_' ? '-' : char(std::tolower(c));
+    }
+    return result;
 }
 
 float luminance(const ImU32 colour)
@@ -441,6 +510,61 @@ void mergeIcons(ThemeState& state, const float size, const bool wanted)
 }  // namespace
 
 // ---- Palette -----------------------------------------------------------------
+
+bool setLocale(const char* code)
+{
+    auto wanted = normalizeLocale(code);
+    auto& registry = localeRegistry();
+    {
+        std::lock_guard<std::mutex> lock(registry.mutex);
+        if (!registry.catalogs.count(wanted)) wanted = wanted.substr(0, wanted.find('-'));
+        if (!registry.catalogs.count(wanted)) return false;
+    }
+    change([&](ThemeState& state) {
+        state.locale = wanted;
+        if (!ImGui::GetCurrentContext()) return;
+        applyLocale(state);
+    });
+    return true;
+}
+const std::string& locale() { return themeState().locale; }
+std::vector<LocaleInfo> availableLocales()
+{
+    auto& registry = localeRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    std::vector<LocaleInfo> result{{"en", registry.names.at("en")}, {"fr", registry.names.at("fr")}};
+    for (const auto& item : registry.names)
+        if (item.first != "en" && item.first != "fr") result.push_back({item.first, item.second});
+    std::sort(result.begin() + 2, result.end(), [](const LocaleInfo& a, const LocaleInfo& b) { return a.code < b.code; });
+    return result;
+}
+bool registerTranslations(const char* code, const TranslationCatalog& translations, const char* name)
+{
+    const auto normalized = normalizeLocale(code);
+    if (normalized.empty()) return false;
+    auto& registry = localeRegistry();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    auto& catalog = registry.catalogs[normalized];
+    for (const auto& item : translations) catalog[item.first] = item.second;
+    if (name) registry.names[normalized] = name;
+    else if (!registry.names.count(normalized)) registry.names[normalized] = normalized;
+    return true;
+}
+std::string tr(const char* key, const char* englishFallback)
+{
+    if (!key) return {};
+    return translateForLocale(locale(), key, englishFallback);
+}
+std::string trLabel(const char* key, const char* englishFallback)
+{
+    if (!key) return {};
+    const std::string label(key);
+    const auto marker = label.find("##");
+    const auto visible = label.substr(0, marker);
+    const auto explicitId = label.find("###");
+    return tr(visible.c_str(), englishFallback) + "###" +
+           (explicitId == std::string::npos ? label : label.substr(explicitId + 3));
+}
 
 const Palette& palette()
 {

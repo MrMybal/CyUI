@@ -83,7 +83,7 @@ def theme_message():
     for name in ('bg0', 'bg1', 'bg2', 'bg3', 'text', 'textDim', 'textFaint', 'accent', 'selection', 'line', 'success', 'warning', 'error', 'info'):
         value = getattr(p, name)
         colors[name] = f'rgba({value & 255},{value >> 8 & 255},{value >> 16 & 255},{(value >> 24 & 255)/255:.4f})'
-    return {'protocol': 'cyui.web', 'version': 1, 'type': 'theme', 'payload': {'scale': c.dp(1), 'colors': colors}}
+    return {'protocol': 'cyui.web', 'version': 1, 'type': 'theme', 'payload': {'scale': c.dp(1), 'locale': c.locale(), 'colors': colors}}
 
 
 def web_panel(identifier, backend, size=(0, 320), visible=True, focus=False, viewport_origin=(0, 0)):
@@ -105,7 +105,7 @@ def web_panel(identifier, backend, size=(0, 320), visible=True, focus=False, vie
     clip = tuple(tuple(operation(point[n], bound[n])-viewport_origin[n] for n in (0, 1)) for operation, point, bound in ((max, low, clip_low), (min, high, clip_high)))
     draw.add_rect_filled(low, high, c.palette().bg0)
     if not backend.ready():
-        c.centred_text(draw, i.ImVec2(*low), i.ImVec2(*high), c.palette().textDim, 'Web view loading...')
+        c.centred_text(draw, i.ImVec2(*low), i.ImVec2(*high), c.palette().textDim, c.tr('Web view loading...'))
     backend.place(bounds, clip, visible and i.is_item_visible() and all(clip[1][n] > clip[0][n] for n in (0, 1)), focus)
     if hasattr(backend, 'uses_texture') and backend.uses_texture():
         texture = backend.texture()

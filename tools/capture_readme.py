@@ -18,6 +18,10 @@ PREVIEWS = (
     ('navy', 2, False, 'navy.png'),
     ('mid-grey', 9, True, 'audio-views.png'),
     ('violet', 7, True, 'nodes.png'),
+    ('violet', 7, True, 'image-graph.png', '--image-graph'),
+    ('mid-grey', 13, True, 'content-browser.png'),
+    ('navy', 12, True, 'details-inspector.png'),
+    ('navy', 12, True, 'localization-fr.png', '--locale', 'fr'),
     ('navy', 10, True, 'code-editor.png'),
     ('navy', 11, True, 'code-diff.png'),
     ('mid-grey', 5, True, 'plots.png'),
@@ -30,6 +34,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--exe', type=Path, default=ROOT/'build/cyui_demo.exe')
     parser.add_argument('--output', type=Path, default=ROOT/'docs/screenshots')
+    parser.add_argument('--only', nargs='+', choices=[preview[3] for preview in PREVIEWS],
+                        help='Regenerate only these named screenshots')
     args = parser.parse_args()
     executable = args.exe.resolve()
     if not executable.is_file():
@@ -41,11 +47,14 @@ def main():
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startup.wShowWindow = 0
     with tempfile.TemporaryDirectory(prefix='readme-captures-', dir=scratch) as temporary:
-        for theme, tab, gallery_only, name in PREVIEWS:
+        for theme, tab, gallery_only, name, *extra_flags in PREVIEWS:
+            if args.only and name not in args.only:
+                continue
             bitmap = Path(temporary)/(name+'.bmp')
             command = [str(executable), '--capture', str(bitmap), '--theme', theme, '--tab', str(tab)]
             if gallery_only:
                 command.append('--gallery-only')
+            command.extend(extra_flags)
             subprocess.run(command, cwd=ROOT, startupinfo=startup, check=True, timeout=30)
             if not bitmap.is_file():
                 raise RuntimeError(f'The demo did not capture {name}')

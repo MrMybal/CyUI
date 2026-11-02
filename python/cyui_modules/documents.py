@@ -120,7 +120,7 @@ def _content(state, document):
         elif block.kind == 'code':
             c.text_faint(block.language)
             i.same_line()
-            if c.ghost_button('Copy'):
+            if c.ghost_button(c.tr_label('Copy')):
                 i.set_clipboard_text(block.text)
                 result['copied_block'] = n
             code_viewer('##code', state.code_views.setdefault(n, CodeViewState()), block.code, (0, c.dp(max(90, min(320, len(block.code.lines)*20+48)))))
@@ -184,7 +184,7 @@ def transcript(identifier, state, messages, size=(0, 320)):
         view = state.views.setdefault(message.id, DocumentState())
         i.push_id(item_id(message.id))
         c.heading(message.role, 3); i.same_line(); c.text_faint(message.time)
-        if c.ghost_button('Copy message'):
+        if c.ghost_button(c.tr_label('Copy message')):
             i.set_clipboard_text(message.content)
             result['copy'] = message.id
         result['link'] = _content(view, doc)['link'] or result['link']

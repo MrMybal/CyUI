@@ -117,7 +117,7 @@ class ModuleGallery:
                 edit = transform_gizmo('gizmo', self.transform_state, self.transform, project=lambda p: (frame.top[0]+p[0], frame.top[1]+p[1]), unproject=lambda p: (p[0]-frame.top[0], p[1]-frame.top[1]))
                 if edit.committed: self.transform = edit.value
         elif name == 'Commands':
-            if c.primary_button('Open command palette'): self.command_open = True
+            if c.primary_button(c.tr_label('Open command palette')): self.command_open = True
             self.command_open, request = command_palette('Commands', self.command_open, self.command_state, self.commands)
             if request: c.notify(f'Command requested: {request}')
         elif name == 'Diagnostics':
@@ -130,7 +130,7 @@ class ModuleGallery:
             if self.web:
                 for event in web_panel('web', self.web):
                     if event['kind'] == 'navigated': self.web.post_json(theme_message())
-            else: c.callout('info', 'Supply a CEFView; the host owns its runtime and texture upload.')
+            else: c.callout('info', c.tr('Supply a CEFView; the host owns its runtime and texture upload.'))
 
     def draw(self):
         from imgui_bundle import imgui as i
@@ -138,13 +138,16 @@ class ModuleGallery:
         if not self.initialized:
             c.apply(); self.initialized = True
         i.set_next_window_size((1000, 740), i.Cond_.first_use_ever)
-        i.begin('CyUI Python modules')
+        i.begin(c.tr_label('CyUI Python modules'))
         themes = ['mid-grey', 'light-grey', 'amber-night', 'violet', 'navy']
-        changed, selected = i.combo('Theme', themes.index(c.current_theme()), themes)
+        changed, selected = i.combo(c.tr_label('Theme'), themes.index(c.current_theme()), themes)
         if changed: c.set_theme(themes[selected])
+        languages = c.available_locales()
+        changed, selected = i.combo(c.tr_label('Language'), [code for code, _ in languages].index(c.locale()), [name for _, name in languages])
+        if changed: c.set_locale(languages[selected][0])
         if i.begin_tab_bar('##modules', i.TabBarFlags_.fitting_policy_scroll):
             for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web'):
-                shown, _ = i.begin_tab_item(name)
+                shown, _ = i.begin_tab_item(c.tr_label(name))
                 if shown:
                     self.draw_page(name)
                     i.end_tab_item()

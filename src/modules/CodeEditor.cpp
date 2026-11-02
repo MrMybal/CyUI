@@ -112,6 +112,10 @@ void CodeEditor::refreshSyntax() {
 bool CodeEditor::draw(const char *id, ImVec2 size) {
     refreshSyntax();
     auto &p = impl_->editor;
+    p.SetFindButtonLabel(trLabel("Find"));
+    p.SetFindAllButtonLabel(trLabel("Find All"));
+    p.SetReplaceButtonLabel(trLabel("Replace"));
+    p.SetReplaceAllButtonLabel(trLabel("Replace All"));
     TextEditor::Palette colors;
     colors.fill(palette().text);
     using C = TextEditor::Color;

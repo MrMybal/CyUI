@@ -1,16 +1,26 @@
+import {createCyUILocale} from './cyui-i18n.js';
+export {createCyUILocale} from './cyui-i18n.js';
 /** CyUI browser bridge. Works with CEF or an explicitly supplied transport. */
 export function createCyUIBridge(transport = globalThis.cyuiNative) {
   if (!transport?.postMessage || !transport?.addEventListener) throw new Error('CyUI transport unavailable');
   const listeners = new Map();
+  const i18n = createCyUILocale();
   let closed = false;
   const receive = event => {
     const message = event.data;
     if (!message || message.protocol !== 'cyui.web' || message.version !== 1 || typeof message.type !== 'string') return;
     if (message.type === 'theme') applyCyUITheme(message.payload);
+    if (message.type === 'theme' && typeof message.payload?.locale === 'string') {
+      i18n.setLocale(message.payload.locale); i18n.apply();
+    }
+    if (message.type === 'locale' && typeof message.payload?.locale === 'string') {
+      i18n.setLocale(message.payload.locale); i18n.apply();
+    }
     for (const callback of listeners.get(message.type) || []) callback(message.payload, message);
   };
   transport.addEventListener('message', receive);
   return {
+    i18n,
     send(type, payload = null, requestId) {
       if (closed || typeof type !== 'string' || type.length > 128) throw new Error('Invalid CyUI message');
       const message = {protocol: 'cyui.web', version: 1, type, payload};
@@ -67,7 +77,7 @@ export function mountCyMD(container, url, {onReady = () => {}, onSave = async ()
   window.addEventListener('message', receive);
   return {
     frame,
-    open(name, file, locale = 'fr') {
+    open(name, file, locale = 'en') {
       if (!(file instanceof Blob) || file.size > 50*1024*1024 || !/\.(cymd|md|markdown)$/i.test(name)) throw new Error('Invalid CyMD document');
       send('open', {name, file, locale});
     },

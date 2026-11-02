@@ -26,7 +26,7 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
             draft.before = p.value;
         }
         ItemScope key(p.id);
-        property(p.label.c_str(), p.help.c_str());
+        property(tr(p.label.c_str()).c_str(), p.help.empty() ? nullptr : tr(p.help.c_str()).c_str());
         bool changed = false, immediate = false;
         {
             ScopedDisabled disabled(p.readOnly);
@@ -45,9 +45,9 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
                                             "%.6g", ImGuiSliderFlags_AlwaysClamp);
             } else if (auto *value = std::get_if<std::string>(&draft.value)) {
                 if (!p.choices.empty()) {
-                    if (ImGui::BeginCombo("##value", value->c_str())) {
+                    if (ImGui::BeginCombo("##value", tr(value->c_str()).c_str())) {
                         for (const auto &choice : p.choices)
-                            if (ImGui::Selectable(choice.c_str(), choice == *value)) {
+                            if (ImGui::Selectable(trLabel(choice.c_str()).c_str(), choice == *value)) {
                                 *value = choice;
                                 changed = true;
                             }
@@ -107,7 +107,7 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
         if (phase != EditPhase::none)
             result.push_back({p.id, {phase, draft.value}});
         if (!draft.error.empty())
-            textColoured(palette().error, "%s", draft.error.c_str());
+            textColoured(palette().error, tr("%s").c_str(), draft.error.c_str());
     }
     endProperties();
     for (auto it = s.drafts.begin(); it != s.drafts.end();)

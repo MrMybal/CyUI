@@ -34,6 +34,28 @@ compatibility, graph validation and execution.
 
 ![Nodes: a connected voice graph with trigger, oscillator, filter, gain and stereo output nodes](docs/screenshots/nodes.png)
 
+### Image-processing graphs
+
+Node cards can display host-supplied textures alongside their pins and connections.
+This example shows a source image, color grading, blur and output previews. The
+demo prepares these images on the host; `Nodes` draws the graph and its contents.
+
+![Image-processing graph with image previews in source, color grade, blur and output nodes](docs/screenshots/image-graph.png)
+
+### Content browsers and details panels
+
+Combine `Assets` with folder navigation, thumbnail previews and selection metadata
+to build a content browser. Asset storage, imports and file operations stay in the
+application.
+
+![Content browser with folders, image thumbnails and selected asset metadata](docs/screenshots/content-browser.png)
+
+`Inspector` provides typed, editable properties inside collapsible sections:
+strings, choices, toggles, exact integers, numeric values and read-only fields.
+The host owns validation and Undo transactions.
+
+![Editor details panel with material preview and grouped identity, surface, texture and rendering properties](docs/screenshots/details-inspector.png)
+
 ### Code editing and comparison
 
 `Code` provides syntax-colored source views and annotations. `CodeEditor` adds
@@ -52,6 +74,15 @@ or side-by-side comparisons; repository access stays in the host application.
 
 ![Timeline: clip lanes, markers, a playhead and snapping](docs/screenshots/timeline.png)
 
+## English-first multilingual interfaces
+
+Core includes English and French catalogs, live language switching and an API
+for application translations and additional languages. Use `trLabel()` for stable
+widget identities and `tr()` for text. The Python API and embedded Web bridge use
+the same built-in messages. See [localization and integration rules](docs/LOCALIZATION.md).
+
+![The same details panel displayed in French, with English remaining the default](docs/screenshots/localization-fr.png)
+
 ## Choose your modules
 
 Each C++ module is a separate static-library target. Dependencies between modules
@@ -60,7 +91,7 @@ adding a code editor, audio engine or browser.
 
 | Target | What it provides |
 | --- | --- |
-| `CyUI::Core` | Themes, fonts, icons, buttons, fields, cards, tables, layout and notifications |
+| `CyUI::Core` | Themes, localization, fonts, icons, buttons, fields, cards, tables, layout and notifications |
 | `CyUI::Audio` | Knobs, faders and peak/RMS meters |
 | `CyUI::Canvas` | Grid, clipping, double-precision coordinates, pan and zoom |
 | `CyUI::Plots` | Linear/log plots, lines, points, steps, bars, histograms and heatmaps |
@@ -122,9 +153,9 @@ cyui::apply(config);
 cyui::loadFonts();
 
 // During an ImGui frame:
-if (cyui::primaryButton("Save")) {
+if (cyui::primaryButton(cyui::trLabel("Save").c_str())) {
     saveDocument();
-    cyui::notify("Saved", cyui::Tone::success);
+    cyui::notify(cyui::tr("Saved").c_str(), cyui::Tone::success);
 }
 cyui::renderNotifications(); // At the end of the UI frame.
 ```

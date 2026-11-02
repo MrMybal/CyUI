@@ -61,6 +61,37 @@ int main() {
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
     io.Fonts->SetTexID(ImTextureID(1));
     using namespace cyui;
+    check(locale() == "en" && tr("Save") == "Save", "English is the default UI language");
+    check(setLocale("fr_CA") && locale() == "fr" && tr("Save") == "Enregistrer", "French regional fallback");
+    check(tr("application.unknown", "Readable fallback") == "Readable fallback", "unknown keys keep the English fallback");
+    check(!setLocale("unknown") && locale() == "fr", "unknown locale preserves the active language");
+    frame([] {
+        check(ImGui::GetID(trLabel("Save").c_str()) == ImGui::GetID("Save"), "translation keeps the original widget ID");
+        check(ImGui::GetID(trLabel("Save###document").c_str()) == ImGui::GetID("Save###document"), "explicit IDs survive translation");
+    });
+    {
+        auto* saved = ImGui::GetCurrentContext();
+        auto* second = ImGui::CreateContext();
+        ImGui::SetCurrentContext(second);
+        check(locale() == "en", "language belongs to its ImGui context");
+        ImGui::DestroyContext(second);
+        ImGui::SetCurrentContext(saved);
+        check(locale() == "fr", "another context does not reset the selected language");
+        ImGui::SetCurrentContext(nullptr);
+        setLocale("fr");
+        auto* inherited = ImGui::CreateContext();
+        check(locale() == "fr" && std::strcmp(ImGui::LocalizeGetMsg(ImGuiLocKey_TableReset), "Réinitialiser###Reset") == 0,
+              "new contexts inherit the selected language including table controls");
+        ImGui::DestroyContext(inherited);
+        setLocale("en");
+        ImGui::SetCurrentContext(saved);
+        setLocale("fr");
+    }
+    check(registerTranslations("fr", {{"app.export", "Exporter"}}) && tr("app.export", "Export") == "Exporter",
+          "applications can extend the built-in catalog");
+    check(registerTranslations("de", {{"Save", "Speichern"}}, "Deutsch") && setLocale("de-DE") &&
+          tr("Save") == "Speichern" && tr("Missing") == "Missing", "additional languages keep English fallbacks");
+    check(setLocale("en"), "restore the default language for the remaining tests");
     check(near(snapValue(1.24, .5), 1) && near(snapValue(-1.24, .5), -1), "snapping is symmetric");
     auto range = zoomRange({0, 10}, 3, .5);
     check(near(range.min, 1.5) && near(range.max, 6.5), "range zoom keeps anchor");
@@ -249,6 +280,16 @@ int main() {
         commandPalette("Command lifecycle", commandOpen, commandState, commands);
         check(!ImGui::IsPopupOpen("Command lifecycle"), "host can close the command modal");
     });
+    setLocale("fr");
+    commandOpen = true;
+    frame([&] { commandPalette("Command language", commandOpen, commandState, commands); });
+    commandState.query = "Enregistrer";
+    frame([&] {
+        check(commandPalette("Command language", commandOpen, commandState, commands) == 1,
+              "French command search executes the original command ID");
+    }, -100, -100, -1, false, false, 0, ImGuiKey_Enter);
+    check(commands[0].label == "Save document", "command translation keeps the host model intact");
+    setLocale("en");
 #endif
 #if defined(CYUI_HAS_DIAGNOSTICS)
     LogBuffer logBuffer(3, 1024);

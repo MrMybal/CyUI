@@ -7,6 +7,7 @@
 
 #include "cyui/Export.h"
 #include <imgui.h>
+#include <array>
 
 namespace cyui {
 class WebBackend;
@@ -16,6 +17,8 @@ struct GalleryResources {
     int width = 0, height = 0;        // its size in texels (256 when 0)
     WebBackend *web = nullptr;        // Web page: a live backend (a preview when null)
     bool previewCommands = false;     // Commands page: keep the palette open (captures)
+    std::array<ImTextureID, 4> imagePreviews{}; // Optional host textures for asset/node examples.
+    bool previewImageGraph = false;   // Nodes page: show the image-processing example (captures).
 };
 
 // selectTab >= 0 brings that page to the front once (again when the value

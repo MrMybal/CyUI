@@ -1,13 +1,18 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><title>CyUI Web bridge</title>
+<html lang="en"><meta charset="utf-8"><title data-cyui-i18n="CyUI Web bridge">CyUI Web bridge</title>
 <link rel="stylesheet" href="../../web/cyui-web.css">
-<body><main style="padding:24px"><h2>CyUI Web panel</h2><p>HTML and compiled TypeScript can share the native application theme.</p>
-<label>Message <input id="message" value="Hello from the web panel"></label> <button id="send">Send to host</button><pre id="status">Connecting…</pre></main>
+<body><main style="padding:24px"><h2 data-cyui-i18n="CyUI Web panel">CyUI Web panel</h2><p data-cyui-i18n="HTML and compiled TypeScript can share the native application theme.">HTML and compiled TypeScript can share the native application theme.</p>
+<label><span data-cyui-i18n="Message">Message</span> <input id="message" value="Hello from the web panel"></label> <button id="send" data-cyui-i18n="Send to host">Send to host</button><pre id="status" data-cyui-i18n="Connecting…">Connecting…</pre></main>
 <script type="module">
 import {createCyUIBridge} from '../../web/cyui-web.js';
 const bridge = createCyUIBridge();
+bridge.on('locale', () => {
+  const rect = document.querySelector('#message').getBoundingClientRect();
+  bridge.send('test.locale', {locale: bridge.i18n.locale, language: document.documentElement.lang,
+    heading: document.querySelector('h2').textContent, input: {x: rect.x+rect.width/2, y: rect.y+rect.height/2}});
+});
 window.addEventListener('pointerdown', event => bridge.send('test.pointer.any', {x: event.clientX, y: event.clientY, target: event.target.tagName}));
-bridge.on('host.reply', value => { if(value.focusInput) document.querySelector('#message').focus(); document.querySelector('#status').textContent = JSON.stringify(value, null, 2); bridge.send('test.reply', {received: true}); });
+bridge.on('host.reply', value => { if(value.focusInput) document.querySelector('#message').focus(); const status = document.querySelector('#status'); status.removeAttribute('data-cyui-i18n'); status.textContent = JSON.stringify(value, null, 2); bridge.send('test.reply', {received: true}); });
 document.querySelector('#send').onclick = () => bridge.send('chat.message', {text: document.querySelector('#message').value});
 const input = document.querySelector('#message');
 input.addEventListener('focus', () => bridge.send('test.focus', {focused: true}));
