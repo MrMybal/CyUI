@@ -238,15 +238,15 @@ struct SCyUIPanel::FState {
                 // created sRGB, to our reading of the engine source; unverified in-engine).
                 Object->SRGB = true;
                 Object->UpdateResource();
-                auto Atlas = MakeShared<FAtlas>();
-                Atlas->Texture.Reset(Object);
-                Atlas->Brush.SetResourceObject(Object);
-                Atlas->Brush.ImageSize = FVector2D(Texture->Width, Texture->Height);
-                Atlas->Brush.DrawAs = ESlateBrushDrawType::Image;
+                auto NewAtlas = MakeShared<FAtlas>();
+                NewAtlas->Texture.Reset(Object);
+                NewAtlas->Brush.SetResourceObject(Object);
+                NewAtlas->Brush.ImageSize = FVector2D(Texture->Width, Texture->Height);
+                NewAtlas->Brush.DrawAs = ESlateBrushDrawType::Image;
                 Upload(Object, Texture, 0, 0, Texture->Width, Texture->Height);
                 const uint64 Id = NextAtlas++;
                 ReleaseAtlas(Texture->GetTexID());
-                Atlases.Add(Id, Atlas);
+                Atlases.Add(Id, NewAtlas);
                 Texture->SetTexID(Id);
                 Texture->SetStatus(ImTextureStatus_OK);
             }

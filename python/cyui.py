@@ -1115,7 +1115,7 @@ def callout(tone, text):
     pad = dp2(10.0, 7.0)
     bar = dp(3.0)
     wrap = max(dp(40.0), width - pad.x * 2.0 - bar)
-    size = imgui.calc_text_size(text, False, wrap)
+    size = imgui.calc_text_size(text, wrap_width=wrap)
     origin = imgui.get_cursor_screen_pos()
     maximum = ImVec2(origin.x + width, origin.y + size.y + pad.y * 2.0)
     draw = imgui.get_window_draw_list()
@@ -1124,7 +1124,7 @@ def callout(tone, text):
     draw.add_rect_filled(origin, ImVec2(origin.x + bar, maximum.y), colour, rounding,
                          _ROUND_LEFT)
     draw.add_text(imgui.get_font(), imgui.get_font_size(), ImVec2(origin.x + bar + pad.x, origin.y + pad.y),
-                  p.text, text, wrap)
+                  p.text, text, wrap_width=wrap)
     imgui.dummy(ImVec2(width, maximum.y - origin.y))
 
 

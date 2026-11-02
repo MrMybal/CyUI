@@ -515,8 +515,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         }
         if (done)
             break;
-        // Minimised or screen locked: wait instead of spinning a core.
-        if (gOccluded && gSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
+        // Hidden capture windows still need to render their requested frames.
+        // Otherwise, minimised or locked interactive windows can wait.
+        if (capturePath.empty() && gOccluded && gSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
             ::Sleep(10);
             continue;
         }
