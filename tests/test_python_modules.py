@@ -30,9 +30,35 @@ from cyui_modules.commands import Command, CommandState, rank_commands, command_
 from cyui_modules.diagnostics import LogBuffer, LogState, Diagnostic, log_view, diagnostic_list
 from cyui_modules.documents import Document, DocumentState, TranscriptState, TranscriptMessage, document_view, transcript
 from cyui_modules.web import WebPolicy, web_origin, web_panel, theme_message
+from cyui_modules.filters import TextFilter, FilterMenuItem, filter_menu_matches, fold_filter_text
 
 
 class Models(unittest.TestCase):
+    def test_filter_words_translations_and_nested_menus(self):
+        from cyui_modules.locale import locale_scope
+        first, second = TextFilter(), TextFilter('other')
+        self.assertFalse(first.active())
+        self.assertEqual(fold_filter_text('ÉTÉ Œuvre Straße e\u0301 音楽'), 'ete oeuvre strasse e 音楽')
+        first.query = 'private-id'
+        self.assertFalse(first.matches('Visible###private-id'))
+        with locale_scope('fr'):
+            first.query = 'rugosite'
+            self.assertTrue(first.matches('Roughness'))
+            first.query = 'roughness'
+            self.assertTrue(first.matches('Roughness'))
+            menu = [FilterMenuItem(label='File###private-id', children=[FilterMenuItem(label='Export', children=[
+                FilterMenuItem(0x100000001, 'Export PNG'), FilterMenuItem(2, 'Export HDR', enabled=False)])])]
+            first.query = 'fichier png'
+            matches = filter_menu_matches(menu, first)
+            self.assertEqual([(m.id, m.breadcrumb) for m in matches], [(0x100000001, 'Fichier / Exporter')])
+            first.query = 'export'
+            self.assertEqual([m.enabled for m in filter_menu_matches(menu, first)], [True, False])
+            menu[0].enabled = False
+            self.assertFalse(filter_menu_matches(menu, first)[0].enabled)
+            first.query = 'private-id'
+            self.assertEqual(filter_menu_matches(menu, first), [])
+        self.assertEqual(second.query, 'other')
+
     def test_navigation_and_sampling(self):
         self.assertEqual(snap(-1.25, .5), -1.5)
         self.assertEqual(zoom_range(Range(0, 10), 3, .5), Range(1.5, 6.5))
@@ -355,8 +381,58 @@ class Frames(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('cyui_example', path)
         example = importlib.util.module_from_spec(spec); spec.loader.exec_module(example)
         gallery = example.ModuleGallery()
-        for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web'):
+        for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
             self.frame(lambda: gallery.draw_page(name))
+
+    def test_filter_text_entry_and_section_preferences(self):
+        state = TextFilter()
+        draw = lambda: c.filter_box('filter', state)
+        self.frame(draw); state.focus(); self.frame(draw); self.frame(draw)
+        pasted = 'a'*3000+' été'
+        i.get_io().add_input_characters_utf8(pasted)
+        self.frame(draw)
+        self.assertEqual(state.query, pasted)
+        self.frame(draw, escape=True)
+        self.assertEqual(state.query, '')
+        self.frame(draw)
+        i.internal.clear_active_id()
+        state.query = 'roughness'
+        def reveal():
+            key = i.get_id(c.tr_label('Surface'))
+            i.get_state_storage().set_int(key, 0)
+            self.assertTrue(c.begin_filtered_section('Surface', state, True, False))
+            c.end_section()
+            self.assertEqual(i.get_state_storage().get_int(key, -1), 0)
+        self.frame(reveal)
+        state.clear()
+        self.frame(lambda: self.assertFalse(c.begin_filtered_section('Surface', state, True, False)))
+
+    def test_filtered_inspector_cancels_hidden_edits(self):
+        state = InspectorState(drafts={2: .8}, active={2}, before={2: .2})
+        fields = [Property(1, 'Name', 'Host value'), Property(2, 'Roughness', .8)]
+        query = TextFilter('name')
+        events = self.frame(lambda: inspector('filtered', state, fields, filter_state=query))
+        self.assertEqual([(key, edit.phase, edit.value) for key, edit in events], [(2, 'cancel', .2)])
+        self.assertFalse(state.active)
+        self.assertEqual(fields[1].value, .8)
+
+    def test_filtered_menu_executes_only_enabled_host_actions(self):
+        query = TextFilter('png')
+        entries = [FilterMenuItem(label='Export', children=[
+            FilterMenuItem(0x100000001, 'Export PNG'), FilterMenuItem(2, 'Export HDR', enabled=False)])]
+        position = [0, 0]
+        def draw():
+            request = c.filter_menu('filtered-menu', query, entries, reset_on_open=False, focus_on_open=False)
+            low, high = i.get_item_rect_min(), i.get_item_rect_max()
+            position[:] = [(low.x+high.x)/2, (low.y+high.y)/2]
+            return request
+        self.frame(draw); self.frame(draw)
+        self.frame(draw, position, (0, True))
+        self.assertEqual(self.frame(draw, position, (0, False)), 0x100000001)
+        query.query = 'hdr'
+        self.frame(draw); self.frame(draw)
+        self.frame(draw, position, (0, True))
+        self.assertEqual(self.frame(draw, position, (0, False)), 0)
 
     def test_curve_gesture_and_revision_cancel(self):
         state = CurveState(); state.view.x.view = Range(0, 10); state.view.y.view = Range(0, 1)

@@ -74,6 +74,15 @@ or side-by-side comparisons; repository access stays in the host application.
 
 ![Timeline: clip lanes, markers, a playhead and snapping](docs/screenshots/timeline.png)
 
+### Find actions and properties quickly
+
+Core includes optional quick filters for panels, property sections and nested
+menus. Search English or translated captions, ignore Latin accents, and reveal
+matching submenu actions with their breadcrumbs. Each view keeps its own query.
+See [filtering APIs and examples](docs/FILTERING.md).
+
+![Quick filters in a properties panel and a nested export menu](docs/screenshots/filtering.png)
+
 ## English-first multilingual interfaces
 
 Core includes English and French catalogs, live language switching and an API
@@ -91,7 +100,7 @@ adding a code editor, audio engine or browser.
 
 | Target | What it provides |
 | --- | --- |
-| `CyUI::Core` | Themes, localization, fonts, icons, buttons, fields, cards, tables, layout and notifications |
+| `CyUI::Core` | Themes, localization, quick filters, fonts, icons, buttons, fields, cards, tables, layout and notifications |
 | `CyUI::Audio` | Knobs, faders and peak/RMS meters |
 | `CyUI::Canvas` | Grid, clipping, double-precision coordinates, pan and zoom |
 | `CyUI::Plots` | Linear/log plots, lines, points, steps, bars, histograms and heatmaps |

@@ -389,6 +389,22 @@ int main() {
     }
 #endif
 #if defined(CYUI_HAS_INSPECTOR)
+    {
+        Property name; name.id = 1; name.label = "Name"; name.value = std::string("Host value");
+        Property hidden; hidden.id = 2; hidden.label = "Roughness"; hidden.value = .8;
+        std::vector<Property> fields{name, hidden};
+        InspectorState state;
+        state.drafts[2] = {.8, .2, true};
+        TextFilter filter; filter.query = "name";
+        frame([&] {
+            const auto events = inspector("Filtered properties", state, fields, 0, {}, {&filter});
+            check(events.size() == 1 && events[0].id == 2 && events[0].edit.phase == EditPhase::cancel &&
+                  std::get<double>(events[0].edit.value) == .2, "hiding an edited property cancels its preview");
+        });
+        check(!state.drafts[2].active && std::get<double>(fields[1].value) == .8, "filtering preserves the host property value");
+        filter.query = "host value";
+        check(!propertyMatches(filter, name), "property values are not indexed as interface labels");
+    }
     InspectorState inspectState;
     Property property;
     property.id = 1;

@@ -22,6 +22,7 @@ PREVIEWS = (
     ('mid-grey', 13, True, 'content-browser.png'),
     ('navy', 12, True, 'details-inspector.png'),
     ('navy', 12, True, 'localization-fr.png', '--locale', 'fr'),
+    ('mid-grey', 21, True, 'filtering.png'),
     ('navy', 10, True, 'code-editor.png'),
     ('navy', 11, True, 'code-diff.png'),
     ('mid-grey', 5, True, 'plots.png'),

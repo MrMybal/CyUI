@@ -25,6 +25,7 @@
 #include <imgui.h>
 
 namespace cyui {
+class TextFilter;
 
 // A bar along the top of the main viewport, under the menu bar.
 // height 0: a frame plus metrics().toolbarHeight.
@@ -52,6 +53,9 @@ CYUI_API bool sidebarItem(const char* icon, const char* label, bool active, cons
 // A strip at the top of a panel: a title, an optional subtitle, and room on
 // the right for buttons (call ImGui::SameLine after, or alignRight).
 CYUI_API void panelHeader(const char* title, const char* subtitle = nullptr);
+// Optional quick filter below the panel heading. The host decides which rows
+// match with TextFilter::matches; stock ImGui calls are never intercepted.
+CYUI_API void panelHeader(const char* title, const char* subtitle, TextFilter* filter);
 
 // A toolbar row inside a window: raised ground, a line under it. Put
 // iconButton / toolbarSeparator / segmented... on one line inside.

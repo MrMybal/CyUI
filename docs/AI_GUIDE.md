@@ -54,7 +54,7 @@ target_link_libraries(app PRIVATE CyUI::Diff)
 ### Without CMake
 
 Add `include/` to the include path. Compile `src/Theme.cpp`, `src/Widgets.cpp`,
-`src/Layout.cpp` alongside the app's ImGui sources for Core. Add
+`src/Layout.cpp`, `src/Filter.cpp` alongside the app's ImGui sources for Core. Add
 `src/modules/Audio.cpp` for audio controls, and `src/Gallery.cpp` for the gallery.
 Define `CYUI_HAS_AUDIO=1` when compiling Gallery with audio examples.
 
@@ -330,6 +330,29 @@ The value controls share these interactions:
 - `textField(id, buf, size, hint, width)`
 - `combo(id, &i, items, n, width)`
 
+### Quick filtering (`Filter.h`, included in Core)
+
+Provide a quick filter in menus and panels where users need to find actions or
+properties. Keep a `TextFilter` in each view's state. `filterBox(id, state)` draws
+the query field; `panelHeader(title, subtitle, &state)` includes it in the heading.
+Use `state.matches(englishLabel, keywordsAndSectionPath)` before drawing a row.
+Search uses all words, ignoring ASCII/Latin case and accents, and checks both the
+English key and the current translation. Hidden ImGui IDs are excluded.
+
+`beginFilteredSection(label, state, hasMatchingChildren, defaultOpen)` reveals a
+matching section without changing its saved collapse preference; pair with
+`endSection()` when true. `filterMenu(id, state, entries)` draws a searchable menu
+inside an already open ImGui menu/popup. Its `FilterMenuItem` tree retains action
+IDs, disabled/checked states and shortcuts. Searching lists matching descendants
+with breadcrumbs. The host handles the returned action ID.
+
+`InspectorOptions{&state, sectionTitle}` enables filtering in `inspector()`;
+`propertyMatches(state, property, sectionTitle)` helps choose visible sections.
+Call Inspector for a section's full property model so hidden active edits can be
+cancelled; when omitting an entire panel, cancel its host previews explicitly.
+Read [FILTERING.md](FILTERING.md) for complete C++ and Python examples and limits.
+These helpers do not intercept raw ImGui calls or patch Dear ImGui.
+
 ### Containers
 
 - `beginCard(id, title, height, tone)` / `endCard()`. **Always** call
@@ -368,6 +391,7 @@ bar, status bar, sidebar, then dock space.
   `sidebarGroup(LABEL)` and `sidebarItem(icon, label, active, badge)`
 - `dockSpace(id, flags)` (docking branch)
 - `panelHeader(title, subtitle)`
+- `panelHeader(title, subtitle, &filter)` to add a quick filter
 - `beginToolbar(id)` / `endToolbar()`
 - `beginModal(title, &open, width)` / `endModal()`. Call `endModal` only
   when `beginModal` returned true. `modalButtons(confirm, cancel, danger)`
@@ -385,7 +409,7 @@ theme's style.
   density switcher. `selectTab` brings a page to the front once:
   - 0 text, 1 buttons, 2 controls, 3 containers
   - 4–19 the optional modules
-  - 20 layout (the application shell)
+  - 20 layout (the application shell), 21 filtering (menus and panels)
 - `showGallery(&open, selectTab, GalleryResources)`: the same, with host
   resources for the module pages: `texture`, `width` and `height` (Images,
   Viewport), `web` (a live Web backend) and `previewCommands`.
@@ -468,7 +492,7 @@ draw->AddRect(selMin, selMax, p.accent, 0, 0, cyui::dp(1.5f));
 - `cyui_demo.exe --capture out.bmp --theme navy --tab 2 [--comfortable]`
   renders 40 frames, writes the window to a BMP and quits. Use it to check a
   theme visually without a person at the screen. `--tab` takes a gallery
-  page, 0 to 20.
+  page, 0 to 21.
 - Add `--gallery-only` to show the gallery across the window instead of the
   full demo's docking layout. This also works interactively and does not change
   the library's rendering backend.

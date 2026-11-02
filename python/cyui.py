@@ -27,6 +27,7 @@ from types import SimpleNamespace
 
 from imgui_bundle import imgui
 from cyui_modules.locale import set_locale, locale, available_locales, register_translations, tr, tr_label, locale_scope
+from cyui_modules.filters import TextFilter, FilterMenuItem, filter_box, filter_menu, filter_menu_matches, begin_filtered_section, fold_filter_text
 
 ImVec2 = imgui.ImVec2
 # ImDrawFlags_RoundCornersLeft: imgui_bundle has named it both ways across releases.
@@ -1350,11 +1351,13 @@ def sidebar_item(glyph, label, active, badge_text=''):
     return clicked
 
 
-def panel_header(title, subtitle=''):
+def panel_header(title, subtitle='', filter_state=None):
     heading(title, 2)
     if subtitle:
         with scoped_font(None, 0.88):
             text_faint(subtitle)
+    if filter_state is not None:
+        filter_box('##panelFilter', filter_state)
 
 
 def begin_toolbar(identifier):

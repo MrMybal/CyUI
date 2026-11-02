@@ -13,8 +13,12 @@ in [LOCALIZATION.md](LOCALIZATION.md).
 
 ## Targets and dependencies
 
-`CyUI::Core` contains themes, fonts, icons, ordinary widgets, layout and
+`CyUI::Core` contains themes, localization, quick filters, fonts, icons, ordinary widgets, layout and
 notifications. Modules link Core automatically. The following targets are implemented:
+
+Menu/panel filtering is opt-in through Core's `TextFilter`, `filterBox`,
+`filterMenu` and the filtered panel header. Inspector accepts an optional filter
+without adding a dependency. See [FILTERING.md](FILTERING.md).
 
 | CMake target | Public header | Interface | Additional CyUI dependency |
 | --- | --- | --- | --- |
@@ -225,7 +229,7 @@ optional prebuilt host `--imgui-library` to avoid recompiling ImGui in each vari
 It builds, links and runs each module separately and checks the dependency closure.
 The feature tests include real ImGui frames and gestures, UTF-8/CRLF/tab round trips,
 revision cancellation, exact int64 properties, bounded concurrent logs and diff
-reconstruction properties. `tests/capture_gallery.py` covers tabs 0–19 across all
+reconstruction properties. `tests/capture_gallery.py` covers tabs 0–21 across all
 five themes and both densities with the Windows demo.
 
 GitHub Actions is configured for Windows, Linux and macOS native builds. A workflow

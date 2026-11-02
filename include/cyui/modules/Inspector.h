@@ -34,6 +34,14 @@ struct InspectorState {
     std::uint64_t revision = 0;
 };
 using PropertyValidator = std::function<std::string(ItemId, const PropertyValue &)>;
+struct InspectorOptions {
+    const TextFilter* filter = nullptr;
+    const char* filterContext = nullptr; // optional section/path, borrowed during the call
+};
+CYUI_API bool propertyMatches(const TextFilter&, const Property&, const char* context = nullptr);
 CYUI_API std::vector<PropertyEdit> inspector(const char *id, InspectorState &, ArrayView<Property>,
                                     std::uint64_t revision = 0, const PropertyValidator & = {});
+CYUI_API std::vector<PropertyEdit> inspector(const char *id, InspectorState &, ArrayView<Property>,
+                                    std::uint64_t revision, const PropertyValidator &,
+                                    const InspectorOptions&);
 } // namespace cyui

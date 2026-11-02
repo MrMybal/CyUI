@@ -31,7 +31,7 @@ class UnrealPackage(unittest.TestCase):
             self.assertNotIn('/*CYUI_MODULES*/', rules)
             sources = list((output/'Source/CyUI/Private').glob('CyUILibrary_*.cpp'))
             syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
-            self.assertEqual(len(sources), 9+len(syntax_units))
+            self.assertEqual(len(sources), 10+len(syntax_units))
             self.assertTrue((output/'ThirdParty/CyUI/third_party/code-syntax.lock.json').is_file())
             self.assertTrue((output/'ThirdParty/CyUI/third_party/lexilla/License.txt').is_file())
             for source in sources:
@@ -71,7 +71,7 @@ class UnrealPackage(unittest.TestCase):
             output.rename(relocated)
             bridges = list((relocated/'Private').glob('CyUILibrary_*.cpp'))
             syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
-            self.assertEqual(len(bridges), 9+len(syntax_units))
+            self.assertEqual(len(bridges), 10+len(syntax_units))
             self.assertFalse(list((relocated/'Library').rglob('*.cxx')))
             self.assertTrue((relocated/'Library/src/modules/code/CodeSyntax.inl').is_file())
             for bridge in bridges:

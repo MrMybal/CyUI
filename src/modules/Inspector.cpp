@@ -3,8 +3,17 @@
 #include <unordered_set>
 
 namespace cyui {
+bool propertyMatches(const TextFilter& filter, const Property& property, const char* context) {
+    if (!filter.active()) return true;
+    const std::string path = context ? context : "";
+    return filter.matches(property.label, path + " " + tr(path.c_str()) + " " + property.help + " " + tr(property.help.c_str()));
+}
+std::vector<PropertyEdit> inspector(const char* id, InspectorState& state, ArrayView<Property> properties,
+                                    std::uint64_t revision, const PropertyValidator& validate) {
+    return inspector(id, state, properties, revision, validate, {});
+}
 std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView<Property> properties,
-                                    std::uint64_t revision, const PropertyValidator &validate) {
+                                    std::uint64_t revision, const PropertyValidator &validate, const InspectorOptions& options) {
     std::vector<PropertyEdit> result;
     ScopedID scope(id);
     std::unordered_set<ItemId> present;
@@ -17,9 +26,25 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
     }
     if (!beginProperties("##properties"))
         return result;
+    std::size_t visible = 0;
     for (std::size_t i = 0; i < properties.count; ++i) {
         const auto &p = properties[i];
         present.insert(p.id);
+        if (options.filter && !propertyMatches(*options.filter, p, options.filterContext)) {
+            const auto it = s.drafts.find(p.id);
+            if (it != s.drafts.end() && it->second.active) {
+                ItemScope key(p.id);
+                if (ImGui::GetActiveID() == ImGui::GetID("##value")) ImGui::ClearActiveID();
+                auto& draft = it->second;
+                result.push_back({p.id, {EditPhase::cancel, draft.before}});
+                draft.value = draft.before;
+                draft.active = false;
+                draft.cancelled = true;
+                draft.error.clear();
+            }
+            continue;
+        }
+        ++visible;
         auto &draft = s.drafts[p.id];
         if (!draft.active) {
             draft.value = p.value;
@@ -110,6 +135,8 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
             textColoured(palette().error, tr("%s").c_str(), draft.error.c_str());
     }
     endProperties();
+    if (!visible && options.filter && options.filter->active())
+        textDim("%s", tr("No matching properties").c_str());
     for (auto it = s.drafts.begin(); it != s.drafts.end();)
         if (!present.count(it->first))
             it = s.drafts.erase(it);

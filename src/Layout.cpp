@@ -1,5 +1,6 @@
 #include "cyui/Layout.h"
 #include "cyui/Locale.h"
+#include "cyui/Filter.h"
 
 #include "cyui/Icons.h"
 
@@ -178,6 +179,12 @@ void panelHeader(const char* title, const char* subtitle)
         ScopedFont font(nullptr, 0.88f);
         textFaint("%s", subtitle);
     }
+}
+
+void panelHeader(const char* title, const char* subtitle, TextFilter* filter)
+{
+    panelHeader(title, subtitle);
+    if (filter) filterBox("##panelFilter", *filter);
 }
 
 bool beginToolbar(const char* id)

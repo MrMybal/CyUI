@@ -35,7 +35,7 @@ def capture(executable, folder, theme, density, tab, force=False, locale='en', g
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--exe', type=Path, default=root/'build/cyui_demo.exe')
-    parser.add_argument('--tabs', nargs='+', type=int, default=list(range(21)))  # 0-19 plus the Layout page (20)
+    parser.add_argument('--tabs', nargs='+', type=int, default=list(range(22)))  # modules, Layout (20), Filtering (21)
     parser.add_argument('--themes', nargs='+', default=themes)
     parser.add_argument('--densities', nargs='+', default=['compact', 'comfortable'])
     parser.add_argument('--force', action='store_true', help='Refresh existing captures')

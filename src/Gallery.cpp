@@ -432,6 +432,68 @@ void layoutPage()
 #endif
 }
 
+void filteringPage()
+{
+    sectionTitle(tr("Searchable menus and panels").c_str());
+    textDim("%s", tr("Try a property, section or menu action. Words can match English or the selected language.").c_str());
+    static TextFilter panelFilter = [] { TextFilter value; value.query = "surface"; return value; }();
+    static TextFilter menuFilter = [] { TextFilter value; value.query = "export"; return value; }();
+    static TextFilter popupFilter;
+    static const std::vector<FilterMenuItem> actions{
+        {0, "File", {}, {}, true, false, {
+            {1, "New", "Ctrl+N"}, {2, "Open...", "Ctrl+O"}, {3, "Save", "Ctrl+S"},
+            {0, "Export", {}, {}, true, false, {
+                {11, "Export PNG", {}, "image texture"}, {12, "Export JPEG", {}, "image photograph"},
+                {13, "Export HDR", {}, "image high dynamic range", false}}}}},
+        {}, {21, "Preferences", {}, "settings configuration"}, {22, "Help", "F1"}};
+    if (ImGui::BeginTable("##filterExamples", 2, ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextColumn();
+        if (beginCard("##filterPanel", nullptr, 420)) {
+            panelHeader(tr("Panel filter").c_str(), nullptr, &panelFilter);
+            static char name[80] = "Landscape material";
+            static bool enabled = true, shadows = true;
+            static float roughness = .38f, metallic = .12f, opacity = 1;
+            const auto section = [&](const char* title, std::initializer_list<const char*> labels, auto draw) {
+                const std::string context = std::string(title) + " " + tr(title);
+                const auto visible = [&](const char* label) { return panelFilter.matches(label, context); };
+                const bool any = std::any_of(labels.begin(), labels.end(), visible);
+                if (beginFilteredSection(title, panelFilter, any)) {
+                    if (beginProperties(title)) { draw(visible); endProperties(); }
+                    endSection();
+                }
+            };
+            section("Identity", {"Name", "Enabled"}, [&](auto visible) {
+                if (visible("Name")) { property(tr("Name").c_str()); textField("##name", name, sizeof(name)); }
+                if (visible("Enabled")) { property(tr("Enabled").c_str()); toggleSwitch("##enabled", &enabled); }
+            });
+            section("Surface", {"Roughness", "Metallic", "Opacity"}, [&](auto visible) {
+                if (visible("Roughness")) { property(tr("Roughness").c_str()); sliderBar("##roughness", &roughness, 0, 1, "%.2f", -1); }
+                if (visible("Metallic")) { property(tr("Metallic").c_str()); sliderBar("##metallic", &metallic, 0, 1, "%.2f", -1); }
+                if (visible("Opacity")) { property(tr("Opacity").c_str()); sliderBar("##opacity", &opacity, 0, 1, "%.2f", -1); }
+            });
+            section("Rendering", {"Cast shadows"}, [&](auto visible) {
+                if (visible("Cast shadows")) { property(tr("Cast shadows").c_str()); toggleSwitch("##shadows", &shadows); }
+            });
+            space();
+            textDim("%s", tr("Clear the query to restore every section.").c_str());
+        }
+        endCard();
+        ImGui::TableNextColumn();
+        if (beginCard("##filterMenu", tr("Menu filter").c_str(), 420)) {
+            const auto action = filterMenu("##actions", menuFilter, actions, {300, false, false});
+            if (action) notify(tr("Menu action requested").c_str(), Tone::info);
+            space();
+            if (button(trLabel("Open searchable menu").c_str())) ImGui::OpenPopup("##searchableMenu");
+            if (ImGui::BeginPopup("##searchableMenu")) {
+                if (filterMenu("##popup", popupFilter, actions)) notify(tr("Menu action requested").c_str(), Tone::info);
+                ImGui::EndPopup();
+            }
+        }
+        endCard();
+        ImGui::EndTable();
+    }
+}
+
 #if defined(CYUI_HAS_PLOTS)
 void plotsPage()
 {
@@ -750,9 +812,17 @@ void inspectorPage(const GalleryResources& resources)
     textDim(tr("Example editor object. The application owns the asset, preview renderer and Undo history.").c_str());
     ImGui::PopTextWrapPos();
     ImGui::TableNextColumn();
+    static TextFilter filter;
+    FilterOptions filtering;
+    filtering.hint = "Filter properties...";
+    if (filterBox("##detailsFilter", filter, filtering))
+        for (auto& state : states) state.drafts.clear(); // example previews are not applied to the model
+    bool anyGroup = false;
     const auto group = [&](const char* title, const char* id, InspectorState& state, std::vector<Property>& fields) {
-        if (beginSection(trLabel(title).c_str())) {
-            for (const auto& change : inspector(id, state, fields))
+        const bool any = std::any_of(fields.begin(), fields.end(), [&](const auto& field) { return propertyMatches(filter, field, title); });
+        anyGroup |= any;
+        if (beginFilteredSection(title, filter, any)) {
+            for (const auto& change : inspector(id, state, fields, 0, {}, {&filter, title}))
                 if (change.edit.committed())
                     for (auto& field : fields)
                         if (field.id == change.id) field.value = change.edit.value;
@@ -763,6 +833,7 @@ void inspectorPage(const GalleryResources& resources)
     group("Surface", "##surface", states[1], surface);
     group("Texture sampling", "##sampling", states[2], sampling);
     group("Rendering", "##rendering", states[3], rendering);
+    if (!anyGroup) textDim("%s", tr("No matching properties").c_str());
     ImGui::EndTable();
 }
 #endif
@@ -1029,6 +1100,10 @@ void showGallery(bool* open, const int selectTab,const GalleryResources& resourc
         moduleGallery(selected,resources);
         if (ImGui::BeginTabItem(trLabel("Layout").c_str(), nullptr, selected == 20 ? ImGuiTabItemFlags_SetSelected : 0)) {
             layoutPage();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(trLabel("Filtering").c_str(), nullptr, selected == 21 ? ImGuiTabItemFlags_SetSelected : 0)) {
+            filteringPage();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

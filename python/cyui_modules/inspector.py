@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from copy import deepcopy
 from .common import Edit, ui, item_id
+from .locale import tr
 
 
 @dataclass
@@ -27,7 +28,11 @@ class InspectorState:
     revision: int = 0
 
 
-def inspector(identifier, state, properties, revision=0, validate=None):
+def property_matches(filter_state, prop, context=''):
+    return filter_state.matches(prop.label, context+' '+tr(context)+' '+prop.help+' '+tr(prop.help))
+
+
+def inspector(identifier, state, properties, revision=0, validate=None, filter_state=None, filter_context=''):
     i, c = ui()
     events = []
     if state.revision != revision:
@@ -43,8 +48,21 @@ def inspector(identifier, state, properties, revision=0, validate=None):
         state.errors.pop(key, None)
         state.active.discard(key)
     i.push_id(identifier)
+    visible = 0
     for prop in properties:
         key = prop.id
+        if filter_state is not None and not property_matches(filter_state, prop, filter_context):
+            if key in state.active:
+                i.push_id(item_id(key))
+                if i.internal.get_active_id() == i.get_id('##value'):
+                    i.internal.clear_active_id()
+                i.pop_id()
+                state.drafts[key] = deepcopy(state.before[key])
+                state.active.discard(key)
+                state.errors.pop(key, None)
+                events.append((key, Edit('cancel', deepcopy(state.before[key]))))
+            continue
+        visible += 1
         if key not in state.active:
             state.drafts[key] = deepcopy(prop.value)
         value = state.drafts[key]
@@ -124,4 +142,6 @@ def inspector(identifier, state, properties, revision=0, validate=None):
             c.text_coloured(c.palette().error, state.errors[key])
         i.pop_id()
     i.pop_id()
+    if not visible and filter_state is not None and filter_state.active():
+        c.text_dim(c.tr('No matching properties'))
     return events

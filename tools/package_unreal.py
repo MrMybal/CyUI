@@ -87,7 +87,7 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     shutil.copytree(ROOT/'integrations/unreal/CyUI', output)
     library = output/'ThirdParty/CyUI'
     shutil.copytree(ROOT/'include', library/'include')
-    sources = ['src/Theme.cpp', 'src/Widgets.cpp', 'src/Layout.cpp']
+    sources = ['src/Theme.cpp', 'src/Widgets.cpp', 'src/Layout.cpp', 'src/Filter.cpp']
     sources += [f'src/modules/{name}.cpp' for name in selected]
     if gallery:
         sources.append('src/Gallery.cpp')
@@ -121,12 +121,15 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     private = output/'Source/CyUI/Private'
     for index, source in enumerate(sources):
         vendor = source.startswith('third_party/') or source == 'src/modules/CodeEditor.cpp'
+        # MSVC may skip optimization of the generated language catalogue's large
+        # initializer. UBT treats C4883 as an error; scope it to this generated unit.
+        warnings = '4668 4800' if vendor else '4883' if source == 'src/modules/code/LanguageData.cpp' else ''
         (private/f'CyUILibrary_{index:02}_{Path(source).stem}.cpp').write_text(
             '// Generated source bridge; the implementation remains in ThirdParty/CyUI.\n'
             '#include "CoreTypes.h"\n'
-            + ('#if defined(_MSC_VER)\n#pragma warning(push)\n#pragma warning(disable: 4668 4800)\n#endif\n' if vendor else '')
+            + (f'#if defined(_MSC_VER)\n#pragma warning(push)\n#pragma warning(disable: {warnings})\n#endif\n' if warnings else '')
             + f'#include "../../../ThirdParty/CyUI/{source}"\n'
-            + ('#if defined(_MSC_VER)\n#pragma warning(pop)\n#endif\n' if vendor else ''), encoding='utf8')
+            + ('#if defined(_MSC_VER)\n#pragma warning(pop)\n#endif\n' if warnings else ''), encoding='utf8')
     rules = output/'Source/CyUI/CyUI.Build.cs'
     features = selected + (['Gallery'] if gallery else [])
     rules.write_text(rules.read_text(encoding='utf8').replace('/*CYUI_MODULES*/', ', '.join('"'+s.upper()+'"' for s in features)), encoding='utf8')

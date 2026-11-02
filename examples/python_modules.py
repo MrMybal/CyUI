@@ -50,6 +50,10 @@ class ModuleGallery:
         self.diff.set_texts('float gain = 0.5;\n', 'float gain = 0.8;\nfloat pan = 0;\n', 'cpp')
         self.properties = [Property(1, 'Enabled', True), Property(2, 'Exact integer', 9007199254740993), Property(3, 'Gain', .5, minimum=0, maximum=1), Property(4, 'Name', 'Example'), Property(5, 'Mode', 'Preview', choices=('Preview', 'Final'))]
         self.inspector, self.assets = InspectorState(), AssetState()
+        from cyui_modules.filters import TextFilter, FilterMenuItem
+        self.property_filter, self.menu_filter = TextFilter(), TextFilter('export')
+        self.menu_items = [FilterMenuItem(label='File', children=[FilterMenuItem(1, 'Save', 'Ctrl+S'),
+                           FilterMenuItem(label='Export', children=[FilterMenuItem(2, 'Export PNG'), FilterMenuItem(3, 'Export HDR', enabled=False)])])]
         self.asset_items = [Asset(1, 'Images', folder=True), Asset(2, 'Sounds', folder=True), Asset(3, 'Landscape', 1, 'Image')]
         self.image_state, self.gradient_state, self.stops = ImageState(), GradientState(), []
         self.viewport, self.transform_state = ViewportState(), TransformState()
@@ -101,7 +105,8 @@ class ModuleGallery:
             self.editor.draw('editor', (0, 300))
         elif name == 'Diff': diff_viewer('diff', self.diff_state, self.diff)
         elif name == 'Inspector':
-            for key, edit in inspector('inspector', self.inspector, self.properties):
+            c.filter_box('##propertiesFilter', self.property_filter, c.tr('Filter properties...'))
+            for key, edit in inspector('inspector', self.inspector, self.properties, filter_state=self.property_filter):
                 if edit.committed:
                     next(p for p in self.properties if p.id == key).value = edit.value
         elif name == 'Assets': asset_browser('assets', self.assets, self.asset_items)
@@ -131,6 +136,9 @@ class ModuleGallery:
                 for event in web_panel('web', self.web):
                     if event['kind'] == 'navigated': self.web.post_json(theme_message())
             else: c.callout('info', c.tr('Supply a CEFView; the host owns its runtime and texture upload.'))
+        elif name == 'Filtering':
+            if c.filter_menu('##menuExample', self.menu_filter, self.menu_items, reset_on_open=False, focus_on_open=False):
+                c.notify(c.tr('Menu action requested'))
 
     def draw(self):
         from imgui_bundle import imgui as i
@@ -146,7 +154,7 @@ class ModuleGallery:
         changed, selected = i.combo(c.tr_label('Language'), [code for code, _ in languages].index(c.locale()), [name for _, name in languages])
         if changed: c.set_locale(languages[selected][0])
         if i.begin_tab_bar('##modules', i.TabBarFlags_.fitting_policy_scroll):
-            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web'):
+            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
                 shown, _ = i.begin_tab_item(c.tr_label(name))
                 if shown:
                     self.draw_page(name)
