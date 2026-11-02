@@ -229,7 +229,22 @@ See the [Python gallery](examples/python_modules.py) and [module guide](docs/MOD
   It is an Editor integration, not a runtime/UMG backend. See
   [Unreal integration and supported configurations](docs/UNREAL.md).
 
-## Build the demo
+## Try the demo
+
+Download **CyUI-Demo-1.2.0-windows-x64.zip** from
+[GitHub Releases](https://github.com/MrMybal/CyUI/releases/latest), extract it,
+and run `cyui_demo.exe`. No build tools, Python or separate Visual C++ runtime
+installation are needed. `Launch-French.cmd` opens the same application in French;
+English is the default. Themes and language can also be changed inside the demo.
+
+The downloadable application uses **Windows x64 and DirectX 11**. Linux and macOS
+are library targets; this release does not include demo binaries for those systems.
+It includes the native widget/module gallery and synthetic image previews. The
+Web page is a preview: interactive browsing requires a separate CEF-enabled build
+and its runtime. Unreal Editor integration is distributed as source, separately
+from this standalone application.
+
+### Build the demo
 
 On Windows, with the Visual Studio 2022 C++ tools:
 
@@ -240,6 +255,11 @@ build\cyui_demo.exe
 
 The demo builds the bundled Dear ImGui and all ordinary modules. Its gallery
 contains interactive examples, a theme selector and a theme editor.
+
+To rebuild and package the portable Windows demo (including licenses and SHA-256
+checksums), run `python tools/package_demo.py`. This always recompiles the demo
+and checks the extracted application in every theme and both built-in languages.
+The ZIP and its `.sha256` file are written to `build/releases/`.
 
 ```bat
 build\cyui_demo.exe --capture out.bmp --theme violet --tab 7 --gallery-only
