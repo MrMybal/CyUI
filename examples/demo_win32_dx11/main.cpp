@@ -1,0 +1,478 @@
+// CyUI demo: a complete application shell (menu bar, top bar, sidebar,
+// status bar, dock space, panels) with the CyUI gallery and theme editor.
+// Win32 + Direct3D 11, from Dear ImGui's own example.
+
+#include <cyui/CyUI.h>
+
+#include <imgui.h>
+#include <imgui_impl_dx11.h>
+#include <imgui_impl_win32.h>
+#include <imgui_internal.h>
+
+#include <d3d11.h>
+#include <tchar.h>
+#include <windows.h>
+
+#include <shellapi.h>
+
+#include <cmath>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+namespace {
+
+ID3D11Device* gDevice {};
+ID3D11DeviceContext* gContext {};
+IDXGISwapChain* gSwapChain {};
+ID3D11RenderTargetView* gTarget {};
+UINT gResizeWidth {}, gResizeHeight {};
+
+void createTarget()
+{
+    ID3D11Texture2D* back {};
+    gSwapChain->GetBuffer(0, IID_PPV_ARGS(&back));
+    gDevice->CreateRenderTargetView(back, nullptr, &gTarget);
+    back->Release();
+}
+
+void releaseTarget()
+{
+    if (gTarget != nullptr) {
+        gTarget->Release();
+        gTarget = nullptr;
+    }
+}
+
+bool createDevice(HWND hwnd)
+{
+    DXGI_SWAP_CHAIN_DESC sd {};
+    sd.BufferCount = 2;
+    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.RefreshRate.Numerator = 60;
+    sd.BufferDesc.RefreshRate.Denominator = 1;
+    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.OutputWindow = hwnd;
+    sd.SampleDesc.Count = 1;
+    sd.Windowed = TRUE;
+    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    const D3D_FEATURE_LEVEL levels[] { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
+    D3D_FEATURE_LEVEL level {};
+    auto result = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, levels, 2, D3D11_SDK_VERSION, &sd,
+                                                &gSwapChain, &gDevice, &level, &gContext);
+    if (result == DXGI_ERROR_UNSUPPORTED)
+        result = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, levels, 2, D3D11_SDK_VERSION, &sd,
+                                               &gSwapChain, &gDevice, &level, &gContext);
+    if (result != S_OK)
+        return false;
+    createTarget();
+    return true;
+}
+
+void releaseDevice()
+{
+    releaseTarget();
+    if (gSwapChain != nullptr)
+        gSwapChain->Release();
+    if (gContext != nullptr)
+        gContext->Release();
+    if (gDevice != nullptr)
+        gDevice->Release();
+}
+
+// Writes the back buffer to a 32-bit BMP (the --capture option, for checks).
+bool captureBackBuffer(const wchar_t* path)
+{
+    ID3D11Texture2D* back {};
+    if (FAILED(gSwapChain->GetBuffer(0, IID_PPV_ARGS(&back))))
+        return false;
+    D3D11_TEXTURE2D_DESC desc {};
+    back->GetDesc(&desc);
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    desc.MiscFlags = 0;
+    ID3D11Texture2D* staging {};
+    if (FAILED(gDevice->CreateTexture2D(&desc, nullptr, &staging))) {
+        back->Release();
+        return false;
+    }
+    gContext->CopyResource(staging, back);
+    back->Release();
+    D3D11_MAPPED_SUBRESOURCE mapped {};
+    if (FAILED(gContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped))) {
+        staging->Release();
+        return false;
+    }
+    const auto width = static_cast<int>(desc.Width);
+    const auto height = static_cast<int>(desc.Height);
+    std::vector<unsigned char> pixels(static_cast<std::size_t>(width) * height * 4);
+    for (auto y = 0; y < height; ++y) {
+        const auto* row = static_cast<const unsigned char*>(mapped.pData) + static_cast<std::size_t>(y) * mapped.RowPitch;
+        for (auto x = 0; x < width; ++x) {
+            auto* out = &pixels[(static_cast<std::size_t>(y) * width + x) * 4];
+            out[0] = row[x * 4 + 2];
+            out[1] = row[x * 4 + 1];
+            out[2] = row[x * 4 + 0];
+            out[3] = 255;
+        }
+    }
+    gContext->Unmap(staging, 0);
+    staging->Release();
+    BITMAPFILEHEADER file {};
+    BITMAPINFOHEADER info {};
+    info.biSize = sizeof(info);
+    info.biWidth = width;
+    info.biHeight = -height;
+    info.biPlanes = 1;
+    info.biBitCount = 32;
+    info.biCompression = BI_RGB;
+    file.bfType = 0x4d42;
+    file.bfOffBits = sizeof(file) + sizeof(info);
+    file.bfSize = file.bfOffBits + static_cast<DWORD>(pixels.size());
+    FILE* out {};
+    if (_wfopen_s(&out, path, L"wb") != 0 || out == nullptr)
+        return false;
+    std::fwrite(&file, sizeof(file), 1, out);
+    std::fwrite(&info, sizeof(info), 1, out);
+    std::fwrite(pixels.data(), 1, pixels.size(), out);
+    std::fclose(out);
+    return true;
+}
+
+LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam))
+        return true;
+    switch (msg) {
+    case WM_SIZE:
+        if (wParam != SIZE_MINIMIZED) {
+            gResizeWidth = LOWORD(lParam);
+            gResizeHeight = HIWORD(lParam);
+        }
+        return 0;
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xfff0) == SC_KEYMENU)
+            return 0;
+        break;
+    case WM_DESTROY:
+        ::PostQuitMessage(0);
+        return 0;
+    default:
+        break;
+    }
+    return ::DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+// ---- The application's interface ---------------------------------------------
+
+struct App {
+    int page = 0;
+    int galleryTab = -1;
+    bool gallery = true;
+    bool layoutChecked = false;
+    bool themeEditor = false;
+    bool imguiDemo = false;
+    bool playing = false;
+    float tempo = 120.0f;
+    char search[128] {};
+
+    void menuBar()
+    {
+        if (!ImGui::BeginMainMenuBar())
+            return;
+        if (ImGui::BeginMenu("File")) {
+            ImGui::MenuItem("New", "Ctrl+N");
+            ImGui::MenuItem("Open...", "Ctrl+O");
+            ImGui::MenuItem("Save", "Ctrl+S");
+            ImGui::Separator();
+            if (ImGui::MenuItem("Quit", "Alt+F4"))
+                ::PostQuitMessage(0);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("View")) {
+            ImGui::MenuItem("CyUI gallery", nullptr, &gallery);
+            ImGui::MenuItem("Theme editor", nullptr, &themeEditor);
+            ImGui::MenuItem("Dear ImGui demo", nullptr, &imguiDemo);
+            ImGui::Separator();
+            if (ImGui::BeginMenu("Theme")) {
+                for (const auto& theme : cyui::builtInThemes())
+                    if (ImGui::MenuItem(theme.name.c_str(), nullptr, theme.key == cyui::currentThemeKey()))
+                        cyui::setTheme(theme.key.c_str());
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
+    void topBar()
+    {
+        if (cyui::beginTopBar("##topBar")) {
+            static int mode = 0;
+            const char* modes[] { "Studio", "Mixer", "Library" };
+            cyui::segmented("##mode", modes, 3, &mode);
+            cyui::toolbarSeparator();
+            if (cyui::iconButton(playing ? cyui::icon::pause : cyui::icon::play, "Play / pause (Space)", playing,
+                                 cyui::palette().success))
+                playing = !playing;
+            ImGui::SameLine(0.0f, cyui::dp(2.0f));
+            cyui::iconButton(cyui::icon::stop, "Stop");
+            ImGui::SameLine(0.0f, cyui::dp(2.0f));
+            cyui::iconButton(cyui::icon::record, "Record (R)");
+            cyui::toolbarSeparator();
+            cyui::dragValue("##tempo", &tempo, 0.1f, 20.0f, 300.0f, "%.2f BPM", cyui::dp(100.0f));
+            ImGui::SameLine();
+            cyui::alignRight(cyui::dp(240.0f));
+            cyui::searchField("##search", search, sizeof(search), "Search", cyui::dp(240.0f));
+        }
+        cyui::endTopBar();
+    }
+
+    void statusBar()
+    {
+        if (cyui::beginStatusBar("##statusBar")) {
+            cyui::statusText(cyui::Tone::neutral, "Ready");
+            ImGui::SameLine(0.0f, cyui::dp(18.0f));
+            cyui::statusText(cyui::Tone::success, "Audio: 48 kHz, 256 samples");
+            char fps[32];
+            std::snprintf(fps, sizeof(fps), "%.0f fps", ImGui::GetIO().Framerate);
+            ImGui::SameLine();
+            cyui::ScopedFont font(nullptr, 0.86f);
+            cyui::alignRight(ImGui::CalcTextSize(fps).x);
+            cyui::textFaint("%s", fps);
+        }
+        cyui::endStatusBar();
+    }
+
+    void sidebar()
+    {
+        if (cyui::beginSidebar("##sidebar")) {
+            cyui::sidebarHeader("CYUI DEMO", "1.0");
+            cyui::sidebarGroup("WORKSPACE");
+            if (cyui::sidebarItem(cyui::icon::home, "Home", page == 0))
+                page = 0;
+            if (cyui::sidebarItem(cyui::icon::library, "Library", page == 1, "12"))
+                page = 1;
+            if (cyui::sidebarItem(cyui::icon::equalizer, "Mixer", page == 2))
+                page = 2;
+            cyui::sidebarGroup("SYSTEM");
+            if (cyui::sidebarItem(cyui::icon::settings, "Settings", page == 3))
+                page = 3;
+        }
+        cyui::endSidebar();
+    }
+
+    void panels()
+    {
+        if (ImGui::Begin("Inspector")) {
+            cyui::panelHeader("Inspector", "Kick drum - Track 1");
+            cyui::divider();
+            if (cyui::beginSection("Track")) {
+                static float volume = -3.0f, pan = 0.0f;
+                static bool mute = false;
+                if (cyui::beginProperties("##track")) {
+                    cyui::property("Volume");
+                    cyui::sliderBar("##volume", &volume, -60.0f, 6.0f, "%.1f dB", -1.0f);
+                    cyui::property("Pan");
+                    cyui::sliderBar("##pan", &pan, -1.0f, 1.0f, "%.2f", -1.0f, cyui::palette().info);
+                    cyui::property("Mute");
+                    cyui::toggleSwitch("##mute", &mute);
+                    cyui::endProperties();
+                }
+                cyui::endSection();
+            }
+        }
+        ImGui::End();
+
+        if (ImGui::Begin("Devices")) {
+            if (cyui::beginToolbar("##devicesToolbar")) {
+                cyui::iconButton(cyui::icon::add, "Add a device");
+                ImGui::SameLine(0.0f, cyui::dp(2.0f));
+                cyui::iconButton(cyui::icon::presets, "Presets");
+                cyui::toolbarSeparator();
+                cyui::badge("3 DEVICES");
+            }
+            cyui::endToolbar();
+            cyui::space(6.0f);
+            static float drive = 0.4f, tone = 0.6f, mix = 1.0f;
+            if (cyui::beginCard("##saturator", "Saturator")) {
+                cyui::knob("##drive", &drive, 0.0f, 1.0f, 0.4f, { 36.0f, 0, "Drive" });
+                ImGui::SameLine();
+                cyui::knob("##tone", &tone, 0.0f, 1.0f, 0.5f, { 36.0f, cyui::palette().info, "Tone" });
+                ImGui::SameLine();
+                cyui::knob("##mix", &mix, 0.0f, 1.0f, 1.0f, { 36.0f, cyui::palette().success, "Mix" });
+            }
+            cyui::endCard();
+        }
+        ImGui::End();
+
+        if (ImGui::Begin("Browser")) {
+            cyui::emptyState("Nothing here yet", "Drop files to add them to the library", cyui::icon::folder);
+        }
+        ImGui::End();
+    }
+
+    // The first layout: gallery in the middle, inspector on the right,
+    // devices and browser under.
+    static void buildLayout(const ImGuiID dockId)
+    {
+        const auto* viewport = ImGui::GetMainViewport();
+        ImGui::DockBuilderRemoveNode(dockId);
+        ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockId, viewport->WorkSize);
+        ImGuiID centre = dockId;
+        const auto right = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.26f, nullptr, &centre);
+        const auto bottom = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down, 0.30f, nullptr, &centre);
+        ImGui::DockBuilderDockWindow("CyUI Gallery", centre);
+        ImGui::DockBuilderDockWindow("Inspector", right);
+        ImGui::DockBuilderDockWindow("Devices", bottom);
+        ImGui::DockBuilderDockWindow("Browser", bottom);
+        ImGui::DockBuilderFinish(dockId);
+    }
+
+    void frame()
+    {
+        menuBar();
+        topBar();
+        statusBar();
+        sidebar();
+        const auto dockId = cyui::dockSpace();
+        // Once, at start: the saved layout (imgui.ini) when there is one.
+        if (!layoutChecked) {
+            layoutChecked = true;
+            if (ImGui::DockBuilderGetNode(dockId) == nullptr || ImGui::DockBuilderGetNode(dockId)->IsLeafNode())
+                buildLayout(dockId);
+        }
+        panels();
+        if (gallery)
+            cyui::showGallery(&gallery, galleryTab);
+        if (themeEditor)
+            cyui::showThemeEditor(&themeEditor);
+        if (imguiDemo)
+            ImGui::ShowDemoWindow(&imguiDemo);
+        cyui::renderNotifications();
+    }
+};
+
+}  // namespace
+
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
+{
+    // --capture out.bmp [--theme key] [--comfortable] [--tab n]: renders a few
+    // frames, writes the window to a BMP and quits.
+    std::wstring capturePath;
+    std::string themeKey = "mid-grey";
+    auto comfortable = false;
+    auto tab = -1;
+    {
+        auto count = 0;
+        auto** args = ::CommandLineToArgvW(::GetCommandLineW(), &count);
+        for (auto i = 1; i < count; ++i) {
+            const std::wstring arg = args[i];
+            const auto next = [&]() { return i + 1 < count ? std::wstring(args[++i]) : std::wstring(); };
+            if (arg == L"--capture")
+                capturePath = next();
+            else if (arg == L"--theme") {
+                const auto key = next();
+                for (const auto c : key)
+                    themeKey += static_cast<char>(c);
+                themeKey.erase(0, themeKey.size() - key.size());
+            } else if (arg == L"--comfortable")
+                comfortable = true;
+            else if (arg == L"--tab")
+                tab = _wtoi(next().c_str());
+        }
+        ::LocalFree(args);
+    }
+
+    ImGui_ImplWin32_EnableDpiAwareness();
+    const auto dpiScale = ImGui_ImplWin32_GetDpiScaleForMonitor(::MonitorFromPoint(POINT { 0, 0 }, MONITOR_DEFAULTTOPRIMARY));
+
+    WNDCLASSEXW wc { sizeof(wc), CS_CLASSDC, windowProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr,
+                     L"CyUIDemo", nullptr };
+    ::RegisterClassExW(&wc);
+    const auto hwnd = ::CreateWindowW(wc.lpszClassName, L"CyUI demo", WS_OVERLAPPEDWINDOW, 100, 100,
+                                      static_cast<int>(1440 * dpiScale), static_cast<int>(900 * dpiScale), nullptr, nullptr,
+                                      wc.hInstance, nullptr);
+    if (!createDevice(hwnd)) {
+        releaseDevice();
+        ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+        return 1;
+    }
+    ::ShowWindow(hwnd, SW_SHOWDEFAULT);
+    ::UpdateWindow(hwnd);
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    auto& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+#ifdef IMGUI_HAS_DOCK
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+#endif
+
+    // CyUI: the theme, then the fonts.
+    cyui::Config config;
+    config.themeKey = themeKey.c_str();
+    config.density = comfortable ? cyui::Density::comfortable : cyui::Density::compact;
+    config.dpiScale = dpiScale;
+    cyui::apply(config);
+    cyui::loadFonts();
+
+    ImGui_ImplWin32_Init(hwnd);
+    ImGui_ImplDX11_Init(gDevice, gContext);
+
+    if (!capturePath.empty())
+        io.IniFilename = nullptr;
+
+    App app;
+    app.galleryTab = tab;
+    cyui::notify("Welcome to the CyUI demo", cyui::Tone::accent);
+    auto done = false;
+    auto frames = 0;
+    while (!done) {
+        MSG msg;
+        while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+            ::TranslateMessage(&msg);
+            ::DispatchMessage(&msg);
+            if (msg.message == WM_QUIT)
+                done = true;
+        }
+        if (done)
+            break;
+        if (gResizeWidth != 0 && gResizeHeight != 0) {
+            releaseTarget();
+            gSwapChain->ResizeBuffers(0, gResizeWidth, gResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
+            gResizeWidth = gResizeHeight = 0;
+            createTarget();
+        }
+
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+        app.frame();
+        ImGui::Render();
+
+        const auto ground = cyui::vec(cyui::palette().bg0);
+        const float clear[4] { ground.x, ground.y, ground.z, 1.0f };
+        gContext->OMSetRenderTargets(1, &gTarget, nullptr);
+        gContext->ClearRenderTargetView(gTarget, clear);
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        if (!capturePath.empty() && ++frames == 40) {
+            captureBackBuffer(capturePath.c_str());
+            done = true;
+        }
+        gSwapChain->Present(1, 0);
+    }
+
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    releaseDevice();
+    ::DestroyWindow(hwnd);
+    ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    return 0;
+}
