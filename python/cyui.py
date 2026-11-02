@@ -1,7 +1,7 @@
-"""CyUI for Python: the CyUI look (CyDAW 2, Shaderixel, CyEngineHub) for imgui_bundle.
+"""CyUI for Python: themed widgets and optional modules for imgui_bundle.
 
 A port of the C++ library in this folder (include/cyui, src/), for the Python Dear ImGui
-applications (imgui_bundle 1.92 or newer) such as the CyTools. Same palettes, same five
+applications (imgui_bundle 1.92 or newer). Same palettes, same five
 themes, same two densities, same fonts and icons, same widgets and layout, same rules: read
 docs/AI_GUIDE.md. Names follow Python: primary_button for primaryButton, begin_card for
 beginCard. Value controls return (changed, value) the way imgui_bundle does.
@@ -81,11 +81,11 @@ _NAVY = _palette(
     rgb(0x65cca9), rgb(0xf2b84b), rgb(0xe8747c), rgb(0x70a8fa))
 
 # (key, name shown to people, palette, light)
-THEMES = (('mid-grey', 'Mid grey (CyDAW)', _MID_GREY, False),
-          ('light-grey', 'Light grey (CyDAW)', _LIGHT_GREY, True),
-          ('amber-night', 'Amber night (CyDAW)', _AMBER_NIGHT, False),
-          ('violet', 'Violet (Shaderixel)', _VIOLET, False),
-          ('navy', 'Navy (CyEngineHub)', _NAVY, False))
+THEMES = (('mid-grey', 'Mid grey', _MID_GREY, False),
+          ('light-grey', 'Light grey', _LIGHT_GREY, True),
+          ('amber-night', 'Amber night', _AMBER_NIGHT, False),
+          ('violet', 'Violet', _VIOLET, False),
+          ('navy', 'Navy', _NAVY, False))
 DEFAULT_THEME = 'mid-grey'
 DENSITIES = ('compact', 'comfortable')
 
@@ -534,7 +534,7 @@ def section_title(text):
 
 
 def overline(text, colour=0):
-    """CyEngineHub label: SMALL UPPERCASE, bold, accent-tinted. Pass it uppercased."""
+    """SMALL UPPERCASE, bold, accent-tinted label. Pass it uppercased."""
     p = palette()
     with scoped_font(bold_font(), 0.78), \
             scoped_color(imgui.Col_.text, colour or mix(p.accent, p.text, 0.35)):

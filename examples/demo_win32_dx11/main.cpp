@@ -417,7 +417,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     // --capture out.bmp [--theme key] [--comfortable] [--tab n]: renders a few
     // frames, writes the window to a BMP and quits.
     std::wstring capturePath,webUrl;
-    bool cefNoSandbox=false;
+    bool cefNoSandbox=false, galleryOnly=false;
     std::string themeKey = "mid-grey";
     auto comfortable = false;
     auto tab = -1;
@@ -428,6 +428,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             const std::wstring arg = args[i];
             const auto next = [&]() { return i + 1 < count ? std::wstring(args[++i]) : std::wstring(); };
             if(arg==L"--web-url")webUrl=next();
+            else if(arg==L"--gallery-only")galleryOnly=true;
             else if(arg==L"--cef-no-sandbox")cefNoSandbox=true; // Accepted; the demo is never sandboxed.
             else if (arg == L"--capture")
                 capturePath = next();
@@ -451,7 +452,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
                      L"CyUIDemo", nullptr };
     ::RegisterClassExW(&wc);
     const auto hwnd = ::CreateWindowW(wc.lpszClassName, L"CyUI demo", WS_OVERLAPPEDWINDOW, 100, 100,
-                                      static_cast<int>(1440 * dpiScale), static_cast<int>(900 * dpiScale), nullptr, nullptr,
+                                      static_cast<int>(1440 * dpiScale), static_cast<int>((galleryOnly ? 760 : 900) * dpiScale), nullptr, nullptr,
                                       wc.hInstance, nullptr);
     if (!createDevice(hwnd)) {
         releaseDevice();
@@ -538,7 +539,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
-        app.frame();
+        if (galleryOnly) {
+            const auto* viewport = ImGui::GetMainViewport();
+            ImGui::SetNextWindowPos(viewport->WorkPos);
+            ImGui::SetNextWindowSizeConstraints(viewport->WorkSize, viewport->WorkSize);
+            cyui::showGallery(nullptr, app.galleryTab, app.resources);
+        } else {
+            app.frame();
+        }
 #if defined(CYUI_DEMO_CEF)
         if(web)web->endFrame();
 #endif

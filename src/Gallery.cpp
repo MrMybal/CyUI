@@ -8,6 +8,9 @@
 #if defined(CYUI_HAS_AUDIO)
 #include "cyui/modules/Audio.h"
 #endif
+#if defined(CYUI_HAS_CODEEDITOR)
+#include <TextEditor.h>
+#endif
 
 #include <imgui.h>
 #include "cyui/CyUI.h"
@@ -416,6 +419,278 @@ void layoutPage()
 #endif
 }
 
+#if defined(CYUI_HAS_PLOTS)
+void plotsPage()
+{
+    sectionTitle("Frequency response");
+    textDim("Logarithmic frequency axis, multiple series and host-defined units.");
+    static std::vector<Point> low, bell, combined;
+    if (low.empty()) {
+        for (int i = 0; i < 360; ++i) {
+            const double hz = 20 * std::pow(1000., i / 359.);
+            const double shelf = 5.5 / (1 + std::pow(hz / 180., 3));
+            const double peak = -7 * std::exp(-std::pow(std::log(hz / 1800.) / .42, 2));
+            low.push_back({hz, shelf});
+            bell.push_back({hz, peak});
+            combined.push_back({hz, shelf + peak + 3 * std::exp(-std::pow(std::log(hz / 8500.) / .7, 2))});
+        }
+    }
+    static PlotState response{{{20, 20000}, true}, {{-12, 12}, false}};
+    PlotSeries series[]{{1, "Low shelf", low, PlotStyle::line, 1},
+                        {2, "Bell", bell, PlotStyle::line, 2},
+                        {3, "Combined response", combined, PlotStyle::line, 0}};
+    PlotOptions options;
+    options.formatX = [](double hz) {
+        char label[32];
+        std::snprintf(label, sizeof(label), hz >= 1000 ? "%.1f kHz" : "%.0f Hz", hz >= 1000 ? hz / 1000 : hz);
+        return std::string(label);
+    };
+    options.formatY = [](double db) {
+        char label[32];
+        std::snprintf(label, sizeof(label), "%+.0f dB", db);
+        return std::string(label);
+    };
+    plot("##response", response, {series, 3}, dp(0, 260), options);
+    space();
+    if (ImGui::BeginTable("##plotDetails", 2, ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextColumn();
+        sectionTitle("Distribution");
+        static std::vector<Point> bins = [] {
+            std::vector<double> samples;
+            for (int i = 0; i < 1200; ++i)
+                samples.push_back(std::sin(i * .13) * std::sin(i * .037));
+            const auto counts = histogram(samples, {-1, 1}, 32);
+            std::vector<Point> result;
+            for (std::size_t i = 0; i < counts.size(); ++i)
+                result.push_back({double(i), double(counts[i])});
+            return result;
+        }();
+        static PlotState histogramView{{{0, 32}, false}, {{0, 160}, false}};
+        PlotSeries distribution{4, "Samples", bins, PlotStyle::bars, 1};
+        plot("##distribution", histogramView, {&distribution, 1}, dp(0, 190));
+        ImGui::TableNextColumn();
+        sectionTitle("Heatmap");
+        static std::vector<float> values = [] {
+            std::vector<float> result(32 * 16);
+            for (int y = 0; y < 16; ++y)
+                for (int x = 0; x < 32; ++x)
+                    result[std::size_t(y * 32 + x)] = float(.5 + .5 * std::sin(x * .25) * std::cos(y * .3));
+            return result;
+        }();
+        heatmap("##heatmap", values, 32, 16, {0, 1}, dp(0, 190));
+        ImGui::EndTable();
+    }
+}
+#endif
+
+#if defined(CYUI_HAS_NODES)
+void nodesPage()
+{
+    sectionTitle("Voice graph");
+    textDim("Drag nodes or connect pins. Ctrl: multi-select. Home: frame. Delete: remove. Execution is host-owned.");
+    static NodeState state;
+    static std::vector<Node> nodes{
+        {1, {30, 35}, "On note", {}, {{11, "Trigger", 3}, {12, "Pitch", 1}, {13, "Velocity", 2}}, 3},
+        {2, {30, 270}, "Voice settings", {}, {{21, "Cutoff", 0}, {22, "Resonance", 0}, {23, "Level", 2}}, 0},
+        {3, {330, 35}, "Oscillator", {{31, "Trigger", 3}, {32, "Pitch", 1}, {33, "Velocity", 2}}, {{34, "Audio", 0}}, 1},
+        {4, {640, 55}, "Filter", {{41, "Audio", 0}, {42, "Cutoff", 0}, {43, "Resonance", 0}}, {{44, "Signal", 0}}, 0},
+        {5, {640, 290}, "Gain", {{51, "Signal", 0}, {52, "Level", 2}}, {{53, "Output", 0}}, 2},
+        {6, {950, 190}, "Stereo output", {{61, "Left", 0}, {62, "Right", 0}}, {}, 3}};
+    static std::vector<NodeLink> links{{1, 11, 31, 3}, {2, 12, 32, 1}, {3, 13, 33, 2},
+                                      {4, 34, 41, 0}, {5, 21, 42, 0}, {6, 22, 43, 0},
+                                      {7, 44, 51, 0}, {8, 23, 52, 2}, {9, 53, 61, 0}, {10, 53, 62, 0}};
+    static ItemId nextLink = 11;
+    const auto size = dp(0, 470);
+    static bool framed = false;
+    if (!framed) {
+        state.canvas.view.fit({0, 0}, {1170, 425}, {ImGui::GetContentRegionAvail().x, size.y}, dp(24));
+        framed = true;
+    }
+    if (ghostButton("Arrange nodes"))
+        for (const auto &move : arrangeNodes(nodes, links, {290, 145}))
+            for (auto &node : nodes)
+                if (node.id == move.id)
+                    node.position = move.position;
+    NodeOptions options;
+    options.snap = 8;
+    const auto edit = nodeEditor("##nodes", state, nodes, links, size, options);
+    if (edit.moved.committed())
+        for (const auto &move : edit.moved.value)
+            for (auto &node : nodes)
+                if (node.id == move.id)
+                    node.position = move.position;
+    if (edit.connect)
+        links.push_back({nextLink++, edit.connectFrom, edit.connectTo, 0});
+    if (edit.linkRemoved)
+        links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink &link) {
+            return link.id == edit.removeLink;
+        }), links.end());
+    for (auto id : edit.removeNodes) {
+        for (const auto &node : nodes)
+            if (node.id == id)
+                links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink &link) {
+                    const auto owns = [&](ItemId pin) {
+                        return std::any_of(node.inputs.begin(), node.inputs.end(), [&](const NodePin &p) { return p.id == pin; }) ||
+                               std::any_of(node.outputs.begin(), node.outputs.end(), [&](const NodePin &p) { return p.id == pin; });
+                    };
+                    return owns(link.from) || owns(link.to);
+                }), links.end());
+        nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&](const Node &node) { return node.id == id; }), nodes.end());
+    }
+}
+#endif
+
+#if defined(CYUI_HAS_AUDIOVIEWS)
+void audioViewsPage()
+{
+    sectionTitle("Stereo waveform");
+    static std::vector<Peak> left, right;
+    if (left.empty()) {
+        std::vector<float> a, b;
+        for (int i = 0; i < 48000; ++i) {
+            const double envelope = .15 + .7 * std::abs(std::sin(i * .00015)) * std::exp(-i / 90000.);
+            a.push_back(float(envelope * (std::sin(i * .045) + .2 * std::sin(i * .12))));
+            b.push_back(float(envelope * (std::sin(i * .045 + .7) + .2 * std::sin(i * .13))));
+        }
+        left = makePeaks(a, 1600);
+        right = makePeaks(b, 1600);
+    }
+    static WaveformState wave;
+    WaveformData data{{0, 1}, {left, right}};
+    waveform("##wave", wave, data, .42, dp(0, 150));
+    if (ImGui::BeginTable("##audioMonitors", 2, ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextColumn();
+        sectionTitle("Spectrum");
+        static std::vector<Point> input, output, signal, stereo;
+        if (input.empty()) {
+            for (int i = 0; i < 320; ++i) {
+                const double hz = 20 * std::pow(1000., i / 319.);
+                const double level = -65 + 33 * std::exp(-std::pow(std::log(hz / 1100.) / 1.5, 2)) +
+                                     3 * std::sin(i * .2) + 1.5 * std::cos(i * .53);
+                input.push_back({hz, level});
+                output.push_back({hz, level - 6 * std::exp(-std::pow(std::log(hz / 1800.) / .4, 2))});
+                signal.push_back({i / 319., .7 * std::sin(i * .055) + .18 * std::sin(i * .11)});
+                stereo.push_back({.8 * std::sin(i * .065), .65 * std::sin(i * .065 + .65)});
+            }
+        }
+        static PlotState frequencies{{{20, 20000}, true}, {{-90, 0}, false}};
+        PlotSeries spectrumSeries[]{{1, "Input", input, PlotStyle::line, 1}, {2, "Output", output, PlotStyle::line, 0}};
+        spectrum("##spectrum", frequencies, {spectrumSeries, 2}, dp(0, 185));
+        ImGui::TableNextColumn();
+        sectionTitle("Oscilloscope");
+        static PlotState scope{{{0, 1}, false}, {{-1, 1}, false}};
+        PlotSeries trace{3, "Signal", signal, PlotStyle::line, 2};
+        oscilloscope("##oscilloscope", scope, {&trace, 1}, dp(0, 185));
+        ImGui::TableNextColumn();
+        sectionTitle("Stereo scope");
+        static PlotState field{{{-1, 1}, false}, {{-1, 1}, false}};
+        PlotSeries stereoSeries{4, "L / R", stereo, PlotStyle::points, 3};
+        stereoScope("##stereo", field, {&stereoSeries, 1}, dp(0, 170));
+        ImGui::TableNextColumn();
+        sectionTitle("Monitor controls");
+#if defined(CYUI_HAS_AUDIO)
+        static float gain = .65f, pan = -.15f, cutoff = 1800;
+        knob("##monitorGain", &gain, 0, 1, .65f, {42, 0, "Gain"});
+        ImGui::SameLine(0, dp(24));
+        KnobStyle panStyle{42, palette().info, "Pan"};
+        panStyle.flags = knobBipolar;
+        knob("##monitorPan", &pan, -1, 1, 0, panStyle);
+        ImGui::SameLine(0, dp(24));
+        KnobStyle filterStyle{42, palette().success, "Cutoff", "%.0f", "Hz"};
+        filterStyle.flags = knobLogarithmic;
+        knob("##monitorCutoff", &cutoff, 20, 20000, 1800, filterStyle);
+        meter("##monitorLevel", {ImGui::GetContentRegionAvail().x, dp(24)}, .75f, .62f, .42f, .38f, false);
+#endif
+        textDim("Synthetic preview data. Processing and playback are supplied by the host.");
+        ImGui::EndTable();
+    }
+}
+#endif
+
+#if defined(CYUI_HAS_CODE)
+void codePage()
+{
+    sectionTitle("Source view & annotations");
+    static CodeDocument document;
+    static CodeViewState state;
+    document.setText("// audio/Voice.cpp - read-only source with host annotations\n"
+                     "#include <algorithm>\n\n"
+                     "float applyGain(float sample, float gainDb) {\n"
+                     "    const float gain = dbToLinear(gainDb);\n"
+                     "    return std::clamp(sample * gain, -1.0f, 1.0f);\n"
+                     "}\n\n"
+                     "// Source data, diagnostics and file access belong to the host.\n", CodeLanguage::cpp);
+    CodeAnnotation note{1, 5, Tone::info, "Host-supplied diagnostic: inspect gain conversion"};
+    codeViewer("##source", state, document, dp(0, 205), {&note, 1});
+#if defined(CYUI_HAS_CODEEDITOR)
+    space();
+    sectionTitle("Native code editor");
+    textDim("Edit this document. Selection, Undo/Redo and language colors use the native editor backend.");
+    static CodeEditor editor;
+    static bool initialized = false;
+    if (!initialized) {
+        editor.setLanguage(CodeLanguage::cpp);
+        editor.native().SetShowWhitespacesEnabled(false);
+        editor.setText("// ui/Monitor.cpp - editable C++\n"
+                       "#include <cyui/Core.h>\n"
+                       "#include <cyui/modules/Audio.h>\n\n"
+                       "void drawMonitor(float& gain) {\n"
+                       "    cyui::sectionTitle(\"Output monitor\");\n"
+                       "    cyui::KnobStyle style{42.0f, 0, \"Gain\"};\n"
+                       "    if (cyui::knob(\"##gain\", &gain, 0.0f, 1.0f, 0.5f, style)) {\n"
+                       "        // Apply the host's preview or Undo transaction here.\n"
+                       "        updatePreview(gain);\n"
+                       "    }\n"
+                       "}\n");
+        initialized = true;
+    }
+    editor.draw("##editable", dp(0, 275));
+#endif
+}
+#endif
+
+#if defined(CYUI_HAS_DIFF)
+void diffPage()
+{
+    sectionTitle("Compare document revisions");
+    static DiffDocument document;
+    static DiffState state;
+    static bool initialized = false;
+    if (!initialized) {
+        document.setTexts(
+            "#include <algorithm>\n\n"
+            "struct Monitor {\n"
+            "    float gain = 0.5f;\n"
+            "    bool enabled = true;\n"
+            "};\n\n"
+            "float process(float sample, const Monitor& monitor) {\n"
+            "    if (!monitor.enabled) {\n"
+            "        return sample;\n"
+            "    }\n"
+            "    return sample * monitor.gain;\n"
+            "}\n",
+            "#include <algorithm>\n"
+            "#include <cmath>\n\n"
+            "struct Monitor {\n"
+            "    float gainDb = -6.0f;\n"
+            "    bool enabled = true;\n"
+            "    bool limitOutput = true;\n"
+            "};\n\n"
+            "float process(float sample, const Monitor& monitor) {\n"
+            "    if (!monitor.enabled) {\n"
+            "        return sample;\n"
+            "    }\n"
+            "    const float gain = std::pow(10.0f, monitor.gainDb / 20.0f);\n"
+            "    const float output = sample * gain;\n"
+            "    return monitor.limitOutput\n"
+            "        ? std::clamp(output, -1.0f, 1.0f) : output;\n"
+            "}\n", CodeLanguage::cpp);
+        initialized = true;
+    }
+    diffViewer("##diff", state, document, dp(0, 440));
+}
+#endif
+
 void moduleGallery(int selectedTab,const GalleryResources& resources) {
     (void)resources;
     auto page=[&](const char*label,int index,auto body){if(ImGui::BeginTabItem(label,nullptr,selectedTab==index?ImGuiTabItemFlags_SetSelected:0)){body();ImGui::EndTabItem();}};
@@ -423,29 +698,25 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
     page("Canvas",4,[]{textDim("Wheel: zoom at pointer. Middle drag: pan. Space + drag: pan.");static CanvasState state;CanvasScope canvas("##canvas",state,dp(0,320));const auto&f=canvas.frame();auto*d=ImGui::GetWindowDrawList();const auto a=state.view.screen({40,40},f.bounds.min),b=state.view.screen({220,160},f.bounds.min);d->AddRectFilled(a,b,palette().accentDim,dp(4));d->AddText(a,palette().text,"World-space content");});
 #endif
 #if defined(CYUI_HAS_PLOTS)
-    page("Plots",5,[]{static std::vector<Point>points; if(points.empty())for(int i=0;i<100;++i)points.push_back({i/10.,std::sin(i/10.)});static PlotState state{{{0,10},false},{{-1.2,1.2},false}};PlotSeries series{1,"Signal",points,PlotStyle::line,0};plot("##plot",state,{&series,1},dp(0,190));static std::vector<double>samples; if(samples.empty())for(int i=0;i<500;++i)samples.push_back(std::sin(i*.13));const auto bins=histogram(samples,{-1,1},24);std::vector<Point>bars;for(std::size_t i=0;i<bins.size();++i)bars.push_back({double(i),double(bins[i])});static PlotState barsView{{{0,24},false},{{0,75},false}};PlotSeries histogramSeries{2,"Distribution",bars,PlotStyle::bars,1};plot("##histogram",barsView,{&histogramSeries,1},dp(0,110));static std::vector<float>values(128);for(int i=0;i<128;++i)values[std::size_t(i)]=float((i%16)*(i/16));heatmap("##heatmap",values,16,8,{0,105},dp(0,100));});
+    page("Plots",5,plotsPage);
 #endif
 #if defined(CYUI_HAS_CURVES)
     page("Curves",6,[]{textDim("Double-click: add/remove. Drag: edit. Ctrl: multi-select. Escape: cancel.");static std::vector<CurvePoint>points{{1,0,.2},{2,2,.8,CurveShape::smooth},{3,5,.3,CurveShape::bezier,{-1,.1},{1,.2}},{4,8,.7}};static CurveState state;static bool init=false;if(!init){state.view.x.range={0,10};state.view.y.range={0,1};init=true;}CurveOptions options;options.snap=.25;const auto edit=curveEditor("##curves",state,points,dp(0,320),options);if(edit.committed())points=edit.value;});
 #endif
 #if defined(CYUI_HAS_NODES)
-    page("Nodes",7,[]{textDim("Drag cards or pins. Ctrl: multi-select. Home: frame. Delete requests removal.");static NodeState state;static std::vector<Node>nodes{{1,{30,40},"Source",{},{{11,"Output",0}},0},{2,{310,70},"Processor",{{21,"Input",0}},{{22,"Output",0}},1},{3,{590,140},"Output",{{31,"Input",0}},{},2}};static std::vector<NodeLink>links{{1,11,21,0},{2,22,31,1}};if(ghostButton("Arrange")){for(const auto&m:arrangeNodes(nodes,links))for(auto&n:nodes)if(n.id==m.id)n.position=m.position;}const auto e=nodeEditor("##nodes",state,nodes,links,dp(0,340));if(e.moved.committed())for(const auto&m:e.moved.value)for(auto&n:nodes)if(n.id==m.id)n.position=m.position;if(e.connectFrom)links.push_back({ItemId(links.size()+1),e.connectFrom,e.connectTo,0});if(e.removeLink)links.erase(std::remove_if(links.begin(),links.end(),[&](const NodeLink&l){return l.id==e.removeLink;}),links.end());for(auto id:e.removeNodes)nodes.erase(std::remove_if(nodes.begin(),nodes.end(),[&](const Node&n){return n.id==id;}),nodes.end());});
+    page("Nodes",7,nodesPage);
 #endif
 #if defined(CYUI_HAS_TIMELINE)
     page("Timeline",8,[]{textDim("Wheel: zoom. Shift-wheel: pan. Ctrl-wheel: scroll lanes. Drag clip/edges to move/trim.");static TimelineState state;static std::vector<TimelineLane>lanes{{1,"Video",70},{2,"Audio",80},{3,"Events",48}};static std::vector<TimelineClip>clips{{1,1,1,3,"Opening",0},{2,1,5,3,"Sequence",1},{3,2,.5,7,"Sound",2},{4,3,2,1,"Marker interval",3}};TimelineMarker marker{1,4,"Cue"};TimelineOptions o;o.playhead=3.5;o.snap=.25;auto e=timeline("##timeline",state,lanes,clips,{&marker,1},dp(0,350),o);if(e.clips.committed())clips=e.clips.value;});
 #endif
 #if defined(CYUI_HAS_AUDIOVIEWS)
-    page("Audio views",9,[]{static std::vector<float>samples;static std::vector<Peak>peaks;if(samples.empty()){for(int i=0;i<48000;++i)samples.push_back(float(std::sin(i*.04)*std::sin(i*.0001)));peaks=makePeaks(samples,1200);}static WaveformState state;WaveformData data{{0,1},{peaks,peaks}};waveform("##wave",state,data,.4,dp(0,170));static std::vector<Point>frequencies;if(frequencies.empty())for(int i=0;i<160;++i){const double hz=20*std::pow(1000.,i/159.);frequencies.push_back({hz,-60+35*std::exp(-std::pow(std::log(hz/1000),2))});}static PlotState spectrumView{{{20,20000},true},{{-90,0},false}};PlotSeries series{1,"Spectrum",frequencies,PlotStyle::line,1};spectrum("##spectrum",spectrumView,{&series,1},dp(0,160));static PlotState scopeView{{{0,1},false},{{-1,1},false}};static std::vector<Point>signal;if(signal.empty())for(int i=0;i<300;++i)signal.push_back({i/300.,std::sin(i*.08)});PlotSeries scopeSeries{2,"Scope",signal,PlotStyle::line,2};oscilloscope("##oscilloscope",scopeView,{&scopeSeries,1},dp(0,110));static PlotState stereoView{{{-1,1},false},{{-1,1},false}};static std::vector<Point>stereo;if(stereo.empty())for(int i=0;i<180;++i)stereo.push_back({std::sin(i*.15),std::sin(i*.15+.8)});PlotSeries stereoSeries{3,"Stereo",stereo,PlotStyle::points,3};stereoScope("##stereo",stereoView,{&stereoSeries,1},dp(0,110));});
+    page("Audio views",9,audioViewsPage);
 #endif
 #if defined(CYUI_HAS_CODE)
-    page("Code",10,[]{static CodeDocument doc;static CodeViewState state;doc.setText("// Shared source presentation\n#include <cyui/Core.h>\nint main() {\n\tconst char* label = u8\"Music — 音楽\";\n\treturn 42;\n}\n",CodeLanguage::cpp);CodeAnnotation note{1,4,Tone::info,"Example source annotation"};codeViewer("##source",state,doc,dp(0,210),{&note,1});
-#if defined(CYUI_HAS_CODEEDITOR)
-        static CodeEditor editor;static bool initialized=false;if(!initialized){editor.setLanguage(CodeLanguage::cpp);editor.setText("// Edit this document: native undo, selection and completion hooks.\nfloat gain = 0.5f;\n");initialized=true;}editor.draw("##editable",dp(0,220));
-#endif
-    });
+    page("Code",10,codePage);
 #endif
 #if defined(CYUI_HAS_DIFF)
-    page("Code / Diff",11,[]{static DiffDocument doc;static DiffState state;static bool init=false;if(!init){doc.setTexts("// Example\nfloat gain = 0.5f;\nreturn gain;\n","// Example\nfloat gain = 0.8f;\nfloat pan = 0.0f;\nreturn gain;\n",CodeLanguage::cpp);init=true;}diffViewer("##diff",state,doc,dp(0,370));});
+    page("Code / Diff",11,diffPage);
 #endif
 #if defined(CYUI_HAS_INSPECTOR)
     page("Inspector",12,[]{static InspectorState state;static std::vector<Property>fields=[](){std::vector<Property>v;Property a;a.id=1;a.label="Enabled";a.value=true;v.push_back(a);a={};a.id=2;a.label="Exact integer";a.help="64-bit value; no conversion through double.";a.value=std::int64_t(9007199254740993LL);v.push_back(a);a={};a.id=3;a.label="Gain";a.value=.5;a.bounded=true;a.minimum=0;a.maximum=1;v.push_back(a);a={};a.id=4;a.label="Name";a.value=std::string("Example");v.push_back(a);a={};a.id=5;a.label="Mode";a.value=std::string("Preview");a.choices={"Preview","Final"};v.push_back(a);return v;}();for(const auto&e:inspector("##inspector",state,fields))if(e.edit.committed())for(auto&f:fields)if(f.id==e.id)f.value=e.edit.value;});

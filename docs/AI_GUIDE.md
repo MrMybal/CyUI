@@ -1,13 +1,12 @@
 # CyUI — guide for AI agents
 
-You are restyling, or building, a Dear ImGui interface in one of the Cy* apps
-(CyDAW, Shaderixel, CyImgView, CyGPUInspector, ...). Use **CyUI**
+You are restyling, or building, a Dear ImGui desktop interface. Use **CyUI**
 (for example, in `external/CyUI`). Read this whole file first. The code of
 every example is in `src/Gallery.cpp`.
 
-CyUI is the look of CyDAW 2, Shaderixel and CyEngineHub, turned into a
-library: one semantic palette, one set of sizes, the fonts, and the controls
-they share. It sits **on top of** Dear ImGui. It does not replace it, so
+CyUI provides a common visual language and optional modules: one semantic
+palette, consistent sizes, fonts, controls and reusable specialized views.
+It sits **on top of** Dear ImGui. It does not replace it, so
 stock ImGui calls keep working and pick up the theme.
 
 ---
@@ -90,13 +89,13 @@ and `setDensity` change every live context, and the defaults new contexts
 start from. Make such calls while no other thread draws with those contexts.
 `apply` and `applyDpi` with no context current change the defaults only.
 
-| themeKey      | origin      | look                                       |
-|---------------|-------------|--------------------------------------------|
-| `mid-grey`    | CyDAW 2     | Bitwig-like mid greys, orange accent (default) |
-| `light-grey`  | CyDAW 2     | Ableton-like light greys, orange accent    |
-| `amber-night` | CyDAW 2     | deep blue-greys, amber accent              |
-| `violet`      | Shaderixel  | dark slate, violet accent, cyan info       |
-| `navy`        | CyEngineHub | very dark navy, blue accent, flat          |
+| themeKey      | look                                       |
+|---------------|--------------------------------------------|
+| `mid-grey`    | Mid greys, orange accent (default)          |
+| `light-grey`  | Light greys, dark text, orange accent       |
+| `amber-night` | Deep blue-greys, amber accent               |
+| `violet`      | Dark slate, violet accent, cyan info        |
+| `navy`        | Deep navy, blue accent, flat                |
 
 Use `compact` density for dense pro tools (DAW, editors). Use `comfortable`
 for launchers, hubs and settings-heavy apps.
@@ -127,7 +126,7 @@ for launchers, hubs and settings-heavy apps.
 3. **Text hierarchy.**
    - `cyui::heading(t, 1|2|3)` for titles.
    - `cyui::sectionTitle` for groups in a panel.
-   - `cyui::overline("UPPERCASE")` for CyEngineHub-style labels.
+   - `cyui::overline("UPPERCASE")` for compact uppercase labels.
    - `cyui::textDim` for labels and secondary info.
    - `cyui::textFaint` for hints.
 
@@ -310,7 +309,7 @@ Guard your own icon labels with `iconsAvailable()`.
   under it does not scroll. Also `takeWheel()`, `wheelTaken()` and
   `valueSpeed()`.
 
-The value controls share the CyDAW behaviour:
+The value controls share these interactions:
 - drag to change; Ctrl is fine (× 0.15), Shift is fast (× 4)
 - the mouse wheel nudges the value and does not scroll the panel under it
   (a `dragValue` only once it has the focus)
@@ -463,6 +462,13 @@ draw->AddRect(selMin, selMax, p.accent, 0, 0, cyui::dp(1.5f));
   renders 40 frames, writes the window to a BMP and quits. Use it to check a
   theme visually without a person at the screen. `--tab` takes a gallery
   page, 0 to 20.
+- Add `--gallery-only` to show the gallery across the window instead of the
+  full demo's docking layout. This also works interactively and does not change
+  the library's rendering backend.
+- `python tools/capture_readme.py` regenerates the README's native screenshots
+  from the built demo (requires Pillow). It captures synthetic fixtures for code,
+  diff, audio monitors, a multi-node processing graph, frequency response,
+  automation curves and a timeline, plus theme previews.
 - Screenshots are in `docs/screenshots/`.
 
 

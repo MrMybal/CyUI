@@ -19,7 +19,7 @@
 namespace cyui {
 namespace {
 
-// CyDAW 2 default: Bitwig's mid greys, dark seams between panels, orange.
+// Mid greys, dark seams between panels and an orange accent.
 const Palette kMidGrey {
     rgb(0x262626), rgb(0x2e2e2e), rgb(0x373737), rgb(0x414141), rgb(0x4b4b4b), rgb(0x565656),
     rgb(0x1f1f1f), rgb(0x181818), rgb(0x2d2d2d), rgb(0x383838),
@@ -28,7 +28,7 @@ const Palette kMidGrey {
     rgb(0x5cd26e), rgb(0xf5a623), rgb(0xee5149), rgb(0x5cb4ef),
 };
 
-// CyDAW 2: Ableton Live's light greys, dark text, orange, blue selections.
+// Light greys, dark text, an orange accent and blue selections.
 const Palette kLightGrey {
     rgb(0xb3b3b3), rgb(0xc2c2c2), rgb(0xcbcbcb), rgb(0xd6d6d6), rgb(0xe0e0e0), rgb(0xebebeb),
     rgb(0x9c9c9c), rgb(0x7f7f7f), rgb(0xa9a9a9), rgb(0x969696),
@@ -37,7 +37,7 @@ const Palette kLightGrey {
     rgb(0x15a34e), rgb(0xd98200), rgb(0xe0302b), rgb(0x2a86d1),
 };
 
-// CyDAW 2's first dark one: deep blue-greys, an amber accent.
+// Deep blue-greys and an amber accent.
 const Palette kAmberNight {
     rgb(0x111317), rgb(0x16181d), rgb(0x1c1f25), rgb(0x24282f), rgb(0x2c313a), rgb(0x363c47),
     rgb(0x262a31), rgb(0x363b45), rgb(0x1f2228), rgb(0x2b2f37),
@@ -46,7 +46,7 @@ const Palette kAmberNight {
     rgb(0x3dd68c), rgb(0xf5a623), rgb(0xe5484d), rgb(0x5ab0f0),
 };
 
-// Shaderixel: dark slate, a violet accent, cyan for information.
+// Dark slate, a violet accent and cyan for information.
 const Palette kViolet {
     rgb(0x16171b), rgb(0x1b1c21), rgb(0x222329), rgb(0x282a32), rgb(0x343640), rgb(0x40424e),
     rgb(0x30323a), rgb(0x3a3c46), rgb(0xffffff, 0.04f), rgb(0xffffff, 0.09f),
@@ -55,7 +55,7 @@ const Palette kViolet {
     rgb(0x4cd4a0), rgb(0xf5a623), rgb(0xf0505a), rgb(0x2ec4d6),
 };
 
-// CyEngineHub: a very dark navy, flat, a blue accent.
+// Deep navy surfaces and a blue accent.
 const Palette kNavy {
     rgb(0x0a0e13), rgb(0x0d1218), rgb(0x111820), rgb(0x18212c), rgb(0x1f2a37), rgb(0x263343),
     rgb(0x1c2632), rgb(0x283748), rgb(0x111820), rgb(0x1c2632),
@@ -481,11 +481,11 @@ void setPalette(const Palette& value)
 const std::vector<Theme>& builtInThemes()
 {
     static const std::vector<Theme> themes {
-        { "mid-grey", "Mid grey (CyDAW)", kMidGrey, false },
-        { "light-grey", "Light grey (CyDAW)", kLightGrey, true },
-        { "amber-night", "Amber night (CyDAW)", kAmberNight, false },
-        { "violet", "Violet (Shaderixel)", kViolet, false },
-        { "navy", "Navy (CyEngineHub)", kNavy, false },
+        { "mid-grey", "Mid grey", kMidGrey, false },
+        { "light-grey", "Light grey", kLightGrey, true },
+        { "amber-night", "Amber night", kAmberNight, false },
+        { "violet", "Violet", kViolet, false },
+        { "navy", "Navy", kNavy, false },
     };
     return themes;
 }

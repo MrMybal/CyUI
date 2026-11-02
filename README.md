@@ -1,192 +1,240 @@
-# CyUI : l'interface Dear ImGui des logiciels Cy*
+# CyUI
 
-CyUI est une bibliothèque **MIT**, utilisable dans des projets commerciaux.
-Elle vise Windows, Linux et macOS avec le backend Dear ImGui fourni par l'application.
-Les validations locales de cette version ont été effectuées sous Windows ; la
-[matrice de plateformes](docs/WEB.md) précise les vérifications restantes.
+**A themed, modular UI library for Dear ImGui.**
 
-CyUI est une library C++17 (C++20 pour CodeEditor et CEF) qui se pose **par-dessus Dear ImGui (1.92 ou plus)**.
-Elle donne à n'importe quel logiciel ImGui le style de **CyDAW 2**, de
-**Shaderixel** et de **CyEngineHub**, au lieu du look ImGui de base.
+Build desktop tools with a shared visual language: ordinary widgets and layouts,
+audio displays, editable curves, node graphs, code editors, timelines and more.
+Start with Core and link only the modules your application uses.
 
-![mid-grey](docs/screenshots/mid-grey.png)
+CyUI is **MIT licensed**, including its own adapters, and can be used in commercial
+projects. It targets Windows, Linux and macOS through the application's ImGui
+backend. Local native and Unreal validation has been performed on Windows;
+platform-specific requirements are documented in the integration guides.
 
-## Ce qu'il y a dedans
+![CyUI widgets, audio controls, docking layout and inspector in the Mid grey theme](docs/screenshots/mid-grey.png)
 
-- **Thème** : une palette sémantique (fonds `bg0`..`bg5`, traits, 3 niveaux
-  de texte, un seul accent, couleurs de sens) et deux densités (compact,
-  confortable). Le DPI est géré, et `.cytheme` permet de sauver et charger
-  ses propres thèmes. Les thèmes de CyDAW sont compatibles.
-- **5 thèmes intégrés** :
+## Module showcase
 
-  | Clé | Origine |
-  |-----|---------|
-  | `mid-grey` (par défaut) | CyDAW |
-  | `light-grey` | CyDAW |
-  | `amber-night` | CyDAW |
-  | `violet` | Shaderixel |
-  | `navy` | CyEngineHub |
+These are captures of the running C++ gallery. The examples use synthetic data;
+applications supply their own models, rendering, processing and services.
 
-- **Polices** : Segoe UI, Segoe UI Semibold, Consolas, avec les **icônes
-  Segoe MDL2** fusionnées (`cyui::icon::*`, 104 icônes).
-- **Widgets** :
-  - boutons : primary, secondary, ghost, outline, danger, success
-  - icon buttons et toggles
-  - switch et segmented control
-  - knob, fader et vu-mètre (comportement CyDAW)
-  - slider-barre, champ de recherche
-  - cartes, sections repliables, tables de propriétés (inspecteur)
-  - badges, status dots, barres de progression, spinner
-  - empty states, callouts, notifications toast, modales
-- **Layout** : top bar, status bar, sidebar de navigation façon CyEngineHub,
-  dock space, toolbars.
-- **Galerie** : `cyui::showGallery()` montre tout, avec un sélecteur de thème.
-  `cyui::showThemeEditor()` édite la palette en direct.
+### Audio displays
 
-| navy (CyEngineHub) | violet (Shaderixel) | light-grey (CyDAW) |
-|---|---|---|
-| ![](docs/screenshots/navy.png) | ![](docs/screenshots/violet.png) | ![](docs/screenshots/light-grey.png) |
+Stereo waveforms, logarithmic spectra, oscilloscopes and stereo scopes share the
+same palette as the knobs, faders and meters. `AudioViews` displays prepared data;
+audio decoding, FFTs and DSP remain in the application.
 
-## Utilisation rapide
+![AudioViews: stereo waveform, spectrum, oscilloscope and stereo scope](docs/screenshots/audio-views.png)
 
-```cpp
-#include <cyui/CyUI.h>
+### Blueprint-style node graphs
 
-// après ImGui::CreateContext()
-cyui::Config config;
-config.themeKey = "mid-grey";
-config.dpiScale = dpi;
-cyui::apply(config);
-cyui::loadFonts();
+Colored pins, curved connections, selection, dragging, pan/zoom and automatic
+layout provide a foundation for visual editors. The application defines pin
+compatibility, graph validation and execution.
 
-// dans la frame
-if (cyui::primaryButton("Exporter")) export();
-cyui::iconButton(cyui::icon::play, "Lecture (Espace)", playing);
-cyui::knob("##gain", &gain, 0, 1, 0.5f, { 32, 0, "Gain" });
-cyui::renderNotifications(); // en fin de frame
-```
+![Nodes: a connected voice graph with trigger, oscillator, filter, gain and stereo output nodes](docs/screenshots/nodes.png)
 
-Avec CMake :
+### Code editing and comparison
+
+`Code` provides syntax-colored source views and annotations. `CodeEditor` adds
+native editing with Undo/Redo and advanced editor hooks. `Diff` presents unified
+or side-by-side comparisons; repository access stays in the host application.
+
+![Code and CodeEditor: annotated source and an editable C++ document](docs/screenshots/code-editor.png)
+
+![Diff: side-by-side C++ changes with line numbers and highlighted additions and removals](docs/screenshots/code-diff.png)
+
+### Plots, automation and timelines
+
+| Frequency response, distributions and heatmaps | Editable automation curves |
+| --- | --- |
+| ![Plots with logarithmic frequency axes, multiple series, a histogram and a heatmap](docs/screenshots/plots.png) | ![Curves with keyframes and Bezier handles](docs/screenshots/curves.png) |
+
+![Timeline: clip lanes, markers, a playhead and snapping](docs/screenshots/timeline.png)
+
+## Choose your modules
+
+Each C++ module is a separate static-library target. Dependencies between modules
+are selected automatically; for example, `Diff` brings in `Code` and Core, without
+adding a code editor, audio engine or browser.
+
+| Target | What it provides |
+| --- | --- |
+| `CyUI::Core` | Themes, fonts, icons, buttons, fields, cards, tables, layout and notifications |
+| `CyUI::Audio` | Knobs, faders and peak/RMS meters |
+| `CyUI::Canvas` | Grid, clipping, double-precision coordinates, pan and zoom |
+| `CyUI::Plots` | Linear/log plots, lines, points, steps, bars, histograms and heatmaps |
+| `CyUI::Curves` | Keyframes, Bezier handles, snapping, selection and edit transactions |
+| `CyUI::Nodes` | Connected cards and pins, graph navigation and layout |
+| `CyUI::Timeline` | Clip lanes, trimming, markers, playhead and range selection |
+| `CyUI::AudioViews` | Waveforms, spectra, oscilloscopes and stereo scopes |
+| `CyUI::Code` | Source views, syntax colors, annotations and search |
+| `CyUI::CodeEditor` | Editable source using the bundled MIT TextEditor backend |
+| `CyUI::Diff` | Unified/split comparisons, inline changes and hunk navigation |
+| `CyUI::Inspector` | Typed properties, validation and draft edits |
+| `CyUI::Assets` | Folder trees, grids/lists, thumbnails, filtering and drag/drop |
+| `CyUI::Images` | Image navigation, checkerboard, crop and gradient stops |
+| `CyUI::Viewport` | Host-rendered scene surfaces, orbit camera and 2D transform controls |
+| `CyUI::Commands` | Searchable keyboard command palette |
+| `CyUI::Diagnostics` | Bounded logs, filters and diagnostic navigation |
+| `CyUI::DocumentViews` | Markdown subset, code blocks, tables, links and transcripts |
+| `CyUI::Web` | Browser surface, input, origin policy, messages and theme bridge |
+| `CyUI::Gallery` | Widget/module examples and the theme editor |
+
+The optional `CyUI::WebCEF` and `CyUI::ImGuizmo` adapters use host-supplied
+dependencies. Neither is downloaded or enabled by `CYUI_MODULES=All`.
+See [module dependencies and APIs](docs/MODULES.md).
+
+## C++ quick start
+
+Requirements: **Dear ImGui >= 1.92**, **C++17** and **CMake >= 3.16**.
+CodeEditor and the optional CEF adapter require C++20. The docking branch of
+ImGui is recommended for applications that use docking.
+
+Add CyUI to your source tree, for example as `external/CyUI`. Supply your existing
+ImGui target so the application and CyUI share one ImGui instance:
 
 ```cmake
-set(CYUI_IMGUI_TARGET ma_target_imgui)
-add_subdirectory(external/CyUI cyui)
-target_link_libraries(mon_app PRIVATE CyUI::CyUI)
-```
-
-Les variables `CYUI_*` posées par un simple `set()` avant `add_subdirectory` sont
-respectées dès le premier configure (CMake 3.16 ou plus). CyUI s'intègre par
-`add_subdirectory` (ou `FetchContent`) : il n'y a pas de cible `install()` ni de
-`find_package(CyUI)`, car CyUI se compile contre la cible ImGui de l'application,
-qu'un paquet installé à part ne peut pas connaître.
-
-### Choisir les modules
-
-`CyUI::Core` fournit le socle. Les modules disponibles sont **Audio, Canvas,
-Plots, Curves, Nodes, Timeline, AudioViews, Code, Diff, CodeEditor, Inspector,
-Assets, Images, Viewport, Commands, Diagnostics, DocumentViews et Web**.
-Chaque application lie seulement les cibles utiles ; les dépendances entre modules
-sont résolues automatiquement. La galerie et les adaptateurs ImGuizmo/CEF sont optionnels.
-
-```cmake
-set(CYUI_IMGUI_TARGET ma_target_imgui)
+set(CYUI_IMGUI_TARGET app_imgui)
 set(CYUI_BUILD_DEMO OFF)
 set(CYUI_BUILD_AUDIO OFF)
 set(CYUI_BUILD_GALLERY OFF)
-set(CYUI_MODULES "Code;Diff;Inspector")
-add_subdirectory(external/CyUI cyui)
-target_link_libraries(mon_app PRIVATE CyUI::Diff CyUI::Inspector)
+set(CYUI_MODULES "Diff;Inspector")
+add_subdirectory(external/CyUI)
+
+target_link_libraries(app PRIVATE CyUI::Diff CyUI::Inspector)
 ```
 
-`CyUI::CyUI` conserve l'API globale et lie les modules sélectionnés. Les contrôles
-Audio et Gallery gardent leurs options `CYUI_BUILD_AUDIO` / `CYUI_BUILD_GALLERY`,
-ON pour les intégrations existantes ; les nommer dans `CYUI_MODULES` les active
-aussi. Le sélecteur `CYUI_MODULES` est vide par défaut dans une application hôte.
-Le [guide des modules](docs/MODULES.md) décrit toutes les API, dépendances et
-frontières avec les moteurs et documents propres à chaque application.
+Use `CYUI_MODULES "Core"` and `CyUI::Core` for the foundation alone. Include
+`<cyui/Core.h>` and the headers of the modules you use:
 
-### Python et Web
+```cpp
+#include <cyui/Core.h>
+#include <cyui/modules/Diff.h>
+#include <cyui/modules/Inspector.h>
+
+// After ImGui::CreateContext(), before the first frame:
+cyui::Config config;
+config.themeKey = "mid-grey";
+config.density = cyui::Density::compact;
+config.dpiScale = dpiScale;
+cyui::apply(config);
+cyui::loadFonts();
+
+// During an ImGui frame:
+if (cyui::primaryButton("Save")) {
+    saveDocument();
+    cyui::notify("Saved", cyui::Tone::success);
+}
+cyui::renderNotifications(); // At the end of the UI frame.
+```
+
+`CyUI::CyUI` and `<cyui/CyUI.h>` remain compatibility umbrellas for the modules
+selected in the build. Audio and Gallery keep their original ON defaults;
+disable their options explicitly when unused. Host builds default to no other
+optional modules. Ordinary ImGui widgets continue to work with the active theme.
+
+CyUI integrates through `add_subdirectory` or `FetchContent`. It does not provide
+an installed `find_package(CyUI)` package: it compiles against the host's ImGui
+target. See the [integration and migration guide](docs/AI_GUIDE.md).
+
+## Themes and sizing
+
+Five built-in themes share semantic color roles and two densities, **compact**
+and **comfortable**. Use `cyui::palette()` for interface colors and `cyui::dp()`
+or ImGui style metrics for sizes. Themes can be edited and saved as `.cytheme`.
+
+| Key | Appearance |
+| --- | --- |
+| `mid-grey` | Mid greys with an orange accent; the default |
+| `light-grey` | Light surfaces with dark text and an orange accent |
+| `amber-night` | Dark blue-grey surfaces with an amber accent |
+| `violet` | Dark slate surfaces with a violet accent |
+| `navy` | Deep navy surfaces with a blue accent |
+
+| Light grey | Violet | Navy |
+| --- | --- | --- |
+| ![CyUI controls in Light grey](docs/screenshots/light-grey.png) | ![CyUI controls in Violet](docs/screenshots/violet.png) | ![CyUI controls in Navy](docs/screenshots/navy.png) |
+
+Fonts and icons are loaded from the OS or host-provided files, rather than
+redistributed. Supply suitable fonts and fallbacks for the platforms and scripts
+your application supports. Theme, DPI, fonts and notifications are per ImGui
+context; initialize each context separately.
+
+## Python
 
 ```sh
 python -m pip install -e .
 ```
 
-imgui-bundle est installé avec le paquet (l'extra `[ui]` reste accepté).
+The package installs `imgui-bundle`. `cyui` provides the theme and ordinary
+widgets; import optional families explicitly from `cyui_modules`, such as
+`cyui_modules.plots`, `cyui_modules.diff` or `cyui_modules.audioviews`.
+Models can be imported without loading a renderer or media engine. Python's
+editor uses multiline editing with a syntax preview; it does not expose every
+feature of the C++ TextEditor backend.
 
-`cyui` conserve le thème et les widgets généraux. `cyui_modules` ajoute les modules
-facultatifs en Python, avec des modèles importables sans moteur audio, vidéo ou 3D.
-Un [exemple de galerie Python](examples/python_modules.py) montre les interactions.
+See the [Python gallery](examples/python_modules.py) and [module guide](docs/MODULES.md#python).
 
-Le module **Web** peut afficher une interface HTML/JavaScript issue de TypeScript,
-avec **CEF** comme moteur commun et un rendu dans une texture ImGui. CEF reste
-une dépendance explicite, distribuée séparément pour chaque OS/architecture.
-Le pont JavaScript/TypeScript et l'intégration iframe CyMD sont fournis dans `web/`.
-Le [guide Web](docs/WEB.md) précise les exemples C++/Python, les échanges de messages,
-les services nécessaires et le packaging Linux/macOS à valider.
+## Web and Unreal Editor
 
-Le code CyUI reste MIT. Les dépendances conservent leurs propres licences et
-notices ; voir [licences](docs/LICENSING.md) et [notices tierces](THIRD_PARTY_NOTICES.md).
-Les applications examinées ne sont pas incluses ni modifiées.
+- **Web:** embed HTML/JavaScript interfaces, including compiled TypeScript,
+  through a host backend or the optional off-screen CEF adapter. The `web/`
+  bridge provides JavaScript messaging, TypeScript declarations and theme CSS
+  variables. CEF runtimes are supplied separately per OS/architecture. See
+  [Web integration, lifecycle and deployment](docs/WEB.md).
+- **Unreal Editor:** embed CyUI in Slate panels using the optional Editor module.
+  Select the included modules when packaging, then use a shared provider or a
+  uniquely named embedded copy. Loading it adds no menus or tool windows.
+  It is an Editor integration, not a runtime/UMG backend. See
+  [Unreal integration and supported configurations](docs/UNREAL.md).
 
-## Connecteur Unreal Editor (optionnel)
+## Build the demo
 
-Le module Unreal `CyUI` s'intègre dans `Source/CyUI` d'un plugin existant, ou se
-partage entre plusieurs plugins via un fournisseur commun. Il fournit les
-panneaux Slate, le rendu, les entrées et les textures, sans ajouter de menu ou de
-fenêtre au chargement. Les modules inclus sont sélectionnés à la préparation.
-Voir le [guide Unreal](docs/UNREAL.md) pour l'installation, l'API et les versions
-effectivement validées. Le connecteur est réservé à l'éditeur.
+On Windows, with the Visual Studio 2022 C++ tools:
 
-## Pour les IA
-
-Quand tu demandes à une IA de refaire l'interface d'un logiciel, dis-lui :
-
-> Utilise la library CyUI du dossier `external/CyUI`. Lis
-> `docs/AI_GUIDE.md` et applique-le à l'interface ImGui de ce projet.
-
-Le guide contient :
-- l'intégration
-- les règles de style (pas de couleurs ni de tailles en dur, un seul bouton
-  primaire, des tables de propriétés...)
-- une **table de migration ImGui → CyUI**
-- l'API complète et des recettes
-
-## Démo
-
-```bash
+```bat
 build_demo.bat
+build\cyui_demo.exe
 ```
 
-`build_demo.bat` compile `build/cyui_demo.exe` avec MSVC (Visual Studio 2022 ou
-plus récent, trouvé par vswhere). La démo montre une app complète : barre de
-menus, barre du haut, sidebar, dock, inspecteur, galerie et toasts.
+The demo builds the bundled Dear ImGui and all ordinary modules. Its gallery
+contains interactive examples, a theme selector and a theme editor.
 
-La démo utilise une copie de Dear ImGui 1.93 WIP (docking) placée dans
-`third_party/imgui`. CMake lie aussi cette copie quand `CYUI_IMGUI_TARGET` est
-vide ; les apps gardent leur propre ImGui en passant leur cible.
-
-## Arborescence
-
-```
-include/cyui/   Core.h, Interaction.h, modules/, adapters/, CyUI.h
-src/            Theme.cpp, Widgets.cpp, Layout.cpp, Gallery.cpp, modules/, adapters/
-python/         cyui.py, cyui_modules/
-web/            pont JavaScript/TypeScript et variables CSS
-examples/       demo_win32_dx11/, cef_helper/, web/, python_modules.py
-tests/          modèles, gestes, modules isolés, navigateur, captures
-docs/           AI_GUIDE.md, MODULES.md, WEB.md, LICENSING.md, screenshots/
-third_party/    imgui, texteditor (avec leurs licences)
+```bat
+build\cyui_demo.exe --capture out.bmp --theme violet --tab 7 --gallery-only
 ```
 
-## Développement
+`--gallery-only` shows the selected gallery page across the window for module
+previews. Add `--comfortable` to switch density. To regenerate the README images
+from the built demo, install Pillow and run:
 
-Pour activer le contrôle Gitleaks avant chaque commit, installe
-[Gitleaks](https://github.com/gitleaks/gitleaks/releases) et active le hook
-dans ton clone :
+```sh
+python -m pip install Pillow
+python tools/capture_readme.py
+```
 
-```bash
+See [the build and visual-check instructions](docs/AI_GUIDE.md#7-build-and-check)
+and the repository's native, Python, Web and Unreal tests.
+
+## Documentation and license
+
+- [Integration, style rules, API and migration recipes](docs/AI_GUIDE.md)
+- [Module boundaries and dependency selection](docs/MODULES.md)
+- [Web / CEF](docs/WEB.md) and [Unreal Editor](docs/UNREAL.md)
+- [MIT license](LICENSE), [licensing guide](docs/LICENSING.md) and
+  [third-party notices](THIRD_PARTY_NOTICES.md)
+
+CyUI's own code, examples, Python modules and browser/engine adapters are MIT
+licensed. Dependencies retain their own licenses and notices. The repository
+does not include CEF or Unreal Engine binaries.
+
+For coding agents, read `docs/AI_GUIDE.md` before integrating CyUI or migrating an
+existing interface. Keep application models and business logic in the host.
+
+For local development, install [Gitleaks](https://github.com/gitleaks/gitleaks/releases)
+and enable the supplied pre-commit hook in your clone:
+
+```sh
 git config --local core.hooksPath .githooks
 ```
-
-Le hook utilise `gitleaks` dans le `PATH`, ou la copie locale dans
-`build/tools/gitleaks/gitleaks.exe`.
