@@ -48,9 +48,9 @@ struct NodeOptions {
     // Extra drawing inside each card, in screen coordinates (world-to-screen via state.canvas.view).
     std::function<void(const Node &, const Rect &)> drawBody;
 };
-NodeResult nodeEditor(const char *id, NodeState &, const std::vector<Node> &, const std::vector<NodeLink> &,
+CYUI_API NodeResult nodeEditor(const char *id, NodeState &, const std::vector<Node> &, const std::vector<NodeLink> &,
                       ImVec2 size, const NodeOptions & = {});
 // Layout produces positions; the host decides whether and how to commit them.
-std::vector<NodeMove> arrangeNodes(const std::vector<Node> &, const std::vector<NodeLink> &,
+CYUI_API std::vector<NodeMove> arrangeNodes(const std::vector<Node> &, const std::vector<NodeLink> &,
                                    Point spacing = {240, 130});
 } // namespace cyui

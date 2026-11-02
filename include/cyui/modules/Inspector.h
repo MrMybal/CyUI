@@ -33,6 +33,6 @@ struct InspectorState {
     std::uint64_t revision = 0;
 };
 using PropertyValidator = std::function<std::string(ItemId, const PropertyValue &)>;
-std::vector<PropertyEdit> inspector(const char *id, InspectorState &, ArrayView<Property>,
+CYUI_API std::vector<PropertyEdit> inspector(const char *id, InspectorState &, ArrayView<Property>,
                                     std::uint64_t revision = 0, const PropertyValidator & = {});
 } // namespace cyui

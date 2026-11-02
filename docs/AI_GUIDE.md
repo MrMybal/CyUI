@@ -634,3 +634,23 @@ coordinate systems. `CodeEditor` in Python offers native ImGui multiline Undo
 plus a syntax preview; C++ TextEditor advanced callbacks are not exposed there.
 `CEFRuntime` is an explicit optional browser loader; importing model modules is
 independent of imgui-bundle, NumPy, audio/video or browser engines.
+
+## 9. Unreal Editor connector (optional)
+
+Prepare `integrations/unreal/CyUI` with `tools/package_unreal.py`, selecting only
+the required modules. The self-contained UBT plugin provides dockable editor tabs
+and embedded `SCyUIPanel` Slate widgets. It owns ImGui frames, renderer-managed
+fonts, clipping, input and clipboard. A separate Editor module depends on `CyUI`
+and registers an `FOnDrawCyUITool` with `FCyUIEditorModule::RegisterTool`; unregister
+it before the owner unloads. Draw contents without another root Begin/End/frame.
+
+`MakePanel` embeds a callback in another Slate layout. `RegisterTexture` returns
+an ImTextureID-compatible handle for a pinned Unreal texture; release it after
+stopping its use. Module feature definitions and DLL exports are propagated by
+UBT. No Unreal code enters CMake's Core or other standalone builds.
+
+Panels use separate ImGui contexts and a shared CyUI palette/density. Numeric
+entry and notifications stay local to their context. All drawing runs on the
+editor game thread; host transactions and expensive data preparation remain the
+tool's responsibility. See [UNREAL.md](UNREAL.md) for complete recipes, lifecycle,
+automation tests, platform validation and current input/backend limitations.

@@ -12,7 +12,7 @@ struct LogEntry {
     LogLevel level = LogLevel::info;
     std::string text, source;
 };
-class LogBuffer {
+class CYUI_API LogBuffer {
   public:
     explicit LogBuffer(std::size_t capacity = 10000, std::size_t maxBytes = 8 * 1024 * 1024)
         : capacity_(std::max<std::size_t>(1, capacity)), maxBytes_(std::max<std::size_t>(1, maxBytes)) {}
@@ -35,12 +35,12 @@ struct LogState {
     unsigned levels = 15;
     ItemId selected = 0;
 };
-ItemId logView(const char *id, LogState &, const LogBuffer &, ImVec2 size = {});
+CYUI_API ItemId logView(const char *id, LogState &, const LogBuffer &, ImVec2 size = {});
 struct Diagnostic {
     ItemId id = 0;
     LogLevel level = LogLevel::error;
     std::string source, message;
     int line = 0, column = 0;
 };
-ItemId diagnosticList(const char *id, ArrayView<Diagnostic>, ImVec2 size = {});
+CYUI_API ItemId diagnosticList(const char *id, ArrayView<Diagnostic>, ImVec2 size = {});
 } // namespace cyui

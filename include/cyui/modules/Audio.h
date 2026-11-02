@@ -26,14 +26,14 @@ struct KnobStyle {
 
 // A rotary knob. Returns true while the value changes. Clicking its value
 // (under it) without dragging lets it be typed.
-bool knob(const char* id, float* value, float minimum, float maximum, float defaultValue, const KnobStyle& style = {});
+CYUI_API bool knob(const char* id, float* value, float minimum, float maximum, float defaultValue, const KnobStyle& style = {});
 
 // A vertical fader in dB with its scale. Returns true while it changes.
-bool fader(const char* id, float* gainDb, float minimumDb, float maximumDb, ImVec2 size, ImU32 colour = 0);
+CYUI_API bool fader(const char* id, float* gainDb, float minimumDb, float maximumDb, ImVec2 size, ImU32 colour = 0);
 // A level meter: peak and RMS of one or two channels, linear gain (1 = 0 dB).
-void meter(const char* id, ImVec2 size, float peakLeft, float peakRight, float rmsLeft, float rmsRight,
+CYUI_API void meter(const char* id, ImVec2 size, float peakLeft, float peakRight, float rmsLeft, float rmsRight,
            bool vertical = true);
 // A meter's position (0..1) for a level in dB.
-[[nodiscard]] float meterPosition(float gainDb);
+[[nodiscard]] CYUI_API float meterPosition(float gainDb);
 
 } // namespace cyui

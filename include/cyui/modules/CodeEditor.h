@@ -1,12 +1,12 @@
 #pragma once
 #include "cyui/modules/Code.h"
 #include <memory>
-class TextEditor;
+class IMGUI_API TextEditor;
 
 namespace cyui {
 // Optional MIT-licensed editor backend: multi-cursor, undo/redo, search, wrapping,
 // language colorization, completion callbacks and annotations. Never reads a file.
-class CodeEditor {
+class CYUI_API CodeEditor {
   public:
     CodeEditor();
     ~CodeEditor();

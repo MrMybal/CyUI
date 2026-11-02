@@ -3,7 +3,7 @@
 #include "cyui/Interaction.h"
 
 namespace cyui {
-struct CanvasView {
+struct CYUI_API CanvasView {
     Point origin{};
     double zoom = 1;
     Point world(ImVec2 screen, ImVec2 topLeft = {}) const;
@@ -26,7 +26,7 @@ struct CanvasFrame {
     Point mouse;
 };
 // Reserves an ImGui item, handles navigation and clips all drawing until destruction.
-class CanvasScope {
+class CYUI_API CanvasScope {
   public:
     CanvasScope(const char *id, CanvasState &, ImVec2 size, const CanvasOptions & = {});
     ~CanvasScope();
@@ -39,5 +39,5 @@ class CanvasScope {
   private:
     CanvasFrame frame_;
 };
-void drawCanvasGrid(const Rect &, const CanvasView &, double step = 32);
+CYUI_API void drawCanvasGrid(const Rect &, const CanvasView &, double step = 32);
 } // namespace cyui

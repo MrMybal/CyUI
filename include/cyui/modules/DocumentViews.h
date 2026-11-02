@@ -11,7 +11,7 @@ struct DocumentBlock {
     CodeDocument code;
     std::vector<std::vector<std::string>> rows;
 };
-class Document {
+class CYUI_API Document {
   public:
     bool setMarkdown(const std::string &);
     const std::vector<DocumentBlock> &blocks() const {
@@ -29,7 +29,7 @@ struct DocumentResult {
     std::string link;
     int copiedBlock = -1;
 };
-DocumentResult documentView(const char *id, DocumentState &, const Document &, ImVec2 size = {});
+CYUI_API DocumentResult documentView(const char *id, DocumentState &, const Document &, ImVec2 size = {});
 struct TranscriptMessage {
     ItemId id = 0;
     std::string role, content, time;
@@ -44,6 +44,6 @@ struct TranscriptResult {
     ItemId copy = 0;
     std::string link;
 };
-TranscriptResult transcript(const char *id, TranscriptState &, ArrayView<TranscriptMessage>,
+CYUI_API TranscriptResult transcript(const char *id, TranscriptState &, ArrayView<TranscriptMessage>,
                             ImVec2 size = {});
 } // namespace cyui

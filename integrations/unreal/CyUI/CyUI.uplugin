@@ -1,0 +1,12 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.1.0",
+  "FriendlyName": "CyUI Editor Tools",
+  "Description": "Optional dockable editor tools using CyUI and Dear ImGui through Slate.",
+  "Category": "Editor",
+  "CreatedBy": "CyUI contributors",
+  "CanContainContent": false,
+  "EnabledByDefault": false,
+  "Modules": [{ "Name": "CyUI", "Type": "Editor", "LoadingPhase": "PostEngineInit" }]
+}

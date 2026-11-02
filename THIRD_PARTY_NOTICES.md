@@ -26,5 +26,10 @@ No CEF runtime is downloaded automatically by CyUI's CMake configuration.
 System fonts (for example Segoe UI on Windows) are loaded from the operating
 system or host-provided font paths. CyUI does not distribute those font files.
 
+The optional Unreal Editor connector uses the host's Unreal Engine installation.
+Unreal Engine is separately licensed by Epic; no engine source or binary is
+included in CyUI or the prepared plugin's source snapshot. CyUI's own connector
+remains covered by the root MIT license.
+
 The Cy* applications surveyed for common UI requirements are not incorporated
 dependencies. Their code, assets and web builds retain their separate licenses.

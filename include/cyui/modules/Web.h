@@ -5,8 +5,8 @@
 
 namespace cyui {
 // Exact http(s) origins only. No file:, javascript:, credentials or wildcard hosts.
-std::string webOrigin(const std::string &url);
-struct WebPolicy {
+CYUI_API std::string webOrigin(const std::string &url);
+struct CYUI_API WebPolicy {
     std::vector<std::string> origins;
     std::size_t maxMessageBytes = 1024 * 1024, maxQueuedEvents = 256;
     bool allows(const std::string &url) const;
@@ -60,7 +60,7 @@ struct WebPanelOptions {
 };
 // Call backend.place({..., ..., false}) at frame start, including hidden tabs.
 // Bounds are host-client pixels after subtracting viewportOrigin.
-std::vector<WebEvent> webPanel(const char *id, WebBackend &, ImVec2 size, const WebPanelOptions & = {});
-std::string webThemeJson();
-std::string webEventJson(const WebEvent &);
+CYUI_API std::vector<WebEvent> webPanel(const char *id, WebBackend &, ImVec2 size, const WebPanelOptions & = {});
+CYUI_API std::string webThemeJson();
+CYUI_API std::string webEventJson(const WebEvent &);
 } // namespace cyui

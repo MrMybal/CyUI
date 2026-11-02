@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace cyui {
 namespace {
@@ -438,11 +439,45 @@ bool linkText(const char* label)
 // ---- Value controls ------------------------------------------------------------
 
 namespace {
-int gWheelFrame = -1;
-ImGuiContext* gWheelContext = nullptr;
-ImGuiID gEntryId {};
-char gEntryText[64] {};
-bool gEntryFresh {};
+struct Toast {
+    std::string text;
+    Tone tone;
+    double until;
+    int id;
+};
+struct WidgetContextState {
+    int wheelFrame = -1;
+    ImGuiID entryId {};
+    char entryText[64] {};
+    bool entryFresh = false;
+    std::vector<Toast> toasts;
+    int toastIds = 0;
+};
+std::unordered_map<ImGuiContext*, WidgetContextState> gWidgetContexts;
+WidgetContextState gPendingWidgets;
+WidgetContextState& widgetState()
+{
+    auto* context = ImGui::GetCurrentContext();
+    if (!context)
+        return gPendingWidgets;
+    auto [entry, inserted] = gWidgetContexts.try_emplace(context);
+    if (inserted) {
+        ImGuiContextHook hook;
+        hook.Type = ImGuiContextHookType_Shutdown;
+        hook.Callback = [](ImGuiContext* closing, ImGuiContextHook*) { gWidgetContexts.erase(closing); };
+        ImGui::AddContextHook(context, &hook);
+    }
+    if (!gPendingWidgets.toasts.empty()) {
+        auto& state = entry->second;
+        for (auto toast : gPendingWidgets.toasts) {
+            toast.until += ImGui::GetTime();
+            toast.id = ++state.toastIds;
+            state.toasts.push_back(std::move(toast));
+        }
+        gPendingWidgets.toasts.clear();
+    }
+    return entry->second;
+}
 
 std::optional<double> typedNumber(std::string text)
 {
@@ -464,14 +499,13 @@ std::optional<double> typedNumber(std::string text)
 
 void takeWheel()
 {
-    gWheelFrame = ImGui::GetFrameCount();
-    gWheelContext = ImGui::GetCurrentContext();
+    widgetState().wheelFrame = ImGui::GetFrameCount();
     ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
 }
 
 bool wheelTaken()
 {
-    return gWheelContext == ImGui::GetCurrentContext() && gWheelFrame == ImGui::GetFrameCount();
+    return widgetState().wheelFrame == ImGui::GetFrameCount();
 }
 
 float valueSpeed()
@@ -482,19 +516,19 @@ float valueSpeed()
 
 bool valueEntryOpen()
 {
-    return gEntryId != 0 && ImGui::IsPopupOpen(gEntryId, ImGuiPopupFlags_None);
+    return widgetState().entryId != 0 && ImGui::IsPopupOpen(widgetState().entryId, ImGuiPopupFlags_None);
 }
 
 bool valueEntry(const ImGuiID id, const ImVec2 min, const ImVec2 max, double& value, const double minimum,
                 const double maximum, const bool open, const double scale)
 {
     if (open) {
-        gEntryId = id;
-        std::snprintf(gEntryText, sizeof(gEntryText), "%.6g", value * scale);
-        gEntryFresh = true;
+        widgetState().entryId = id;
+        std::snprintf(widgetState().entryText, sizeof(widgetState().entryText), "%.6g", value * scale);
+        widgetState().entryFresh = true;
         ImGui::OpenPopupEx(id, ImGuiPopupFlags_None);
     }
-    if (gEntryId != id)
+    if (widgetState().entryId != id)
         return false;
     const auto width = std::max(max.x - min.x, dp(72.0f));
     ImGui::SetNextWindowPos(ImVec2((min.x + max.x - width) * 0.5f, min.y - dp(3.0f)));
@@ -504,26 +538,26 @@ bool valueEntry(const ImGuiID id, const ImVec2 min, const ImVec2 max, double& va
                                                    | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::PopStyleVar();
     if (!shown) {
-        gEntryId = 0;
+        widgetState().entryId = 0;
         return false;
     }
     auto set = false;
-    if (gEntryFresh) {
+    if (widgetState().entryFresh) {
         ImGui::SetKeyboardFocusHere();
-        gEntryFresh = false;
+        widgetState().entryFresh = false;
     }
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::InputText("##typed", gEntryText, sizeof(gEntryText),
+    if (ImGui::InputText("##typed", widgetState().entryText, sizeof(widgetState().entryText),
                          ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-        if (const auto typed = typedNumber(gEntryText)) {
+        if (const auto typed = typedNumber(widgetState().entryText)) {
             value = std::clamp(*typed / (scale != 0.0 ? scale : 1.0), std::min(minimum, maximum), std::max(minimum, maximum));
             set = true;
         }
         ImGui::CloseCurrentPopup();
-        gEntryId = 0;
+        widgetState().entryId = 0;
     } else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
         ImGui::CloseCurrentPopup();
-        gEntryId = 0;
+        widgetState().entryId = 0;
     }
     ImGui::EndPopup();
     return set;
@@ -890,40 +924,29 @@ bool colourChip(const char* id, const ImU32 colour, const ImVec2 size)
 
 // ---- Notifications ---------------------------------------------------------------
 
-namespace {
-struct Toast {
-    std::string text;
-    Tone tone;
-    double until;
-    int id;
-};
-std::vector<Toast> gToasts;
-int gToastIds {};
-}  // namespace
-
 void notify(const char* text, const Tone tone, const float seconds)
 {
     if (text == nullptr)
         return;
     const auto now = ImGui::GetCurrentContext() != nullptr ? ImGui::GetTime() : 0.0;
-    gToasts.push_back({ text, tone, now + seconds, ++gToastIds });
-    if (gToasts.size() > 6)
-        gToasts.erase(gToasts.begin());
+    widgetState().toasts.push_back({ text, tone, now + seconds, ++widgetState().toastIds });
+    if (widgetState().toasts.size() > 6)
+        widgetState().toasts.erase(widgetState().toasts.begin());
 }
 
 void renderNotifications()
 {
     const auto now = ImGui::GetTime();
-    gToasts.erase(std::remove_if(gToasts.begin(), gToasts.end(), [now](const Toast& toast) { return toast.until < now; }),
-                  gToasts.end());
-    if (gToasts.empty())
+    widgetState().toasts.erase(std::remove_if(widgetState().toasts.begin(), widgetState().toasts.end(), [now](const Toast& toast) { return toast.until < now; }),
+                  widgetState().toasts.end());
+    if (widgetState().toasts.empty())
         return;
     const auto& p = palette();
     const auto* viewport = ImGui::GetMainViewport();
     auto y = viewport->WorkPos.y + viewport->WorkSize.y - dp(16.0f);
     const auto x = viewport->WorkPos.x + viewport->WorkSize.x - dp(16.0f);
-    for (auto i = static_cast<int>(gToasts.size()) - 1; i >= 0; --i) {
-        auto& toast = gToasts[static_cast<std::size_t>(i)];
+    for (auto i = static_cast<int>(widgetState().toasts.size()) - 1; i >= 0; --i) {
+        auto& toast = widgetState().toasts[static_cast<std::size_t>(i)];
         const auto left = static_cast<float>(toast.until - now);
         const auto fade = std::clamp(left / 0.3f, 0.0f, 1.0f);
         ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(1.0f, 1.0f));

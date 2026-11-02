@@ -14,7 +14,7 @@ struct CommandState {
     int selected = 0;
     bool wasOpen = false;
 };
-std::vector<std::size_t> rankCommands(ArrayView<Command>, const std::string &query);
+CYUI_API std::vector<std::size_t> rankCommands(ArrayView<Command>, const std::string &query);
 // Returns a requested command ID. The host validates and executes it.
-ItemId commandPalette(const char *id, bool &open, CommandState &, ArrayView<Command>, ImVec2 size = {});
+CYUI_API ItemId commandPalette(const char *id, bool &open, CommandState &, ArrayView<Command>, ImVec2 size = {});
 } // namespace cyui

@@ -73,32 +73,32 @@ public:
 
 // The meaning of a badge, a button, a notice, a progress bar.
 enum class Tone { neutral, accent, success, warning, error, info };
-[[nodiscard]] ImU32 toneColour(Tone tone);
+[[nodiscard]] CYUI_API ImU32 toneColour(Tone tone);
 
 // ---- Text --------------------------------------------------------------------
 
 // A title: level 1 (page, 1.5x semibold), 2 (panel, 1.2x), 3 (group, 1.0x).
-void heading(const char* text, int level = 2);
+CYUI_API void heading(const char* text, int level = 2);
 // Small semibold dimmed title for a group inside a panel ("Transform").
-void sectionTitle(const char* text);
+CYUI_API void sectionTitle(const char* text);
 // CyEngineHub-style label: SMALL UPPERCASE, bold, accent-tinted. Pass the
 // text already uppercased.
-void overline(const char* text, ImU32 colour = 0);
-void textDim(const char* fmt, ...) IM_FMTARGS(1);
-void textFaint(const char* fmt, ...) IM_FMTARGS(1);
-void textColoured(ImU32 colour, const char* fmt, ...) IM_FMTARGS(2);
+CYUI_API void overline(const char* text, ImU32 colour = 0);
+CYUI_API void textDim(const char* fmt, ...) IM_FMTARGS(1);
+CYUI_API void textFaint(const char* fmt, ...) IM_FMTARGS(1);
+CYUI_API void textColoured(ImU32 colour, const char* fmt, ...) IM_FMTARGS(2);
 // Monospace text (paths, logs, values).
-void textMono(const char* fmt, ...) IM_FMTARGS(1);
+CYUI_API void textMono(const char* fmt, ...) IM_FMTARGS(1);
 // A keyboard shortcut drawn as a key cap: kbd("Ctrl+S").
-void kbd(const char* keys);
+CYUI_API void kbd(const char* keys);
 // A small (?) or (i) after the previous item, its tooltip on hover.
-void helpMarker(const char* text);
+CYUI_API void helpMarker(const char* text);
 // A delayed tooltip for the last item (nothing when text is null/empty).
-void tooltip(const char* text);
+CYUI_API void tooltip(const char* text);
 // Text clipped to `maxWidth` with an ellipsis, drawn at `position`.
-void clippedText(ImDrawList* list, ImVec2 position, float maxWidth, ImU32 colour, const char* text);
+CYUI_API void clippedText(ImDrawList* list, ImVec2 position, float maxWidth, ImU32 colour, const char* text);
 // Text centred in a rectangle.
-void centredText(ImDrawList* list, ImVec2 min, ImVec2 max, ImU32 colour, const char* text);
+CYUI_API void centredText(ImDrawList* list, ImVec2 min, ImVec2 max, ImU32 colour, const char* text);
 
 // ---- Buttons -----------------------------------------------------------------
 
@@ -111,70 +111,70 @@ enum class Variant {
     success,    // confirm / go
 };
 
-bool button(const char* label, Variant variant = Variant::secondary, ImVec2 size = ImVec2(0.0f, 0.0f));
-bool primaryButton(const char* label, ImVec2 size = ImVec2(0.0f, 0.0f));
-bool dangerButton(const char* label, ImVec2 size = ImVec2(0.0f, 0.0f));
-bool ghostButton(const char* label, ImVec2 size = ImVec2(0.0f, 0.0f));
+CYUI_API bool button(const char* label, Variant variant = Variant::secondary, ImVec2 size = ImVec2(0.0f, 0.0f));
+CYUI_API bool primaryButton(const char* label, ImVec2 size = ImVec2(0.0f, 0.0f));
+CYUI_API bool dangerButton(const char* label, ImVec2 size = ImVec2(0.0f, 0.0f));
+CYUI_API bool ghostButton(const char* label, ImVec2 size = ImVec2(0.0f, 0.0f));
 // An icon glyph then a label: iconTextButton(icon::save, "Save").
-bool iconTextButton(const char* icon, const char* label, Variant variant = Variant::secondary,
+CYUI_API bool iconTextButton(const char* icon, const char* label, Variant variant = Variant::secondary,
                     ImVec2 size = ImVec2(0.0f, 0.0f));
 // A flat square icon button, tinted when active (a tool, a mode, play...).
-bool iconButton(const char* icon, const char* tooltipText = nullptr, bool active = false, ImU32 activeColour = 0,
+CYUI_API bool iconButton(const char* icon, const char* tooltipText = nullptr, bool active = false, ImU32 activeColour = 0,
                 ImVec2 size = ImVec2(0.0f, 0.0f));
 // A compact rounded toggle that fills with `onColour` when on (M, S, R, a word).
-bool toggleButton(const char* label, bool* value, ImU32 onColour = 0, ImVec2 size = ImVec2(0.0f, 0.0f),
+CYUI_API bool toggleButton(const char* label, bool* value, ImU32 onColour = 0, ImVec2 size = ImVec2(0.0f, 0.0f),
                   const char* tooltipText = nullptr);
 // An on/off switch with its label after it (settings).
-bool toggleSwitch(const char* label, bool* value);
+CYUI_API bool toggleSwitch(const char* label, bool* value);
 // Joined buttons, one selected: view modes, units, tabs in a toolbar.
 // Returns true when the selection changed.
-bool segmented(const char* id, const char* const labels[], int count, int* current, float width = 0.0f);
+CYUI_API bool segmented(const char* id, const char* const labels[], int count, int* current, float width = 0.0f);
 // A clickable "link" text.
-bool linkText(const char* label);
+CYUI_API bool linkText(const char* label);
 
 // ---- Value controls ------------------------------------------------------------
 
 // A labelled drag field for numbers: dragValue("Tempo", &bpm, 0.1f, 20, 300, "%.2f BPM").
-bool dragValue(const char* id, float* value, float speed, float minimum, float maximum, const char* format = "%.2f",
+CYUI_API bool dragValue(const char* id, float* value, float speed, float minimum, float maximum, const char* format = "%.2f",
                float width = 0.0f);
 // A slider drawn as a filled bar with the value in it (inspectors).
-bool sliderBar(const char* id, float* value, float minimum, float maximum, const char* format = "%.2f",
+CYUI_API bool sliderBar(const char* id, float* value, float minimum, float maximum, const char* format = "%.2f",
                float width = 0.0f, ImU32 colour = 0);
 
 // A number typed in over a rectangle: call each frame; `open` opens it.
 // Enter sets (a comma is a decimal point, "k" multiplies by 1000), Escape leaves.
-bool valueEntry(ImGuiID id, ImVec2 min, ImVec2 max, double& value, double minimum, double maximum, bool open,
+CYUI_API bool valueEntry(ImGuiID id, ImVec2 min, ImVec2 max, double& value, double minimum, double maximum, bool open,
                 double scale = 1.0);
-[[nodiscard]] bool valueEntryOpen();
+[[nodiscard]] CYUI_API bool valueEntryOpen();
 
 // The wheel this frame went to a control under the pointer: a view that
 // scrolls with the wheel should leave it alone when wheelTaken().
-void takeWheel();
-[[nodiscard]] bool wheelTaken();
+CYUI_API void takeWheel();
+[[nodiscard]] CYUI_API bool wheelTaken();
 // Ctrl: 0.15 (fine), Shift: 4 (fast), else 1.
-[[nodiscard]] float valueSpeed();
+[[nodiscard]] CYUI_API float valueSpeed();
 
 // ---- Fields --------------------------------------------------------------------
 
 // A search box: magnifier, hint, a clear button. True when the text changed.
-bool searchField(const char* id, char* buffer, int bufferSize, const char* hint = "Search", float width = 0.0f);
+CYUI_API bool searchField(const char* id, char* buffer, int bufferSize, const char* hint = "Search", float width = 0.0f);
 // A text field with a hint (placeholder). True when the text changed.
-bool textField(const char* id, char* buffer, int bufferSize, const char* hint = nullptr, float width = 0.0f);
+CYUI_API bool textField(const char* id, char* buffer, int bufferSize, const char* hint = nullptr, float width = 0.0f);
 // A combo from a list of strings. True when the selection changed.
-bool combo(const char* id, int* current, const char* const items[], int count, float width = 0.0f);
+CYUI_API bool combo(const char* id, int* current, const char* const items[], int count, float width = 0.0f);
 
 // ---- Containers ----------------------------------------------------------------
 
 // A card: rounded raised ground (bg2), a line, padding, an optional title.
 // Always call endCard() (even when beginCard returns false).
 // height: 0 = fit content, >0 = fixed, <0 = fill minus that much.
-bool beginCard(const char* id, const char* title = nullptr, float height = 0.0f, Tone tone = Tone::neutral);
-void endCard();
+CYUI_API bool beginCard(const char* id, const char* title = nullptr, float height = 0.0f, Tone tone = Tone::neutral);
+CYUI_API void endCard();
 
 // A collapsible section with a full-width header bar (inspectors).
 // Call endSection() only when it returned true.
-bool beginSection(const char* label, bool defaultOpen = true);
-void endSection();
+CYUI_API bool beginSection(const char* label, bool defaultOpen = true);
+CYUI_API void endSection();
 
 // Label / value rows in two aligned columns (inspectors, settings):
 //   if (cyui::beginProperties("##transform")) {
@@ -184,38 +184,38 @@ void endSection();
 //   }
 // property() writes the label in the first column and readies the second
 // (full width) for the control.
-bool beginProperties(const char* id, float labelWidth = 0.0f);
-void property(const char* label, const char* help = nullptr);
-void endProperties();
+CYUI_API bool beginProperties(const char* id, float labelWidth = 0.0f);
+CYUI_API void property(const char* label, const char* help = nullptr);
+CYUI_API void endProperties();
 
 // A thin vertical bar between toolbar groups (on the same line).
-void toolbarSeparator();
+CYUI_API void toolbarSeparator();
 // A horizontal line with optional spacing, in the theme's line colour.
-void divider(float spacing = 4.0f);
+CYUI_API void divider(float spacing = 4.0f);
 // Vertical space in dp.
-void space(float height = 8.0f);
+CYUI_API void space(float height = 8.0f);
 
 // ---- Status & feedback -----------------------------------------------------------
 
 // A small rounded pill: badge("BETA", Tone::warning).
-void badge(const char* text, Tone tone = Tone::neutral);
+CYUI_API void badge(const char* text, Tone tone = Tone::neutral);
 // A coloured dot (status: online, error...), on the text line.
-void statusDot(ImU32 colour, const char* tooltipText = nullptr);
+CYUI_API void statusDot(ImU32 colour, const char* tooltipText = nullptr);
 // A thin progress bar; fraction < 0 draws an indeterminate one.
-void progressBar(float fraction, ImVec2 size = ImVec2(-1.0f, 0.0f), const char* overlay = nullptr,
+CYUI_API void progressBar(float fraction, ImVec2 size = ImVec2(-1.0f, 0.0f), const char* overlay = nullptr,
                  Tone tone = Tone::accent);
 // A spinning arc (work in progress).
-void spinner(const char* id, float radius = 7.0f, ImU32 colour = 0);
+CYUI_API void spinner(const char* id, float radius = 7.0f, ImU32 colour = 0);
 // A centred title and message filling the rest of a panel ("No layers yet").
-void emptyState(const char* title, const char* message, const char* icon = nullptr);
+CYUI_API void emptyState(const char* title, const char* message, const char* icon = nullptr);
 // A notice block with a coloured bar: callout(Tone::warning, "Unsaved changes").
-void callout(Tone tone, const char* text);
+CYUI_API void callout(Tone tone, const char* text);
 // A coloured square (track colour, swatch). True when clicked.
-bool colourChip(const char* id, ImU32 colour, ImVec2 size);
+CYUI_API bool colourChip(const char* id, ImU32 colour, ImVec2 size);
 
 // Toast notifications, bottom-right of the main viewport. notify() from
 // anywhere; renderNotifications() once per frame, after everything else.
-void notify(const char* text, Tone tone = Tone::neutral, float seconds = 4.0f);
-void renderNotifications();
+CYUI_API void notify(const char* text, Tone tone = Tone::neutral, float seconds = 4.0f);
+CYUI_API void renderNotifications();
 
 }  // namespace cyui

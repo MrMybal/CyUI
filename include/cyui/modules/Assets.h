@@ -22,5 +22,5 @@ struct AssetResult {
     AssetAction action = AssetAction::none;
     bool queryChanged = false;
 };
-AssetResult assetBrowser(const char *id, AssetState &, ArrayView<AssetItem>, ImVec2 size = {});
+CYUI_API AssetResult assetBrowser(const char *id, AssetState &, ArrayView<AssetItem>, ImVec2 size = {});
 } // namespace cyui

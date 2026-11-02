@@ -16,8 +16,8 @@ struct WebCEFOptions {
 };
 // Pass the SAME app to CefExecuteProcess and CefInitialize, including helper executables.
 // Host owns CEF initialization, process sandbox, message pump and shutdown.
-CefRefPtr<CefApp> webCEFApp();
-std::unique_ptr<WebBackend> createWebCEF(const WebCEFOptions &);
+CYUI_API CefRefPtr<CefApp> webCEFApp();
+CYUI_API std::unique_ptr<WebBackend> createWebCEF(const WebCEFOptions &);
 // Advanced host access for IME composition, native key events, drag/drop and accessibility.
-CefRefPtr<CefBrowser> webCEFBrowser(WebBackend &);
+CYUI_API CefRefPtr<CefBrowser> webCEFBrowser(WebBackend &);
 } // namespace cyui

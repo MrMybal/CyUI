@@ -5,6 +5,7 @@
 // what exists and how it looks in each theme, and read Gallery.cpp for the
 // code of each example.
 
+#include "cyui/Export.h"
 #include <imgui.h>
 
 namespace cyui {
@@ -17,9 +18,9 @@ struct GalleryResources {
 };
 
 // selectTab >= 0 brings that page to the front (0 text, 1 buttons, 2 controls, 3 containers).
-void showGallery(bool *open = nullptr, int selectTab = -1);
-void showGallery(bool *open, int selectTab, const GalleryResources &);
+CYUI_API void showGallery(bool *open = nullptr, int selectTab = -1);
+CYUI_API void showGallery(bool *open, int selectTab, const GalleryResources &);
 // Live palette editor; saves / loads .cytheme files.
-void showThemeEditor(bool *open = nullptr);
+CYUI_API void showThemeEditor(bool *open = nullptr);
 
 } // namespace cyui

@@ -16,7 +16,7 @@ struct Gizmo3DOptions {
     const float *snap = nullptr;
 };
 // Host supplies its ImGuizmo target. Matrices are column-major, matching Viewport.
-Edit<std::array<float, 16>> gizmo3D(const char *id, Gizmo3DState &, const std::array<float, 16> &matrix,
+CYUI_API Edit<std::array<float, 16>> gizmo3D(const char *id, Gizmo3DState &, const std::array<float, 16> &matrix,
                                     const std::array<float, 16> &view,
                                     const std::array<float, 16> &projection, const Rect &,
                                     const Gizmo3DOptions & = {});

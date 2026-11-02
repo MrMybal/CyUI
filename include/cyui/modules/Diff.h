@@ -12,7 +12,7 @@ struct DiffRow {
 struct DiffPair {
     int left = -1, right = -1;
 };
-class DiffDocument {
+class CYUI_API DiffDocument {
   public:
     void setTexts(const std::string &before, const std::string &after, CodeLanguage = CodeLanguage::plain,
                   std::size_t workBudget = 4000000);
@@ -54,5 +54,5 @@ struct DiffState {
 struct DiffResult {
     int row = -1, oldLine = 0, newLine = 0;
 };
-DiffResult diffViewer(const char *id, DiffState &, const DiffDocument &, ImVec2 size = {});
+CYUI_API DiffResult diffViewer(const char *id, DiffState &, const DiffDocument &, ImVec2 size = {});
 } // namespace cyui

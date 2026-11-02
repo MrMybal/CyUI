@@ -46,7 +46,7 @@ struct TimelineResult {
     double time = 0;
     std::vector<ItemId> remove;
 };
-TimelineResult timeline(const char *id, TimelineState &, const std::vector<TimelineLane> &,
+CYUI_API TimelineResult timeline(const char *id, TimelineState &, const std::vector<TimelineLane> &,
                         const std::vector<TimelineClip> &, ArrayView<TimelineMarker>, ImVec2 size,
                         const TimelineOptions & = {});
 } // namespace cyui

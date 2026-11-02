@@ -46,6 +46,11 @@ Neither adapter is downloaded or enabled by `CYUI_MODULES=All`. The Web module
 is usable with a host backend; the supplied browser implementation is CEF.
 See [WEB.md](WEB.md) for platform support, process lifecycle and deployment.
 
+The optional [Unreal Editor connector](UNREAL.md) packages selected CyUI modules
+as an Editor-only UBT plugin with dockable tabs and a Slate renderer/input backend.
+It is prepared separately with `tools/package_unreal.py`; it is not a CMake target
+or a dependency of Core.
+
 ## Select only what an application needs
 
 ```cmake

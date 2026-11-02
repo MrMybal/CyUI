@@ -34,9 +34,9 @@ struct SourceSpan {
     std::size_t line = 0, startByte = 0, endByte = 0;
     TokenRole role = TokenRole::text;
 };
-std::size_t displayOffset(std::string_view raw, std::size_t byteOffset, unsigned tabSize = 4);
-std::string expandTabs(std::string_view, unsigned tabSize = 4);
-class CodeDocument {
+CYUI_API std::size_t displayOffset(std::string_view raw, std::size_t byteOffset, unsigned tabSize = 4);
+CYUI_API std::string expandTabs(std::string_view, unsigned tabSize = 4);
+class CYUI_API CodeDocument {
   public:
     bool setText(const std::string &, CodeLanguage language = CodeLanguage::plain,
                  std::uint64_t revision = 0);
@@ -64,8 +64,8 @@ class CodeDocument {
     CodeLanguage language_ = CodeLanguage::plain;
     std::size_t columns_ = 0;
 };
-ImU32 tokenColor(TokenRole, ImU32 background = 0);
-void paintCodeLine(ImDrawList *, ImVec2, const CodeLine &, ImU32 background = 0);
+CYUI_API ImU32 tokenColor(TokenRole, ImU32 background = 0);
+CYUI_API void paintCodeLine(ImDrawList *, ImVec2, const CodeLine &, ImU32 background = 0);
 struct CodeAnnotation {
     ItemId id = 0;
     std::size_t line = 0;
@@ -83,6 +83,6 @@ struct CodeViewResult {
     int clickedLine = -1;
     ItemId annotation = 0;
 };
-CodeViewResult codeViewer(const char *id, CodeViewState &, const CodeDocument &, ImVec2 size = {},
+CYUI_API CodeViewResult codeViewer(const char *id, CodeViewState &, const CodeDocument &, ImVec2 size = {},
                           ArrayView<CodeAnnotation> annotations = {});
 } // namespace cyui

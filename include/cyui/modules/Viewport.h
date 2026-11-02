@@ -12,8 +12,8 @@ struct OrbitCamera {
     double yaw = 0, pitch = .25, distance = 5;
     Vec3 up{0, 1, 0};
 };
-Vec3 cameraPosition(const OrbitCamera &);
-std::array<float, 16> cameraViewMatrix(const OrbitCamera &); // column-major, right-handed
+CYUI_API Vec3 cameraPosition(const OrbitCamera &);
+CYUI_API std::array<float, 16> cameraViewMatrix(const OrbitCamera &); // column-major, right-handed
 struct ViewportState {
     OrbitCamera camera;
     bool orbiting = false, panning = false;
@@ -22,7 +22,7 @@ struct ViewportResult {
     bool cameraChanged = false, clicked = false;
     ImVec2 uv{-1, -1};
 };
-ViewportResult viewport(const char *id, ViewportState &, const ImageData &, ImVec2 size,
+CYUI_API ViewportResult viewport(const char *id, ViewportState &, const ImageData &, ImVec2 size,
                         bool navigation = true);
 struct Transform2D {
     Point center;
@@ -41,6 +41,6 @@ struct TransformOptions {
     bool enabled = true;
     std::uint64_t revision = 0;
 };
-Edit<Transform2D> transformGizmo(const char *id, TransformState &, const Transform2D &,
+CYUI_API Edit<Transform2D> transformGizmo(const char *id, TransformState &, const Transform2D &,
                                  const TransformOptions & = {});
 } // namespace cyui

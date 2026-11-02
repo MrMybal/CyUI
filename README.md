@@ -118,6 +118,14 @@ Le code CyUI reste MIT. Les dépendances conservent leurs propres licences et
 notices ; voir [licences](docs/LICENSING.md) et [notices tierces](THIRD_PARTY_NOTICES.md).
 Les applications examinées ne sont pas incluses ni modifiées.
 
+## Connecteur Unreal Editor (optionnel)
+
+Le plugin `CyUI` permet de créer des outils dans des onglets Unreal dockables ou
+des panneaux Slate, avec rendu, clavier/souris, saisie Unicode et textures Unreal.
+Il reste séparé du Core ; les modules inclus sont sélectionnés à la préparation.
+Voir le [guide Unreal](docs/UNREAL.md) pour l'installation, l'API et les versions
+effectivement validées. Le connecteur est réservé à l'éditeur.
+
 ## Pour les IA
 
 Quand tu demandes à une IA de refaire l'interface d'un logiciel, dis-lui :

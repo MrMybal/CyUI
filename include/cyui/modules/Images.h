@@ -19,7 +19,7 @@ struct ImageResult {
     bool clicked = false;
     Edit<Rect> crop;
 };
-ImageResult imageViewport(const char *id, ImageState &, const ImageData &, ImVec2 size,
+CYUI_API ImageResult imageViewport(const char *id, ImageState &, const ImageData &, ImVec2 size,
                           ImageTool tool = ImageTool::inspect);
 struct GradientStop {
     ItemId id = 0;
@@ -31,8 +31,8 @@ struct GradientState {
     std::vector<GradientStop> before, preview;
     std::uint64_t revision = 0;
 };
-ImVec4 sampleGradient(ArrayView<GradientStop>, double position, bool linearLight = false);
-Edit<std::vector<GradientStop>> gradientEditor(const char *id, GradientState &,
+CYUI_API ImVec4 sampleGradient(ArrayView<GradientStop>, double position, bool linearLight = false);
+CYUI_API Edit<std::vector<GradientStop>> gradientEditor(const char *id, GradientState &,
                                                const std::vector<GradientStop> &, ImVec2 size = {},
                                                bool linearLight = false, std::uint64_t revision = 0);
 } // namespace cyui

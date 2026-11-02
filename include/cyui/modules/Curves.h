@@ -10,7 +10,7 @@ struct CurvePoint {
     CurveShape shape = CurveShape::linear;
     Point in{-0.1, 0}, out{0.1, 0}; // offsets in the host's time/value units
 };
-double evaluateCurve(ArrayView<CurvePoint>, double time, double fallback = 0);
+CYUI_API double evaluateCurve(ArrayView<CurvePoint>, double time, double fallback = 0);
 struct CurveState {
     PlotState view;
     std::vector<ItemId> selection;
@@ -29,6 +29,6 @@ struct CurveOptions {
     std::function<double(ArrayView<CurvePoint>, double)> evaluate;
     std::function<double(double)> snapTime;
 };
-Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &, const std::vector<CurvePoint> &,
+CYUI_API Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &, const std::vector<CurvePoint> &,
                                           ImVec2 size, const CurveOptions & = {});
 } // namespace cyui

@@ -4,7 +4,7 @@
 #include <functional>
 
 namespace cyui {
-struct Axis {
+struct CYUI_API Axis {
     Range range;
     bool logarithmic = false;
     double fraction(double value) const;
@@ -34,13 +34,13 @@ struct PlotOptions {
     std::function<std::string(double)> formatX, formatY;
     std::size_t maxPoints = 65536;
 };
-PlotResult plot(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size, const PlotOptions & = {});
+CYUI_API PlotResult plot(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size, const PlotOptions & = {});
 // Preparation helpers: run when data changes, outside the draw loop. Gaps remain gaps.
-std::vector<Point> reducePlot(ArrayView<Point>, std::size_t budget);
-std::vector<std::uint64_t> histogram(ArrayView<double>, Range, std::size_t bins);
+CYUI_API std::vector<Point> reducePlot(ArrayView<Point>, std::size_t budget);
+CYUI_API std::vector<std::uint64_t> histogram(ArrayView<double>, Range, std::size_t bins);
 struct HeatmapResult {
     int row = -1, column = -1;
     bool clicked = false;
 };
-HeatmapResult heatmap(const char *id, ArrayView<float>, int columns, int rows, Range values, ImVec2 size);
+CYUI_API HeatmapResult heatmap(const char *id, ArrayView<float>, int columns, int rows, Range values, ImVec2 size);
 } // namespace cyui

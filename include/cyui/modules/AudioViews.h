@@ -18,9 +18,9 @@ struct WaveformResult {
     bool seek = false, selectionChanged = false;
     double time = 0;
 };
-WaveformResult waveform(const char *id, WaveformState &, const WaveformData &, double playhead, ImVec2 size);
-std::vector<Peak> makePeaks(ArrayView<float> samples, std::size_t columns);
-PlotResult spectrum(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
-PlotResult oscilloscope(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
-PlotResult stereoScope(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
+CYUI_API WaveformResult waveform(const char *id, WaveformState &, const WaveformData &, double playhead, ImVec2 size);
+CYUI_API std::vector<Peak> makePeaks(ArrayView<float> samples, std::size_t columns);
+CYUI_API PlotResult spectrum(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
+CYUI_API PlotResult oscilloscope(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
+CYUI_API PlotResult stereoScope(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
 } // namespace cyui

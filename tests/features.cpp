@@ -1,4 +1,5 @@
 #include <cyui/CyUI.h>
+#include <imgui_internal.h>
 #include <cstdio>
 #include <limits>
 #include <thread>
@@ -359,6 +360,47 @@ int main() {
     DocumentState documentState;
     frame([&] { documentView("Document", documentState, document, {500, 400}); });
 #endif
+    {
+        auto *mainContext = ImGui::GetCurrentContext();
+        auto createPanelContext = [] {
+            auto *context = ImGui::CreateContext();
+            ImGui::SetCurrentContext(context);
+            auto &panelIO = ImGui::GetIO();
+            panelIO.IniFilename = nullptr;
+            panelIO.DisplaySize = {1000, 800};
+            panelIO.DeltaTime = 1.f / 60;
+            cyui::apply();
+            cyui::loadFonts();
+            unsigned char *data;
+            int w, h;
+            panelIO.Fonts->GetTexDataAsRGBA32(&data, &w, &h);
+            panelIO.Fonts->SetTexID(ImTextureID(1));
+            return context;
+        };
+        auto *first = createPanelContext();
+        double firstValue = 12, secondValue = 34;
+        frame([&] {
+            cyui::notify("Only first panel");
+            cyui::renderNotifications();
+            cyui::valueEntry(101, {20, 20}, {200, 60}, firstValue, 0, 100, true);
+        });
+        check(ImGui::FindWindowByName("##cyuiToast1") != nullptr, "notification belongs to its panel");
+        auto *second = createPanelContext();
+        frame([&] {
+            cyui::renderNotifications();
+            cyui::valueEntry(202, {20, 20}, {200, 60}, secondValue, 0, 100, true);
+        });
+        check(ImGui::FindWindowByName("##cyuiToast1") == nullptr,
+              "notification does not leak to another context");
+        ImGui::SetCurrentContext(first);
+        frame([&] {
+            check(cyui::valueEntryOpen(), "number entry remains active after another context draws");
+            cyui::valueEntry(101, {20, 20}, {200, 60}, firstValue, 0, 100, false);
+        });
+        ImGui::DestroyContext(first);
+        ImGui::DestroyContext(second);
+        ImGui::SetCurrentContext(mainContext);
+    }
     ImGui::DestroyContext();
     if (!failures)
         std::puts("CyUI models and interactions passed");
