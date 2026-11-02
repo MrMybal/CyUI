@@ -6,16 +6,18 @@ public class CyUI : ModuleRules
     public CyUI(ReadOnlyTargetRules Target) : base(Target)
     {
         if (!Target.bBuildEditor)
-            throw new BuildException("CyUI is an optional editor-only plugin.");
-        string Library = Path.GetFullPath(Path.Combine(ModuleDirectory, "../../ThirdParty/CyUI"));
+            throw new BuildException("CyUI is an optional editor-only module.");
+        string Library = Path.Combine(ModuleDirectory, "Library");
+        if (!Directory.Exists(Library))
+            Library = Path.GetFullPath(Path.Combine(ModuleDirectory, "../../ThirdParty/CyUI"));
         if (!File.Exists(Path.Combine(Library, "include/cyui/Core.h")))
-            throw new BuildException("Prepare this plugin with tools/package_unreal.py before building it.");
+            throw new BuildException("Prepare this module with tools/package_unreal.py before building it.");
         PCHUsage = PCHUsageMode.NoPCHs;
         bUseUnity = false;
         bEnableExceptions = true;
         CppStandard = CppStandardVersion.Cpp20;
         PublicDependencyModuleNames.AddRange(new[] { "Core", "CoreUObject", "Engine", "Slate", "SlateCore", "InputCore" });
-        PrivateDependencyModuleNames.AddRange(new[] { "UnrealEd", "ToolMenus", "RenderCore", "RHI", "ApplicationCore" });
+        PrivateDependencyModuleNames.AddRange(new[] { "RenderCore", "RHI", "ApplicationCore" });
         PublicIncludePaths.Add(Path.Combine(Library, "include"));
         PublicSystemIncludePaths.Add(Path.Combine(Library, "third_party/imgui"));
         if (Directory.Exists(Path.Combine(Library, "third_party/texteditor")))

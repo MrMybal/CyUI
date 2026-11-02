@@ -120,9 +120,10 @@ Les applications examinées ne sont pas incluses ni modifiées.
 
 ## Connecteur Unreal Editor (optionnel)
 
-Le plugin `CyUI` permet de créer des outils dans des onglets Unreal dockables ou
-des panneaux Slate, avec rendu, clavier/souris, saisie Unicode et textures Unreal.
-Il reste séparé du Core ; les modules inclus sont sélectionnés à la préparation.
+Le module Unreal `CyUI` s'intègre dans `Source/CyUI` d'un plugin existant, ou se
+partage entre plusieurs plugins via un fournisseur commun. Il fournit les
+panneaux Slate, le rendu, les entrées et les textures, sans ajouter de menu ou de
+fenêtre au chargement. Les modules inclus sont sélectionnés à la préparation.
 Voir le [guide Unreal](docs/UNREAL.md) pour l'installation, l'API et les versions
 effectivement validées. Le connecteur est réservé à l'éditeur.
 

@@ -637,12 +637,16 @@ independent of imgui-bundle, NumPy, audio/video or browser engines.
 
 ## 9. Unreal Editor connector (optional)
 
-Prepare `integrations/unreal/CyUI` with `tools/package_unreal.py`, selecting only
-the required modules. The self-contained UBT plugin provides dockable editor tabs
-and embedded `SCyUIPanel` Slate widgets. It owns ImGui frames, renderer-managed
-fonts, clipping, input and clipboard. A separate Editor module depends on `CyUI`
-and registers an `FOnDrawCyUITool` with `FCyUIEditorModule::RegisterTool`; unregister
-it before the owner unloads. Draw contents without another root Begin/End/frame.
+Prepare `integrations/unreal/CyUI` with `tools/package_unreal.py --layout module`,
+selecting only the required modules. Copy the resulting folder to Source/CyUI
+inside an existing plugin and declare its Editor module and Build.cs dependency.
+For several consumers, use one shared provider (`--layout plugin`) and add the
+provider to each consumer's .uplugin Plugins array. Never define CyUI twice in a
+project. The module adds no menu or demo window when loaded. It owns ImGui frames,
+renderer-managed fonts, clipping, input and clipboard. A separate Editor module depends on `CyUI`
+and uses `CyUIModule.h` / `FCyUIModule` to embed MakePanel or register an
+`FOnDrawCyUITool` with RegisterTool; unregister it before the owner unloads.
+Draw contents without another root Begin/End/frame.
 
 `MakePanel` embeds a callback in another Slate layout. `RegisterTexture` returns
 an ImTextureID-compatible handle for a pinned Unreal texture; release it after

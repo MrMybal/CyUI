@@ -1,44 +1,90 @@
-# CyUI inside Unreal Editor
+# Reusable CyUI module for Unreal plugins
 
-The optional `CyUI` Unreal plugin draws CyUI tools in dockable editor tabs or
-embedded Slate panels. It provides its own Dear ImGui 1.92 renderer/platform
-backend using Slate custom vertices, clipping, dynamic font textures, Unreal
-textures, clipboard, focus, mouse capture, keyboard navigation and Unicode input.
-It does not require another Unreal ImGui plugin or a browser engine.
+`CyUI` is an optional **Editor module** that other Unreal plugins can embed or
+share. It supplies the CyUI/ImGui library, the Slate renderer, input, clipboard,
+font textures and Unreal texture registry. Loading the module creates no menus,
+demo tools or windows. Your plugin owns its layout, commands and state.
+Core/CMake/Python consumers do not acquire Unreal dependencies. This integration
+is for native C++ editor tools, not UMG, runtime gameplay UI or Blueprints.
 
-This is an **Editor** module, disabled by default. Core/CMake/Python consumers do
-not acquire Unreal dependencies. It is intended for native C++ editor tools,
-not UMG, runtime gameplay UI, Blueprints or remote rendering.
+## Embed the module in an existing plugin
 
-## Prepare and install
-
-Use Python 3.10+ from the CyUI checkout. Choose a **new** output directory:
+Prepare a new staging directory (Python 3.10+):
 
 ```sh
-python tools/package_unreal.py --output build/UnrealPlugin/CyUI --modules Core Plots Inspector Code Diff --gallery
+python tools/package_unreal.py --layout module --output build/unreal-module/CyUI --modules Core Plots Inspector Code Diff
 ```
 
-Copy the resulting `CyUI` directory to `<YourProject>/Plugins/CyUI`, enable
-**CyUI Editor Tools**, and build the project's Editor target with UnrealBuildTool
-or the IDE. Open **Window → CyUI → CyUI Tools**. With `--gallery`, the Window menu
-also offers **CyUI Gallery** and examples of the selected optional modules.
+`module` is the default layout. Copy that **single CyUI folder** to
+`<YourPlugin>/Source/CyUI`. It contains its Build.cs, public headers, private
+backend, selected library snapshot, dependencies and MIT notices. It requires no
+separate CyUI plugin and no external checkout path.
 
-`--modules Core` is minimal. `--modules All` includes all ordinary CyUI modules.
-Dependencies are added automatically: Diff includes Code, Curves includes Plots
-and Canvas, and Viewport includes Images and Canvas. Audio/Gallery are explicit
-choices. CEF and the external ImGuizmo adapter are not included by this script.
+Append this entry to your plugin's existing `.uplugin` Modules array; the generated
+`ModuleDescriptor.json` contains the same entry. Keep your existing module entries:
 
-The preparer copies a self-contained source snapshot and original MIT dependency
-licenses, with generated UBT source bridges. The library stays under the plugin's
-`ThirdParty/CyUI`, outside UBT's automatic source discovery to avoid double
-compilation. No engine source is copied. UBT compiles C++20 with exceptions and
-exports the same CyUI/ImGui instance to consumer modules. `CYUI_API` defaults to
-empty outside Unreal, preserving static CMake integration.
+```json
+{ "Name": "CyUI", "Type": "Editor", "LoadingPhase": "PostEngineInit" }
+```
 
-Existing output directories are refused. To update an installed plugin, prepare
-a new staging directory, close the editor, and replace the old plugin deliberately.
-Keep tool-specific code in your own Editor module. The connector disables dynamic
-module unloading; restart the editor after changing its backend/library sources.
+Add `"CyUI"` to the dependencies of your plugin's **Editor** module:
+
+```csharp
+PrivateDependencyModuleNames.Add("CyUI");
+CppStandard = CppStandardVersion.Cpp20;
+```
+
+Use PublicDependencyModuleNames instead if your public headers expose CyUI types.
+Runtime/gameplay modules must not depend on this Editor module. Regenerate IDE
+project files and build the Editor target with UnrealBuildTool.
+
+Inside the module, `Library/src` and third-party implementations retain their
+source bytes as `.inl` files. Generated `.cpp` bridges compile each exactly once;
+UBT's recursive source discovery cannot compile duplicate implementations. Header
+paths and the API remain unchanged. `Library/SOURCE_LAYOUT.json` records the
+original-to-packaged paths; the TextEditor hash manifest uses its packaged name.
+No engine code is copied. `CYUI_API` remains empty for static CMake integration.
+
+## Share one module between several plugins
+
+A project must contain **one definition of the module named CyUI**. To use several
+consumer plugins together, put the module in one common provider plugin and make
+the consumers depend on it. Do not copy Source/CyUI into each enabled plugin.
+
+An optional provider container can be prepared with:
+
+```sh
+python tools/package_unreal.py --layout plugin --output build/unreal-provider/CyUI --modules All --gallery
+```
+
+Copy it to `<Project>/Plugins/CyUI`. In each consuming plugin's `.uplugin`, append
+this reference to its existing Plugins array:
+
+```json
+{ "Name": "CyUI", "Enabled": true }
+```
+
+The consumer's Build.cs still depends on the **module** `CyUI`. The provider
+plugin is only a container and adds no interface on its own. If your provider has
+a different plugin name, use that name in the Plugins reference; the module name
+in Build.cs remains CyUI. Follow Unreal's project/engine dependency hierarchy.
+
+`--modules Core` is minimal; `All` includes all ordinary CyUI modules. Dependencies
+are selected automatically. `--gallery` only includes the gallery API: your plugin
+chooses when to call it. CEF and external ImGuizmo are not packaged here. Existing
+output folders are refused. Prepare a new staging folder and replace the previous
+module deliberately with the editor closed. Restart after backend/library changes;
+the shared module disables dynamic unloading.
+
+## Complete consuming-plugin example
+
+`examples/unreal/CyUIToolExample` is a separate plugin with its own Build.cs,
+descriptor, Window-menu entry, nomad tab, Slate layout, CyUI draw callback and
+teardown. Its descriptor references the shared provider `CyUI`; enable this
+example only when you want its interface. It embeds a panel using `MakePanel`,
+not a stand-alone CyUI window. With Gallery selected, its own interface can open
+the gallery. For embedding in an existing plugin, copy the example's integration
+pattern and declare the module inside that plugin as described above.
 
 ## Register an editor tool
 
@@ -52,12 +98,12 @@ CppStandard = CppStandardVersion.Cpp20;
 Register the tool in `StartupModule`, unregister it in `ShutdownModule`:
 
 ```cpp
-#include "CyUIEditorModule.h"
+#include "CyUIModule.h"
 #include <cyui/Core.h>
 
 void FMyEditorTools::StartupModule()
 {
-    FCyUIEditorModule::Get().RegisterTool(
+    FCyUIModule::Get().RegisterTool(
         "MyTools.Inspector", NSLOCTEXT("MyTools", "Inspector", "My CyUI Inspector"),
         FOnDrawCyUITool::CreateRaw(this, &FMyEditorTools::DrawInspector));
 }
@@ -73,16 +119,32 @@ void FMyEditorTools::DrawInspector()
 void FMyEditorTools::ShutdownModule()
 {
     if (FModuleManager::Get().IsModuleLoaded("CyUI"))
-        FCyUIEditorModule::Get().UnregisterTool("MyTools.Inspector");
+        FCyUIModule::Get().UnregisterTool("MyTools.Inspector");
 }
 ```
 
 `RegisterTool` rejects empty/duplicate IDs and unbound callbacks. `OpenTool(id)`
-opens the registered nomad tab. Unregistration detaches the callback before
+opens the registered nomad tab. Your plugin adds its own menu/button/command to
+call OpenTool; the service does not add a Window menu. Unregistration detaches the callback before
 requesting tab closure, so a closed/unloading owner cannot keep drawing.
 For an existing Slate layout, `MakePanel(callback)` returns an `SWidget`.
 Keep the owning callback valid for its panel's lifetime; cast to `SCyUIPanel` and
 call `Detach()` before destroying a raw callback owner.
+
+```cpp
+#include "CyUIModule.h"
+#include "SCyUIPanel.h"
+
+// During your toolkit/tab construction, keep this as an owning-plugin member:
+Panel = StaticCastSharedRef<SCyUIPanel>(FCyUIModule::Get().MakePanel(
+    FOnDrawCyUITool::CreateRaw(this, &FMyEditorTools::DrawInspector)));
+// Insert Panel.ToSharedRef() in a Slate slot or SDockTab content.
+// Before unloading the owning plugin:
+if (Panel) { Panel->Detach(); Panel.Reset(); }
+```
+
+`CyUIModule.h` exposes the `FCyUIModule` entry point. The older
+`CyUIEditorModule.h` / `FCyUIEditorModule` names remain compatible aliases/types.
 
 Both methods accept an optional `FOnInitializeCyUITool` as their last argument.
 It runs once per newly created panel with its context current, after the default
@@ -114,11 +176,11 @@ CyUI's logical DPI at 1 within this host.
 ## Show Unreal textures
 
 ```cpp
-const uint64 imageId = FCyUIEditorModule::Get().RegisterTexture(myTexture);
+const uint64 imageId = FCyUIModule::Get().RegisterTexture(myTexture);
 // In the draw callback (or ImageData for CyUI::Images / Viewport):
 ImGui::Image(ImTextureRef(ImTextureID(imageId)), cyui::dp(256, 256));
 // After the tool stops submitting this image:
-FCyUIEditorModule::Get().UnregisterTexture(imageId);
+FCyUIModule::Get().UnregisterTexture(imageId);
 ```
 
 Registration holds a strong UObject reference. Unregistration finishes submitted
@@ -136,10 +198,11 @@ through public Slate APIs. The local engine used for validation is UE 5.8.4 on
 Windows x64. Other engine versions and Linux/macOS builds require validation on
 the target installation; this is not a claim of completed testing on all engines.
 
-On that installation, the plugin with All modules and Gallery compiled, a
-separate consumer Editor DLL linked against its exported API, and both Unreal
-automation tests passed. The rendering checks include a real Unreal texture,
-Unicode text entry, context restoration, detaching from inside a draw callback,
+The provider layout and embedded-module layout are covered separately. The
+consumer example has its own `CyUI.ConsumerPlugin.EmbeddedPanel` automation test
+for dependency loading, panel creation and drawing from a different module's DLL.
+The rendering checks include a real Unreal texture, Unicode text entry,
+context restoration, detaching from inside a draw callback,
 and captures for five themes at both densities.
 
 `tests/test_unreal_package.py` checks selective packaging without Unreal. Native
@@ -147,10 +210,11 @@ CyUI tests check multiple contexts. The plugin contains Unreal automation tests
 `CyUI.Editor.Lifecycle` and `CyUI.Editor.RenderAndInput`. The rendering test needs
 a real Slate renderer, including when launched with `-RenderOffscreen`; `-nullrhi`
 cannot validate its texture uploads or captures. Run the tests from Session
-Frontend or an isolated editor project, for example:
+Frontend or an isolated editor project. Select `CyUI.` to include the consumer
+plugin test as well (it is registered only while that example is enabled):
 
 ```sh
-UnrealEditor-Cmd YourProject.uproject -unattended -RenderOffscreen -nosound -NoLiveCoding -ExecCmds="Automation RunTests CyUI.Editor" -TestExit="Automation Test Queue Empty" -ReportExportPath=Saved/CyUIAutomation
+UnrealEditor-Cmd YourProject.uproject -unattended -RenderOffscreen -nosound -NoLiveCoding -ExecCmds="Automation RunTests CyUI." -TestExit="Automation Test Queue Empty" -ReportExportPath=Saved/CyUIAutomation
 ```
 
 Captures are saved in the test project's `Saved/CyUIReview`. The fixture checks

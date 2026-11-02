@@ -43,5 +43,4 @@ class CYUI_API FCyUIEditorModule : public IModuleInterface {
     TArray<TWeakPtr<SCyUIPanel>> Panels;
     uint64 NextTexture = 1;
     TSharedRef<SDockTab> SpawnTool(const FSpawnTabArgs &, FName Id);
-    void RegisterMenus();
 };

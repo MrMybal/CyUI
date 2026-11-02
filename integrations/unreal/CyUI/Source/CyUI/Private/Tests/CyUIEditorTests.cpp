@@ -16,6 +16,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCyUILifecycleTest, "CyUI.Editor.Lifecycle",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FCyUILifecycleTest::RunTest(const FString &) {
     auto &Module = FCyUIEditorModule::Get();
+    TestFalse(TEXT("Loading the service does not register a demo tool"), Module.OpenTool("CyUI.Example"));
+    TestFalse(TEXT("Loading the service does not register a gallery tool"), Module.OpenTool("CyUI.Gallery"));
     const FName Id("CyUI.AutomationTool");
     const FText Label = FText::FromString("CyUI test tool");
     auto Draw = FOnDrawCyUITool::CreateLambda([] { cyui::heading("Automation tool"); });

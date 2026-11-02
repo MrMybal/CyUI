@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import json
+import hashlib
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('package_unreal', ROOT/'tools/package_unreal.py')
@@ -37,6 +38,7 @@ class UnrealPackage(unittest.TestCase):
             self.assertFalse((output/'ThirdParty/CyUI/src/Gallery.cpp').exists())
             self.assertTrue((output/'ThirdParty/CyUI/third_party/imgui/LICENSE.txt').is_file())
             self.assertTrue((output/'LICENSE').is_file())
+            self.assertTrue((output/'.gitattributes').is_file())
             with self.assertRaises(FileExistsError):
                 package.prepare_plugin(output, ['Core'])
 
@@ -48,6 +50,51 @@ class UnrealPackage(unittest.TestCase):
             self.assertTrue((output/'ThirdParty/CyUI/src/Gallery.cpp').is_file())
             self.assertTrue((output/'ThirdParty/CyUI/third_party/texteditor/LICENSE').is_file())
             self.assertIn('"GALLERY"', (output/'Source/CyUI/CyUI.Build.cs').read_text())
+
+    def test_embedded_module_is_relocatable_and_has_no_duplicate_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/'Source/CyUI'
+            package.prepare_module(output, ['Diff'])
+            self.assertFalse(list(output.rglob('*.uplugin')))
+            self.assertEqual(json.loads((output/'ModuleDescriptor.json').read_text())['Name'], 'CyUI')
+            self.assertTrue((output/'Public/CyUIModule.h').is_file())
+            self.assertIn('Library/third_party/', (output/'THIRD_PARTY_NOTICES.md').read_text())
+            self.assertFalse(list((output/'Library').rglob('*.cpp')))
+            self.assertFalse((output/'Library/src/modules/Plots.inl').exists())
+            self.assertTrue((output/'Library/src/modules/Diff.inl').is_file())
+            # Moving the single folder must keep every source bridge valid.
+            relocated = Path(directory)/'OtherPlugin/Source/CyUI'
+            relocated.parent.mkdir(parents=True)
+            output.rename(relocated)
+            bridges = list((relocated/'Private').glob('CyUILibrary_*.cpp'))
+            self.assertEqual(len(bridges), 9)
+            for bridge in bridges:
+                include = bridge.read_text().split('#include "../Library/')[1].split('"')[0]
+                self.assertTrue((relocated/'Library'/include).is_file(), include)
+            layout = json.loads((relocated/'Library/SOURCE_LAYOUT.json').read_text())
+            for original, packaged in layout.items():
+                self.assertEqual((ROOT/original).read_bytes(), (relocated/'Library'/packaged).read_bytes())
+            with self.assertRaises(FileExistsError):
+                package.prepare_module(relocated)
+
+    def test_module_preserves_third_party_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/'CyUI'
+            package.prepare_module(output, ['All'], True)
+            third_party = output/'Library/third_party/texteditor'
+            version = json.loads((third_party/'VERSION.json').read_text())
+            for name, digest in version['files'].items():
+                self.assertEqual(hashlib.sha256((third_party/name).read_bytes()).hexdigest(), digest)
+            rules = (output/'CyUI.Build.cs').read_text()
+            self.assertNotIn('"ToolMenus"', rules)
+            self.assertNotIn('"UnrealEd"', rules)
+
+    def test_example_plugin_declares_shared_dependency(self):
+        path = ROOT/'examples/unreal/CyUIToolExample'
+        descriptor = json.loads((path/'CyUIToolExample.uplugin').read_text())
+        self.assertEqual(descriptor['Plugins'], [{'Name':'CyUI','Enabled':True}])
+        rules = (path/'Source/CyUIToolExample/CyUIToolExample.Build.cs').read_text()
+        self.assertIn('"CyUI"', rules)
 
 
 if __name__ == '__main__':

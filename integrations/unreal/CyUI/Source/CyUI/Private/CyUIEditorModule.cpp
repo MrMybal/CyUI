@@ -8,12 +8,7 @@
 #include "UObject/StrongObjectPtr.h"
 #include "Rendering/SlateRenderer.h"
 #include "RenderingThread.h"
-#include "ToolMenus.h"
-#include "cyui/CyUI.h"
 
-namespace {
-void DrawCyUIExample();
-}
 struct FCyUIEditorModule::FTool {
     FText Label;
     FOnDrawCyUITool Draw;
@@ -31,31 +26,7 @@ struct FCyUIEditorModule::FTexture {
     }
 };
 void FCyUIEditorModule::StartupModule() {
-    if (IsRunningCommandlet())
-        return;
-    RegisterTool("CyUI.Example", NSLOCTEXT("CyUI", "Example", "CyUI Tools"),
-                 FOnDrawCyUITool::CreateStatic(&DrawCyUIExample));
-#if defined(CYUI_HAS_GALLERY)
-    RegisterTool("CyUI.Gallery", NSLOCTEXT("CyUI", "Gallery", "CyUI Gallery"),
-                 FOnDrawCyUITool::CreateLambda([] { cyui::showGallery(); }));
-#endif
-    UToolMenus::RegisterStartupCallback(
-        FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FCyUIEditorModule::RegisterMenus));
-}
-void FCyUIEditorModule::RegisterMenus() {
-    FToolMenuOwnerScoped Owner(this);
-    UToolMenu *Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Window");
-    Menu->AddSection("CyUI", NSLOCTEXT("CyUI", "Tools", "CyUI"))
-        .AddDynamicEntry("CyUITools",
-                         FNewToolMenuSectionDelegate::CreateLambda([this](FToolMenuSection &Section) {
-                             TArray<FName> Names;
-                             Tools.GetKeys(Names);
-                             Names.Sort(FNameLexicalLess());
-                             for (FName Id : Names)
-                                 Section.AddMenuEntry(
-                                     Id, Tools[Id]->Label, FText::GetEmpty(), FSlateIcon(),
-                                     FUIAction(FExecuteAction::CreateLambda([this, Id] { OpenTool(Id); })));
-                         }));
+    // Reusable service module: the consuming plugin owns tabs, menus and tools.
 }
 bool FCyUIEditorModule::RegisterTool(FName Id, FText Label, FOnDrawCyUITool Draw,
                                      FOnInitializeCyUITool Initialize) {
@@ -136,8 +107,6 @@ FSlateResourceHandle FCyUIEditorModule::ResolveTexture(uint64 Id) const {
 void FCyUIEditorModule::ShutdownModule() {
     if (IsRunningCommandlet())
         return;
-    UToolMenus::UnRegisterStartupCallback(this);
-    UToolMenus::UnregisterOwner(this);
     for (auto &Weak : Panels)
         if (auto Panel = Weak.Pin())
             Panel->Detach();
@@ -151,36 +120,4 @@ void FCyUIEditorModule::ShutdownModule() {
         UnregisterTexture(Id);
     Panels.Empty();
 }
-namespace {
-void DrawCyUIExample() {
-    cyui::heading("CyUI editor tools", 1);
-    cyui::textDim("This interface is drawn inside a dockable Unreal Editor tab.");
-    if (ImGui::BeginCombo("Theme", cyui::currentThemeKey().c_str())) {
-        for (const auto &Theme : cyui::builtInThemes())
-            if (ImGui::Selectable(Theme.name.c_str(), Theme.key == cyui::currentThemeKey()))
-                cyui::setTheme(Theme.key.c_str());
-        ImGui::EndCombo();
-    }
-    static float Strength = .5f;
-    static bool Enabled = true;
-    static char Name[256] = "Editor tool";
-    if (cyui::beginProperties("Example properties")) {
-        cyui::property("Name");
-        cyui::textField("##name", Name, sizeof(Name));
-        cyui::property("Enabled");
-        cyui::toggleSwitch("##enabled", &Enabled);
-        cyui::property("Strength");
-        cyui::sliderBar("##strength", &Strength, 0, 1);
-        cyui::endProperties();
-    }
-    if (cyui::primaryButton("Run example"))
-        cyui::notify("Tool action received", cyui::Tone::success);
-#if defined(CYUI_HAS_PLOTS)
-    static cyui::PlotState Plot;
-    static const std::vector<cyui::Point> Points{{0, 0}, {.2, .8}, {.4, .3}, {.6, 1}, {.8, .5}, {1, .7}};
-    cyui::PlotSeries Series{1, "Preview", Points};
-    cyui::plot("Preview", Plot, {&Series, 1}, cyui::dp(0, 180));
-#endif
-}
-} // namespace
 IMPLEMENT_MODULE(FCyUIEditorModule, CyUI)
