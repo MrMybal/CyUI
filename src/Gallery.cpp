@@ -3,7 +3,11 @@
 #include "cyui/Icons.h"
 #include "cyui/Layout.h"
 #include "cyui/Theme.h"
-#include "cyui/Widgets.h"
+#include "cyui/CoreWidgets.h"
+
+#if defined(CYUI_HAS_AUDIO)
+#include "cyui/modules/Audio.h"
+#endif
 
 #include <imgui.h>
 
@@ -168,6 +172,8 @@ void buttonsPage()
 
 void controlsPage()
 {
+    const auto t = static_cast<float>(ImGui::GetTime());
+#if defined(CYUI_HAS_AUDIO)
     static float gain = 0.5f, pan = 0.0f, cutoff = 1200.0f, voices = 8.0f;
     knob("##gain", &gain, 0.0f, 1.0f, 0.5f, { 34.0f, 0, "Gain", "%.2f" });
     ImGui::SameLine();
@@ -188,15 +194,17 @@ void controlsPage()
     static float faderDb = 0.0f;
     fader("##fader", &faderDb, -70.0f, 6.0f, dp(30.0f, 150.0f));
     ImGui::SameLine();
-    const auto t = static_cast<float>(ImGui::GetTime());
     const auto level = 0.35f + 0.3f * std::abs(std::sin(t * 1.7f));
     meter("##meter", dp(12.0f, 150.0f), level * 1.2f, level, level * 0.7f, level * 0.6f);
     ImGui::SameLine();
+#endif
     ImGui::BeginGroup();
     static float opacity = 0.75f, tempo = 120.0f;
     sliderBar("##opacity", &opacity, 0.0f, 1.0f, "Opacity %.2f", dp(220.0f));
     dragValue("##tempo", &tempo, 0.1f, 20.0f, 300.0f, "%.2f BPM", dp(220.0f));
+#if defined(CYUI_HAS_AUDIO)
     meter("##hmeter", ImVec2(dp(220.0f), dp(8.0f)), level, level * 0.9f, level * 0.6f, level * 0.5f, false);
+#endif
     space(4.0f);
     progressBar(std::fmod(t * 0.15f, 1.0f), ImVec2(dp(220.0f), 0.0f));
     progressBar(-1.0f, ImVec2(dp(220.0f), 0.0f), nullptr, Tone::info);

@@ -25,10 +25,21 @@ add_subdirectory(external/CyUI ${CMAKE_BINARY_DIR}/cyui)
 target_link_libraries(<app> PRIVATE CyUI::CyUI)
 ```
 
+`CyUI::CyUI` is the compatibility umbrella. For selective integration use
+`<cyui/Core.h>` and `CyUI::Core`. Audio controls live in
+`<cyui/modules/Audio.h>` / `CyUI::Audio`; the gallery and theme editor live in
+`<cyui/Gallery.h>` / `CyUI::Gallery`. Audio and Gallery default to enabled;
+disable `CYUI_BUILD_AUDIO` / `CYUI_BUILD_GALLERY` when not needed, and disable
+`CYUI_BUILD_DEMO` for a selective build. Core never links those modules.
+See [MODULES.md](MODULES.md) for complete examples, the application survey and
+the planned extraction boundaries. Proposed modules are not yet implemented.
+
 ### Without CMake
 
 Add `include/` to the include path. Compile `src/Theme.cpp`, `src/Widgets.cpp`,
-`src/Layout.cpp` and `src/Gallery.cpp` alongside the app's ImGui sources.
+`src/Layout.cpp` alongside the app's ImGui sources for Core. Add
+`src/modules/Audio.cpp` for audio controls, and `src/Gallery.cpp` for the gallery.
+Define `CYUI_HAS_AUDIO=1` when compiling Gallery with audio examples.
 
 ### Startup
 

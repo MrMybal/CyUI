@@ -8,9 +8,10 @@ if not defined VCINSTALLDIR (
 if not exist "%ROOT%build" mkdir "%ROOT%build"
 pushd "%ROOT%build"
 set IMGUI=%ROOT%third_party\imgui
-cl /nologo /std:c++17 /O2 /EHsc /W4 /utf-8 /MP /DUNICODE /D_UNICODE ^
+cl /nologo /std:c++17 /O2 /EHsc /W4 /utf-8 /MP /DUNICODE /D_UNICODE /DCYUI_HAS_AUDIO=1 /DCYUI_HAS_GALLERY=1 ^
    /I"%ROOT%include" /I"%IMGUI%" /I"%IMGUI%\backends" ^
    "%ROOT%src\Theme.cpp" "%ROOT%src\Widgets.cpp" "%ROOT%src\Layout.cpp" "%ROOT%src\Gallery.cpp" ^
+   "%ROOT%src\modules\Audio.cpp" ^
    "%ROOT%examples\demo_win32_dx11\main.cpp" ^
    "%IMGUI%\imgui.cpp" "%IMGUI%\imgui_draw.cpp" "%IMGUI%\imgui_tables.cpp" "%IMGUI%\imgui_widgets.cpp" "%IMGUI%\imgui_demo.cpp" ^
    "%IMGUI%\backends\imgui_impl_win32.cpp" "%IMGUI%\backends\imgui_impl_dx11.cpp" ^

@@ -2,8 +2,9 @@
 
 // CyUI - a better-looking, consistent Dear ImGui for the Cy* applications.
 //
-// One include for everything:
+// Compatibility include for the enabled modules (link CyUI::CyUI):
 //   #include <cyui/CyUI.h>
+// For selective use, include Core.h and the desired module headers instead.
 //
 // Setup, once after ImGui::CreateContext() and before the first frame:
 //   cyui::Config config;
@@ -17,10 +18,8 @@
 // cards, properties, knobs, search...), and stock ImGui for the rest: the
 // theme styles it too. See docs/AI_GUIDE.md for the rules.
 
-#include "cyui/Theme.h"
-#include "cyui/Icons.h"
+#include "cyui/Core.h"
 #include "cyui/Widgets.h"
-#include "cyui/Layout.h"
 #include "cyui/Gallery.h"
 
 #define CYUI_VERSION "1.0.0"

@@ -69,6 +69,21 @@ add_subdirectory(external/CyUI cyui)
 target_link_libraries(mon_app PRIVATE CyUI::CyUI)
 ```
 
+### Choisir les modules
+
+`CyUI::Core` contient les thèmes, widgets généraux et layouts.
+`CyUI::Audio` ajoute les knobs, faders et vu-mètres. `CyUI::Gallery` contient
+la galerie et l'éditeur de thème. Chaque cible peut être liée séparément.
+`CyUI::CyUI` conserve l'intégration complète existante.
+
+Pour une application sans audio ni galerie, désactive `CYUI_BUILD_AUDIO`,
+`CYUI_BUILD_GALLERY` et `CYUI_BUILD_DEMO`, inclus `<cyui/Core.h>` et lie
+`CyUI::Core`. Les options Audio et Gallery sont activées par défaut.
+
+Le [guide des modules](docs/MODULES.md) décrit les cibles disponibles et le
+découpage proposé après examen des interfaces des applications Cy* : canvas,
+plots, courbes, nœuds, timelines, code, différences, assets et viewports.
+
 ## Pour les IA
 
 Quand tu demandes à une IA de refaire l'interface d'un logiciel, dis-lui :
@@ -99,10 +114,10 @@ La démo utilise une copie de Dear ImGui 1.93 WIP (docking) placée dans
 ## Arborescence
 
 ```
-include/cyui/   CyUI.h (tout), Theme.h, Icons.h, Widgets.h, Layout.h, Gallery.h
-src/            Theme.cpp, Widgets.cpp, Layout.cpp, Gallery.cpp
+include/cyui/   Core.h, CoreWidgets.h, modules/Audio.h, CyUI.h (compatibilité)
+src/            Theme.cpp, Widgets.cpp, Layout.cpp, Gallery.cpp, modules/Audio.cpp
 examples/       demo_win32_dx11/main.cpp
-docs/           AI_GUIDE.md, screenshots/
+docs/           AI_GUIDE.md, MODULES.md, screenshots/
 third_party/    imgui (pour la démo seulement)
 ```
 

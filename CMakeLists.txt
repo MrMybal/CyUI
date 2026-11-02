@@ -1,19 +1,18 @@
-﻿cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.16)
 project(CyUI VERSION 1.0.0 LANGUAGES CXX)
 
-# CyUI: a themed widget layer over Dear ImGui (>= 1.92).
-#
-# In an app that already builds Dear ImGui as a target:
-#   set(CYUI_IMGUI_TARGET my_imgui_target)
-#   add_subdirectory(path/to/CyImgui_Interface)
-#   target_link_libraries(my_app PRIVATE CyUI::CyUI)
-#
-# Standalone (the demo), with the bundled copy in third_party/imgui:
-#   cmake -B build -DCYUI_BUILD_DEMO=ON && cmake --build build --config Release
-
+# Select only the modules needed by the host; CyUI::CyUI preserves the umbrella API.
 set(CYUI_IMGUI_TARGET "" CACHE STRING "An existing Dear ImGui target to link (empty: build the bundled copy)")
 set(CYUI_IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/imgui" CACHE PATH "Dear ImGui sources, when no target is given")
-option(CYUI_BUILD_DEMO "Build the Win32 + DX11 demo" ${PROJECT_IS_TOP_LEVEL})
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(CYUI_TOP_LEVEL ON)
+else()
+    set(CYUI_TOP_LEVEL OFF)
+endif()
+option(CYUI_BUILD_DEMO "Build the Win32 + DX11 demo" ${CYUI_TOP_LEVEL})
+option(CYUI_BUILD_AUDIO "Build the optional audio controls" ON)
+option(CYUI_BUILD_GALLERY "Build the optional gallery and theme editor" ON)
+option(CYUI_BUILD_TESTS "Build CyUI module integration tests" OFF)
 
 if(CYUI_IMGUI_TARGET STREQUAL "")
     if(NOT TARGET cyui_imgui)
@@ -21,30 +20,67 @@ if(CYUI_IMGUI_TARGET STREQUAL "")
             ${CYUI_IMGUI_DIR}/imgui.cpp
             ${CYUI_IMGUI_DIR}/imgui_draw.cpp
             ${CYUI_IMGUI_DIR}/imgui_tables.cpp
-            ${CYUI_IMGUI_DIR}/imgui_widgets.cpp
-            ${CYUI_IMGUI_DIR}/imgui_demo.cpp)
+            ${CYUI_IMGUI_DIR}/imgui_widgets.cpp)
+        if(CYUI_BUILD_DEMO)
+            target_sources(cyui_imgui PRIVATE ${CYUI_IMGUI_DIR}/imgui_demo.cpp)
+        endif()
         target_include_directories(cyui_imgui PUBLIC ${CYUI_IMGUI_DIR})
         target_compile_features(cyui_imgui PUBLIC cxx_std_17)
     endif()
     set(CYUI_IMGUI_TARGET cyui_imgui)
+elseif(NOT TARGET ${CYUI_IMGUI_TARGET})
+    message(FATAL_ERROR "CYUI_IMGUI_TARGET must name an existing Dear ImGui target")
 endif()
 
-add_library(cyui STATIC
-    src/Theme.cpp
-    src/Widgets.cpp
-    src/Layout.cpp
-    src/Gallery.cpp)
+function(cyui_configure_target target)
+    target_compile_features(${target} PUBLIC cxx_std_17)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra)
+    endif()
+endfunction()
+
+add_library(cyui_core STATIC src/Theme.cpp src/Widgets.cpp src/Layout.cpp)
+add_library(CyUI::Core ALIAS cyui_core)
+target_include_directories(cyui_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(cyui_core PUBLIC ${CYUI_IMGUI_TARGET})
+cyui_configure_target(cyui_core)
+
+if(CYUI_BUILD_AUDIO)
+    add_library(cyui_audio STATIC src/modules/Audio.cpp)
+    add_library(CyUI::Audio ALIAS cyui_audio)
+    target_link_libraries(cyui_audio PUBLIC CyUI::Core)
+    target_compile_definitions(cyui_audio PUBLIC CYUI_HAS_AUDIO=1)
+    cyui_configure_target(cyui_audio)
+endif()
+
+if(CYUI_BUILD_GALLERY)
+    add_library(cyui_gallery STATIC src/Gallery.cpp)
+    add_library(CyUI::Gallery ALIAS cyui_gallery)
+    target_link_libraries(cyui_gallery PUBLIC CyUI::Core)
+    target_compile_definitions(cyui_gallery PUBLIC CYUI_HAS_GALLERY=1)
+    if(CYUI_BUILD_AUDIO)
+        target_link_libraries(cyui_gallery PUBLIC CyUI::Audio)
+    endif()
+    cyui_configure_target(cyui_gallery)
+endif()
+
+# Compatibility target: the same API, with all modules enabled by this build.
+add_library(cyui INTERFACE)
 add_library(CyUI::CyUI ALIAS cyui)
-target_include_directories(cyui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(cyui PUBLIC ${CYUI_IMGUI_TARGET})
-target_compile_features(cyui PUBLIC cxx_std_17)
-if(MSVC)
-    target_compile_options(cyui PRIVATE /W4 /utf-8)
-else()
-    target_compile_options(cyui PRIVATE -Wall -Wextra)
+target_link_libraries(cyui INTERFACE CyUI::Core)
+if(CYUI_BUILD_AUDIO)
+    target_link_libraries(cyui INTERFACE CyUI::Audio)
+endif()
+if(CYUI_BUILD_GALLERY)
+    target_link_libraries(cyui INTERFACE CyUI::Gallery)
 endif()
 
 if(CYUI_BUILD_DEMO AND WIN32)
+    if(NOT CYUI_BUILD_AUDIO OR NOT CYUI_BUILD_GALLERY)
+        message(FATAL_ERROR "The full demo requires Audio and Gallery. Set CYUI_BUILD_DEMO=OFF for a selective library build.")
+    endif()
     add_executable(cyui_demo WIN32
         examples/demo_win32_dx11/main.cpp
         ${CYUI_IMGUI_DIR}/backends/imgui_impl_win32.cpp
@@ -54,4 +90,25 @@ if(CYUI_BUILD_DEMO AND WIN32)
     if(MSVC)
         target_compile_options(cyui_demo PRIVATE /utf-8)
     endif()
+endif()
+
+if(CYUI_BUILD_TESTS)
+    enable_testing()
+    function(cyui_module_test name target)
+        add_executable(${name} tests/module_smoke.cpp)
+        target_link_libraries(${name} PRIVATE ${target})
+        cyui_configure_target(${name})
+        add_test(NAME ${name} COMMAND ${name})
+    endfunction()
+    cyui_module_test(cyui_test_core CyUI::Core)
+    if(CYUI_BUILD_AUDIO)
+        cyui_module_test(cyui_test_audio CyUI::Audio)
+        target_compile_definitions(cyui_test_audio PRIVATE CYUI_TEST_AUDIO=1)
+    endif()
+    if(CYUI_BUILD_GALLERY)
+        cyui_module_test(cyui_test_gallery CyUI::Gallery)
+        target_compile_definitions(cyui_test_gallery PRIVATE CYUI_TEST_GALLERY=1)
+    endif()
+    cyui_module_test(cyui_test_compat CyUI::CyUI)
+    target_compile_definitions(cyui_test_compat PRIVATE CYUI_TEST_COMPAT=1)
 endif()

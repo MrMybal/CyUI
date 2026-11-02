@@ -20,7 +20,7 @@
 // Every begin* here must be paired with its end*, whatever it returned
 // (except beginModal: end only when it returned true).
 
-#include "cyui/Widgets.h"
+#include "cyui/CoreWidgets.h"
 
 #include <imgui.h>
 
