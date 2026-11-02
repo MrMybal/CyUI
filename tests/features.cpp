@@ -1,6 +1,7 @@
 #include <cyui/CyUI.h>
 #include <imgui_internal.h>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <thread>
 #include <stdexcept>
@@ -21,13 +22,18 @@ bool near(double a, double b, double epsilon = 1e-6) {
     return std::abs(a - b) < epsilon;
 }
 template <class F>
-void frame(F draw, float x = -100, float y = -100, int button = -1, bool down = false, bool escape = false) {
+void frame(F draw, float x = -100, float y = -100, int button = -1, bool down = false, bool escape = false,
+           float wheel = 0, ImGuiKey key = ImGuiKey_None) {
     auto &io = ImGui::GetIO();
     io.AddMousePosEvent(x, y);
     if (button >= 0)
         io.AddMouseButtonEvent(button, down);
+    if (wheel != 0)
+        io.AddMouseWheelEvent(0, wheel);
     if (escape)
-        io.AddKeyEvent(ImGuiKey_Escape, true);
+        key = ImGuiKey_Escape;
+    if (key != ImGuiKey_None)
+        io.AddKeyEvent(key, true);
     ImGui::NewFrame();
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize({1000, 800});
@@ -38,8 +44,8 @@ void frame(F draw, float x = -100, float y = -100, int button = -1, bool down = 
     ImGui::Dummy({0, 0});
     ImGui::End();
     ImGui::Render();
-    if (escape)
-        io.AddKeyEvent(ImGuiKey_Escape, false);
+    if (key != ImGuiKey_None)
+        io.AddKeyEvent(key, false);
 }
 } // namespace
 int main() {
@@ -58,6 +64,10 @@ int main() {
     check(near(snapValue(1.24, .5), 1) && near(snapValue(-1.24, .5), -1), "snapping is symmetric");
     auto range = zoomRange({0, 10}, 3, .5);
     check(near(range.min, 1.5) && near(range.max, 6.5), "range zoom keeps anchor");
+    range = zoomRange({1e15, 1e15 + 1e5}, 1e15, 1e-9);
+    check(range.valid() && range.span() >= 1e3 * .99, "range zoom keeps a span the magnitude resolves");
+    range = zoomRange({0, 1}, 1e308, 1e15);
+    check(range.min == 0 && range.max == 1, "range zoom keeps the old range when the result overflows");
 #if defined(CYUI_HAS_WEB)
     WebPolicy policy;
     policy.origins = {"http://127.0.0.1:4173", "https://EXAMPLE.com:443"};
@@ -361,6 +371,109 @@ int main() {
     frame([&] { documentView("Document", documentState, document, {500, 400}); });
 #endif
     {
+        bool on = false, edited = false;
+        auto toggle = [&] { edited = toggleSwitch("Switch", &on) && ImGui::IsItemEdited(); };
+        frame(toggle, 30, 30);
+        frame(toggle, 30, 30, 0, true);
+        frame(toggle, 30, 30, 0, false);
+        check(on && edited, "toggleSwitch marks its item edited");
+        int choice = 0;
+        bool choiceEdited = false;
+        const char *labels[]{"A", "B"};
+        auto choose = [&] {
+            segmented("Segments", labels, 2, &choice);
+            choiceEdited = choiceEdited || ImGui::IsItemEdited();
+        };
+        frame(choose, 56, 30);
+        frame(choose, 56, 30, 0, true);
+        frame(choose, 56, 30, 0, false);
+        check(choice == 1 && choiceEdited, "segmented reports its edit on the whole control");
+
+        float level = .5f;
+        auto bar = [&] { sliderBar("Bar", &level, 0, 1, "%.2f", 200); };
+        frame(bar, 170, 30);
+        frame(bar, 170, 30, 0, true);
+        check(near(level, .75, .01), "sliderBar click sets the value");
+        frame(bar, 170, 30, 0, false);
+        frame(bar, 170, 30, 0, true);
+        check(near(level, .5) && valueEntryOpen(), "sliderBar double click types the value it had");
+        frame(bar, 170, 30, 0, false);
+        frame(bar, 170, 30, -1, false, true);
+        frame(bar, 900, 700, 0, true);
+        frame(bar, 900, 700, 0, false);
+        check(!valueEntryOpen() && near(level, .5), "typed entry closes without a value");
+
+        float scrolled = -1;
+        auto inChild = [&] {
+            ImGui::BeginChild("Scrolling", {300, 100});
+            sliderBar("Wheel", &level, 0, 1, "%.2f", 200);
+            ImGui::Dummy({10, 1000});
+            scrolled = ImGui::GetScrollY();
+            ImGui::EndChild();
+        };
+        frame(inChild, 100, 30);
+        frame(inChild, 100, 30);
+        frame(inChild, 100, 30, -1, false, false, 1);
+        check(near(level, .51, .001) && scrolled == 0, "sliderBar wheel does not scroll the panel under it");
+        float drag = 5;
+        auto dragging = [&] { dragValue("Drag", &drag, .1f, 0, 10, "%.2f", 200); };
+        frame(dragging, 100, 30);
+        frame(dragging, 100, 30);
+        frame(dragging, 100, 30, -1, false, false, 1);
+        check(near(drag, 5), "dragValue leaves the wheel to the panel until focused");
+        frame(dragging, 100, 30, 0, true);
+        frame(dragging, 100, 30, 0, false);
+        frame(dragging, 100, 30);
+        frame(dragging, 100, 30, -1, false, false, 1);
+        check(near(drag, 6, 1e-4), "a focused dragValue's wheel nudges by ten steps");
+
+        frame([&] {
+            auto *list = ImGui::GetWindowDrawList();
+            ImGui::BeginDisabled();
+            clippedText(list, {20, 20}, 300, palette().text, "Disabled");
+            check((list->VtxBuffer.back().col >> IM_COL32_A_SHIFT) < 255, "hand-drawn text fades when disabled");
+            ImGui::EndDisabled();
+            const int first = list->VtxBuffer.Size;
+            clippedText(list, {20, 60}, 60, palette().text, "Ünïcödé text that is much wider than sixty pixels");
+            float right = 0;
+            for (int i = first; i < list->VtxBuffer.Size; ++i)
+                right = std::max(right, list->VtxBuffer[i].pos.x);
+            check(right > 20 && right <= 82, "clipped text stays within its width");
+        });
+
+        bool outer = true, inner = true;
+        auto modals = [&] {
+            if (beginModal("Outer", &outer)) {
+                if (beginModal("Inner", &inner))
+                    endModal();
+                modalButtons("OK", nullptr);
+                endModal();
+            }
+        };
+        frame(modals);
+        frame(modals);
+        frame(modals, -100, -100, -1, false, false, 0, ImGuiKey_Enter);
+        check(!outer && inner, "a nested modal leaves its parent's open flag to the parent");
+        frame(modals);
+    }
+#if defined(CYUI_HAS_GALLERY)
+    {
+        auto gallery = [] { showGallery(nullptr, 1); };
+        for (int i = 0; i < 3; ++i)
+            frame(gallery);
+        auto *window = ImGui::FindWindowByName("CyUI Gallery");
+        auto *tabs = window ? GImGui->TabBars.GetByKey(window->GetID("##galleryTabs")) : nullptr;
+        check(tabs && tabs->Tabs.Size > 1 && tabs->SelectedTabId == tabs->Tabs[1].ID,
+              "gallery selects the requested tab");
+        if (tabs && tabs->Tabs.Size > 1) {
+            ImGui::TabBarQueueFocus(tabs, &tabs->Tabs[0]);
+            frame(gallery);
+            frame(gallery);
+            check(tabs->SelectedTabId == tabs->Tabs[0].ID, "gallery leaves the tabs free after selecting one");
+        }
+    }
+#endif
+    {
         auto *mainContext = ImGui::GetCurrentContext();
         auto createPanelContext = [] {
             auto *context = ImGui::CreateContext();
@@ -384,23 +497,63 @@ int main() {
             cyui::renderNotifications();
             cyui::valueEntry(101, {20, 20}, {200, 60}, firstValue, 0, 100, true);
         });
-        check(ImGui::FindWindowByName("##cyuiToast1") != nullptr, "notification belongs to its panel");
+        check(ImGui::FindWindowByName("##cyuiToast0") != nullptr, "notification belongs to its panel");
+        cyui::setTheme("navy");
+        ImGui::GetStyle().ItemSpacing.x = 42;
+        cyui::applyDpi(1);
+        check(ImGui::GetStyle().ItemSpacing.x == 42, "applyDpi with an unchanged scale keeps the style");
+        cyui::applyDpi(2);
+        check(ImGui::GetStyle().FontScaleDpi == 2 && ImGui::GetStyle().ItemSpacing.x != 42, "applyDpi rescales");
+        cyui::applyDpi(1);
+        check(cyui::uiFont() != nullptr && cyui::monoFont() != nullptr, "fonts known after loadFonts");
         auto *second = createPanelContext();
         frame([&] {
             cyui::renderNotifications();
             cyui::valueEntry(202, {20, 20}, {200, 60}, secondValue, 0, 100, true);
         });
-        check(ImGui::FindWindowByName("##cyuiToast1") == nullptr,
+        check(ImGui::FindWindowByName("##cyuiToast0") == nullptr,
               "notification does not leak to another context");
+        check(cyui::currentThemeKey() == "mid-grey" &&
+                  cyui::palette().accent != cyui::builtInThemes()[4].palette.accent,
+              "theme belongs to its context");
+        cyui::notify(first, "Posted to the first panel");
         ImGui::SetCurrentContext(first);
+        check(cyui::currentThemeKey() == "navy", "a context keeps its theme");
         frame([&] {
             check(cyui::valueEntryOpen(), "number entry remains active after another context draws");
             cyui::valueEntry(101, {20, 20}, {200, 60}, firstValue, 0, 100, false);
         });
+        for (int i = 0; i < 10; ++i)
+            frame([&] {
+                cyui::notify("Many");
+                cyui::renderNotifications();
+            });
+        int toastWindows = 0;
+        for (auto *window : GImGui->Windows)
+            toastWindows += std::strncmp(window->Name, "##cyuiToast", 11) == 0;
+        check(toastWindows > 0 && toastWindows <= 6, "toast windows are reused");
+        auto *bare = ImGui::CreateContext();
+        ImGui::SetCurrentContext(bare);
+        check(cyui::uiFont() == nullptr && !cyui::iconsAvailable(),
+              "no fonts reported for an atlas loadFonts did not fill");
+        ImGui::DestroyContext(bare);
+        ImGui::SetCurrentContext(first);
         ImGui::DestroyContext(first);
         ImGui::DestroyContext(second);
         ImGui::SetCurrentContext(mainContext);
     }
+    {
+        // With no context current: theme calls reach every context, notify the only one.
+        auto *only = ImGui::GetCurrentContext();
+        ImGui::SetCurrentContext(nullptr);
+        cyui::setTheme("violet");
+        cyui::notify("To the only context");
+        ImGui::SetCurrentContext(only);
+    }
+    check(cyui::currentThemeKey() == "violet" && ImGui::GetStyle().Colors[ImGuiCol_CheckMark].x == vec(palette().accent).x,
+          "a theme set with no context current reaches live contexts");
+    frame([] { cyui::renderNotifications(); });
+    check(ImGui::FindWindowByName("##cyuiToast0") != nullptr, "notify without a context reaches the only one");
     ImGui::DestroyContext();
     if (!failures)
         std::puts("CyUI models and interactions passed");

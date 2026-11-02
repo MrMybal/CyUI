@@ -27,6 +27,7 @@ struct PropertyDraft {
     PropertyValue value, before;
     bool active = false;
     std::string error;
+    bool cancelled = false;
 };
 struct InspectorState {
     std::unordered_map<ItemId, PropertyDraft> drafts;

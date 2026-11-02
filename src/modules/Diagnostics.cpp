@@ -1,5 +1,6 @@
 #include "cyui/modules/Diagnostics.h"
 #include "ModuleInternal.h"
+#include <atomic>
 
 namespace cyui {
 void LogBuffer::append(LogLevel level, const std::string &text, const std::string &source) {
@@ -31,6 +32,10 @@ void LogBuffer::append(LogLevel level, const std::string &text, const std::strin
     } while (start < text.size());
     ++revision_;
 }
+std::uint64_t LogBuffer::firstRevision() {
+    static std::atomic<std::uint64_t> instances{0};
+    return ((instances.fetch_add(1) + 1) << 40) | 1;
+}
 void LogBuffer::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     rows_.clear();
@@ -39,7 +44,25 @@ void LogBuffer::clear() {
 }
 std::uint64_t LogBuffer::snapshot(std::vector<LogEntry> &out, std::uint64_t known) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (known != revision_)
+    if (known == revision_)
+        return revision_;
+    if ((known >> 40) != (revision_ >> 40)) { // never read from this buffer
+        out.assign(rows_.begin(), rows_.end());
+        return revision_;
+    }
+    // Rows are immutable and their IDs consecutive, so a previous copy only loses rows at the front
+    // and gains rows at the back: trim and append instead of copying everything again.
+    std::size_t drop = 0;
+    const ItemId first = rows_.empty() ? next_ : rows_.front().id;
+    while (drop < out.size() && out[drop].id < first)
+        ++drop;
+    const std::size_t kept = out.size() - drop;
+    const bool reuse = kept && kept <= rows_.size() && out[drop].id == first &&
+                       out.back().id == rows_[kept - 1].id && out.back().text == rows_[kept - 1].text;
+    if (reuse) {
+        out.erase(out.begin(), out.begin() + std::ptrdiff_t(drop));
+        out.insert(out.end(), rows_.begin() + std::ptrdiff_t(kept), rows_.end());
+    } else
         out.assign(rows_.begin(), rows_.end());
     return revision_;
 }
@@ -64,16 +87,27 @@ ItemId logView(const char *id, LogState &s, const LogBuffer &buffer, ImVec2 size
     ScopedFont font(monoFont());
     ImGui::BeginChild("##log", size, ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
     const bool atBottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - dp(3);
-    std::vector<std::size_t> filtered;
-    for (std::size_t i = 0; i < s.rows.size(); ++i)
-        if ((s.levels & (1u << unsigned(s.rows[i].level))) &&
-            detail::matches(s.rows[i].text + " " + s.rows[i].source, s.query))
-            filtered.push_back(i);
+    // No query and every level shown: rows are listed directly. Otherwise the matching indices are
+    // cached until the rows, the query or the level mask change.
+    const bool everything = s.query.empty() && (s.levels & 15u) == 15u;
+    if (!everything &&
+        (s.filterRevision != s.revision || s.filterQuery != s.query || s.filterLevels != s.levels)) {
+        const auto query = detail::folded(s.query);
+        s.filtered.clear();
+        for (std::size_t i = 0; i < s.rows.size(); ++i)
+            if ((s.levels & (1u << unsigned(s.rows[i].level))) &&
+                (query.empty() || detail::matchesPair(s.rows[i].text, s.rows[i].source, query)))
+                s.filtered.push_back(i);
+        s.filterRevision = s.revision;
+        s.filterQuery = s.query;
+        s.filterLevels = s.levels;
+    }
+    const std::size_t count = everything ? s.rows.size() : s.filtered.size();
     ImGuiListClipper clip;
-    clip.Begin(int(filtered.size()));
+    clip.Begin(int(count));
     while (clip.Step())
         for (int i = clip.DisplayStart; i < clip.DisplayEnd; ++i) {
-            const auto &row = s.rows[filtered[std::size_t(i)]];
+            const auto &row = s.rows[everything ? std::size_t(i) : s.filtered[std::size_t(i)]];
             ItemScope key(row.id);
             ScopedColor color(ImGuiCol_Text, logColor(row.level));
             const auto pos = ImGui::GetCursorScreenPos();

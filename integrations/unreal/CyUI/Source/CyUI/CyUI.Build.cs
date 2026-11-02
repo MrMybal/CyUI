@@ -22,6 +22,11 @@ public class CyUI : ModuleRules
         PublicSystemIncludePaths.Add(Path.Combine(Library, "third_party/imgui"));
         if (Directory.Exists(Path.Combine(Library, "third_party/texteditor")))
             PublicSystemIncludePaths.Add(Path.Combine(Library, "third_party/texteditor"));
+        // Name-independent, so a renamed copy (package_unreal.py --module-name) only renames
+        // this class/file: UBT defines <NAME>_API for the module, CyUI code uses CYUI_API.
+        PublicDefinitions.Add("CYUI_UNREAL_MODULE=" + Name);
+        if (Name != "CyUI")
+            PublicDefinitions.Add("CYUI_API=" + Name.ToUpperInvariant() + "_API");
         PublicDefinitions.Add("IMGUI_API=CYUI_API");
         foreach (string Feature in new string[] { /*CYUI_MODULES*/ })
             PublicDefinitions.Add("CYUI_HAS_" + Feature + "=1");

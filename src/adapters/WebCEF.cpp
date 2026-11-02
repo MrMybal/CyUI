@@ -3,23 +3,42 @@
 #include "include/cef_parser.h"
 #include "include/cef_v8.h"
 #include "include/wrapper/cef_helpers.h"
+#include <climits>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <stdexcept>
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
 
 namespace cyui {
 namespace {
+// Browser -> renderer: per-browser page message limit (WebPolicy::maxMessageBytes).
+constexpr char kLimitKey[] = "cyui.maxMessageBytes";
+constexpr std::size_t kDefaultLimit = 1024 * 1024, kMaxLimit = 64 * 1024 * 1024;
+// CEF_REQUIRE_UI_THREAD is a debug check only; public entry points also fail safely in release.
+bool uiThread() {
+    const bool ok = CefCurrentlyOn(TID_UI);
+    DCHECK(ok);
+    return ok;
+}
 class PostHandler final : public CefV8Handler {
+    std::size_t limit_;
+
   public:
+    explicit PostHandler(std::size_t limit) : limit_(limit) {}
     bool Execute(const CefString &, CefRefPtr<CefV8Value>, const CefV8ValueList &args,
                  CefRefPtr<CefV8Value> &, CefString &exception) override {
         if (args.size() != 1 || !args[0]->IsString()) {
             exception = "Expected a JSON string";
             return true;
         }
-        const auto text = args[0]->GetStringValue().ToString();
-        if (text.size() > 1024 * 1024) {
-            exception = "CyUI message exceeds 1 MiB";
+        const auto value = args[0]->GetStringValue();
+        // UTF-16 length is a lower bound of the UTF-8 size: reject before converting huge strings.
+        const auto text = value.length() > limit_ ? std::string() : value.ToString();
+        if (value.length() > limit_ || text.size() > limit_) {
+            exception = "CyUI message exceeds the host's size limit";
             return true;
         }
         const auto context = CefV8Context::GetCurrentContext();
@@ -33,16 +52,27 @@ class PostHandler final : public CefV8Handler {
     IMPLEMENT_REFCOUNTING(PostHandler);
 };
 class App final : public CefApp, public CefRenderProcessHandler {
+    std::map<int, std::size_t> limits_; // Renderer main thread only.
+
   public:
     CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
         return this;
     }
-    void OnContextCreated(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame,
+    void OnBrowserCreated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefDictionaryValue> extra) override {
+        if (extra && extra->GetType(kLimitKey) == VTYPE_INT)
+            limits_[browser->GetIdentifier()] = std::size_t(std::max(1, extra->GetInt(kLimitKey)));
+    }
+    void OnBrowserDestroyed(CefRefPtr<CefBrowser> browser) override {
+        limits_.erase(browser->GetIdentifier());
+    }
+    void OnContextCreated(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
                           CefRefPtr<CefV8Context> context) override {
         if (!frame->IsMain())
             return;
+        const auto found = limits_.find(browser->GetIdentifier());
+        const auto limit = found == limits_.end() ? kDefaultLimit : found->second;
         context->GetGlobal()->SetValue("__cyuiPost",
-                                       CefV8Value::CreateFunction("__cyuiPost", new PostHandler),
+                                       CefV8Value::CreateFunction("__cyuiPost", new PostHandler(limit)),
                                        V8_PROPERTY_ATTRIBUTE_READONLY);
         frame->ExecuteJavaScript(
             R"JS((()=>{const listeners=new Set();Object.defineProperty(window,'cyuiNative',{value:Object.freeze({postMessage(message){window.__cyuiPost(JSON.stringify(message))},addEventListener(type,fn){if(type==='message')listeners.add(fn)},removeEventListener(type,fn){if(type==='message')listeners.delete(fn)}})});Object.defineProperty(window,'__cyuiReceive',{value(text){const data=JSON.parse(text);for(const fn of [...listeners])fn({data})}})})();)JS",
@@ -52,13 +82,17 @@ class App final : public CefApp, public CefRenderProcessHandler {
                                   CefRefPtr<CefProcessMessage> message) override {
         if (source != PID_BROWSER || message->GetName() != "cyui.host" || !frame->IsMain())
             return false;
+        // Deliver only to the origin the host addressed: the page may have navigated meanwhile.
+        const auto args = message->GetArgumentList();
+        const auto origin = webOrigin(frame->GetURL().ToString());
+        if (args->GetSize() < 2 || origin.empty() || origin != args->GetString(1).ToString())
+            return true;
         const auto context = frame->GetV8Context();
         if (!context || !context->Enter())
             return true;
         auto function = context->GetGlobal()->GetValue("__cyuiReceive");
         if (function && function->IsFunction())
-            function->ExecuteFunction(nullptr,
-                                      {CefV8Value::CreateString(message->GetArgumentList()->GetString(0))});
+            function->ExecuteFunction(nullptr, {CefV8Value::CreateString(args->GetString(0))});
         context->Exit();
         return true;
     }
@@ -69,39 +103,81 @@ struct State {
     WebPlacement placement;
     CefRefPtr<CefBrowser> browser;
     std::deque<WebEvent> events;
-    int width = 1, height = 1, popupWidth = 0, popupHeight = 0;
+    std::size_t errors = 0, dropped = 0;
+    // pixelsW/H: size of `pixels` (the last view paint), which may lag width/height after a resize.
+    int width = 1, height = 1, pixelsW = 0, pixelsH = 0, popupWidth = 0, popupHeight = 0;
+    int clicks[3] = {1, 1, 1};
     bool loaded = false, closing = false, closed = false, focused = false, popupVisible = false,
          placed = false;
     CefRect popup;
     std::vector<unsigned char> pixels, popupPixels, composite;
     ImTextureID texture = 0;
     std::string pending;
-    void emit(WebEventKind kind, std::string url = {}, std::string data = {}) {
-        if (data.size() > options.policy.maxMessageBytes || url.size() > 8192)
+    void pop() {
+        errors -= events.front().kind == WebEventKind::error ? 1 : 0;
+        events.pop_front();
+    }
+    void push(WebEvent event) {
+        // Errors (console, load) have their own low cap so a noisy page cannot evict messages.
+        if (event.kind == WebEventKind::error && errors >= options.policy.maxQueuedErrors) {
+            ++dropped;
             return;
-        if (events.size() >= std::max<std::size_t>(1, options.policy.maxQueuedEvents))
-            events.pop_front();
-        events.push_back({kind, std::move(url), std::move(data)});
+        }
+        if (events.size() >= options.policy.maxQueuedEvents) {
+            pop();
+            ++dropped;
+        }
+        errors += event.kind == WebEventKind::error ? 1 : 0;
+        events.push_back(std::move(event));
+    }
+    void emit(WebEventKind kind, std::string url = {}, std::string data = {}) {
+        if (data.size() > options.policy.maxMessageBytes || url.size() > 8192) {
+            ++dropped;
+            return;
+        }
+        push({kind, std::move(url), std::move(data)});
+    }
+    void external(std::string url, bool gesture, bool mainFrame, const std::string &source) {
+        if (!options.policy.allowsExternal(url)) {
+            ++dropped;
+            return;
+        }
+        WebEvent event{WebEventKind::external, std::move(url)};
+        event.userGesture = gesture;
+        event.mainFrame = mainFrame;
+        event.sourceOrigin = webOrigin(source);
+        push(std::move(event));
     }
     void upload() {
         if (closing || pixels.empty() || !options.upload)
             return;
         const auto *data = pixels.data();
-        if (popupVisible && !popupPixels.empty()) {
+        if (popupVisible && popupWidth > 0 && popupHeight > 0 &&
+            popupPixels.size() == std::size_t(popupWidth) * popupHeight * 4) {
+            // The popup is clamped to the view buffer actually held: both may be from other sizes.
             composite = pixels;
-            for (int y = 0; y < popupHeight; ++y) {
-                const int destY = popup.y + y;
-                if (destY < 0 || destY >= height)
+            const long long left = std::max<long long>(0, popup.x),
+                            right = std::min<long long>(pixelsW, (long long)popup.x + popupWidth);
+            for (int y = 0; y < popupHeight && right > left; ++y) {
+                const long long destY = (long long)popup.y + y;
+                if (destY < 0 || destY >= pixelsH)
                     continue;
-                const int x = std::max(0, popup.x), end = std::min(width, popup.x + popupWidth);
-                if (end > x)
-                    std::memcpy(composite.data() + (std::size_t(destY) * width + x) * 4,
-                                popupPixels.data() + (std::size_t(y) * popupWidth + x - popup.x) * 4,
-                                std::size_t(end - x) * 4);
+                std::memcpy(composite.data() + std::size_t(destY * pixelsW + left) * 4,
+                            popupPixels.data() + std::size_t((long long)y * popupWidth + left - popup.x) * 4,
+                            std::size_t(right - left) * 4);
             }
             data = composite.data();
         }
-        texture = options.upload(width, height, data);
+        texture = options.upload(pixelsW, pixelsH, data);
+    }
+    void finish() {
+        browser = nullptr;
+        closed = true;
+        const auto last = texture;
+        texture = 0;
+        if (auto release = std::move(options.release); last && release)
+            release(last);
+        options.release = {};
     }
 };
 class Client final : public CefClient,
@@ -159,6 +235,7 @@ class Client final : public CefClient,
         return true;
     }
     void OnPopupShow(CefRefPtr<CefBrowser>, bool show) override {
+        CEF_REQUIRE_UI_THREAD();
         s_->popupVisible = show;
         if (!show)
             s_->popupPixels.clear();
@@ -179,6 +256,8 @@ class Client final : public CefClient,
             if (width != s_->width || height != s_->height)
                 return; // A queued paint from before the latest resize.
             s_->pixels.assign(bytes, bytes + count);
+            s_->pixelsW = width;
+            s_->pixelsH = height;
         } else {
             s_->popupWidth = width;
             s_->popupHeight = height;
@@ -201,19 +280,22 @@ class Client final : public CefClient,
     }
     void OnBeforeClose(CefRefPtr<CefBrowser>) override {
         CEF_REQUIRE_UI_THREAD();
-        s_->browser = nullptr;
-        s_->closed = true;
-        s_->texture = 0;
+        s_->finish();
     }
-    bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>, int, const CefString &url,
-                       const CefString &, cef_window_open_disposition_t, bool, const CefPopupFeatures &,
-                       CefWindowInfo &, CefRefPtr<CefClient> &, CefBrowserSettings &,
-                       CefRefPtr<CefDictionaryValue> &, bool *) override {
-        s_->emit(WebEventKind::external, url);
+    bool OnBeforePopup(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, int, const CefString &url,
+                       const CefString &, cef_window_open_disposition_t, bool userGesture,
+                       const CefPopupFeatures &, CefWindowInfo &, CefRefPtr<CefClient> &,
+                       CefBrowserSettings &, CefRefPtr<CefDictionaryValue> &, bool *) override {
+        // Never opened here. Sub-frames (possibly cross-origin iframes) need a user gesture.
+        const bool mainFrame = frame && frame->IsMain();
+        if (mainFrame || userGesture)
+            s_->external(url, userGesture, mainFrame, frame ? frame->GetURL().ToString() : std::string());
+        else
+            ++s_->dropped;
         return true;
     }
-    bool OnBeforeBrowse(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request, bool,
-                        bool) override {
+    bool OnBeforeBrowse(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, CefRefPtr<CefRequest> request,
+                        bool userGesture, bool) override {
         if (!frame->IsMain())
             return false;
         const auto url = request->GetURL().ToString();
@@ -221,7 +303,7 @@ class Client final : public CefClient,
             return false;
         s_->loaded = false;
         if (!s_->options.policy.allows(url)) {
-            s_->emit(WebEventKind::external, url);
+            s_->external(url, userGesture, true, frame->GetURL().ToString());
             return true;
         }
         return false;
@@ -244,15 +326,16 @@ class Client final : public CefClient,
     bool OnConsoleMessage(CefRefPtr<CefBrowser>, cef_log_severity_t level, const CefString &message,
                           const CefString &source, int) override {
         if (level >= LOGSEVERITY_ERROR)
-            s_->emit(WebEventKind::error, source, message);
+            s_->emit(WebEventKind::error, source, message.ToString().substr(0, 4096));
         return false;
     }
     bool OnProcessMessageReceived(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, CefProcessId source,
                                   CefRefPtr<CefProcessMessage> message) override {
         if (source != PID_RENDERER || message->GetName() != "cyui.page")
             return false;
-        const auto url = frame->GetURL().ToString(),
-                   text = message->GetArgumentList()->GetString(0).ToString();
+        const auto url = frame->GetURL().ToString();
+        // Size is checked before parsing: the UI-thread parse is bounded by maxMessageBytes.
+        const auto text = message->GetArgumentList()->GetString(0).ToString();
         if (frame->IsMain() && s_->options.policy.allows(url) &&
             text.size() <= s_->options.policy.maxMessageBytes && CefParseJSON(text, JSON_PARSER_RFC))
             s_->emit(WebEventKind::message, url, text);
@@ -296,17 +379,47 @@ uint32_t modifiers(unsigned value) {
         out |= EVENTFLAG_MIDDLE_MOUSE_BUTTON;
     return out;
 }
+// Left/right modifier virtual keys (0xA0-0xA5) become the generic DOM keyCode plus a location.
+int genericKey(int key) {
+    return key == 0xa0 || key == 0xa1 ? 0x10 : key == 0xa2 || key == 0xa3 ? 0x11 : key == 0xa4 || key == 0xa5 ? 0x12 : key;
+}
+uint32_t keyLocation(int key) {
+    if (key == 0xa0 || key == 0xa2 || key == 0xa4 || key == 0x5b)
+        return EVENTFLAG_IS_LEFT;
+    if (key == 0xa1 || key == 0xa3 || key == 0xa5 || key == 0x5c)
+        return EVENTFLAG_IS_RIGHT;
+    return key >= 0x60 && key <= 0x6f ? EVENTFLAG_IS_KEY_PAD : 0;
+}
+int nativeKey(int key, bool down) {
+#if defined(OS_WIN)
+    // The bare scan code with its 0xE0/0xE1 extended prefix, not a WM_KEYDOWN lParam: tested with
+    // CEF 150 windowless (tests/webcef_smoke.cpp), the lParam layout leaves KeyboardEvent.code
+    // empty while this sets it (layout-dependent: VK 'A' is KeyQ on AZERTY).
+    (void)down;
+    return int(MapVirtualKeyW(UINT(key), MAPVK_VK_TO_VSC_EX));
+#else
+    (void)key;
+    (void)down;
+    return 0;
+#endif
+}
 class Backend final : public WebBackend {
     std::shared_ptr<State> s_;
 
   public:
     explicit Backend(const WebCEFOptions &o) : s_(std::make_shared<State>()) {
         CEF_REQUIRE_UI_THREAD();
+        if (!CefCurrentlyOn(TID_UI))
+            throw std::logic_error("WebCEF must be created on the CEF UI thread");
         if (!o.upload)
             throw std::invalid_argument("WebCEF requires a host BGRA texture upload callback");
         s_->options = o;
         s_->options.maxWidth = std::clamp(o.maxWidth, 1, 8192);
         s_->options.maxHeight = std::clamp(o.maxHeight, 1, 8192);
+        auto &policy = s_->options.policy;
+        policy.maxMessageBytes = std::clamp<std::size_t>(policy.maxMessageBytes, 1, kMaxLimit);
+        policy.maxQueuedEvents = std::clamp<std::size_t>(policy.maxQueuedEvents, 1, 65536);
+        policy.maxQueuedErrors = std::clamp<std::size_t>(policy.maxQueuedErrors, 1, policy.maxQueuedEvents);
         s_->placement.visible = false;
         if (!o.url.empty() && !o.policy.allows(o.url))
             throw std::invalid_argument("WebCEF URL is outside the allowed origins");
@@ -317,8 +430,9 @@ class Backend final : public WebBackend {
         CefBrowserSettings settings;
         settings.windowless_frame_rate = std::clamp(o.framesPerSecond, 1, 60);
         settings.background_color = 0;
-        if (!CefBrowserHost::CreateBrowser(window, new Client(s_), "about:blank", settings, nullptr,
-                                           nullptr)) {
+        auto extra = CefDictionaryValue::Create();
+        extra->SetInt(kLimitKey, int(std::min<std::size_t>(policy.maxMessageBytes, INT_MAX)));
+        if (!CefBrowserHost::CreateBrowser(window, new Client(s_), "about:blank", settings, extra, nullptr)) {
             s_->closed = true;
             throw std::runtime_error("CEF browser creation failed");
         }
@@ -327,8 +441,7 @@ class Backend final : public WebBackend {
         close();
     }
     void close() override {
-        CEF_REQUIRE_UI_THREAD();
-        if (s_->closing)
+        if (!uiThread() || s_->closing)
             return;
         s_->closing = true;
         s_->options.upload = {};
@@ -350,12 +463,14 @@ class Backend final : public WebBackend {
         }
     }
     void place(const WebPlacement &p) override {
-        CEF_REQUIRE_UI_THREAD();
+        if (!uiThread())
+            return;
         s_->placed = true;
         const int width = std::clamp(int(std::ceil(p.bounds.size().x)), 1, s_->options.maxWidth),
                   height = std::clamp(int(std::ceil(p.bounds.size().y)), 1, s_->options.maxHeight);
         const bool resized = width != s_->width || height != s_->height,
-                   visibility = p.visible != s_->placement.visible;
+                   visibility = p.visible != s_->placement.visible,
+                   focus = p.focus && !s_->placement.focus; // One-shot on the rising edge.
         s_->placement = p;
         s_->width = width;
         s_->height = height;
@@ -364,16 +479,17 @@ class Backend final : public WebBackend {
                 s_->browser->GetHost()->WasResized();
             if (visibility)
                 s_->browser->GetHost()->WasHidden(!p.visible);
-            if (p.focus) {
+            if (focus) {
                 s_->focused = true;
                 s_->browser->GetHost()->SetFocus(true);
             }
         }
     }
     bool navigate(const std::string &url) override {
-        CEF_REQUIRE_UI_THREAD();
+        if (!uiThread())
+            return false;
         if (s_->closing || !s_->options.policy.allows(url)) {
-            s_->emit(WebEventKind::external, url);
+            s_->external(url, false, true, {});
             return false;
         }
         s_->loaded = false;
@@ -383,21 +499,32 @@ class Backend final : public WebBackend {
         return true;
     }
     bool postJson(const std::string &json) override {
-        CEF_REQUIRE_UI_THREAD();
-        if (s_->closing || !s_->browser || !s_->loaded || json.size() > s_->options.policy.maxMessageBytes ||
-            !CefParseJSON(json, JSON_PARSER_RFC))
+        if (!uiThread() || s_->closing || !s_->browser || !s_->loaded ||
+            json.size() > s_->options.policy.maxMessageBytes)
+            return false;
+        // Bind the message to the page loaded now; the renderer drops it after a navigation.
+        const auto frame = s_->browser->GetMainFrame();
+        const auto url = frame ? frame->GetURL().ToString() : std::string();
+        if (!s_->options.policy.allows(url) || !CefParseJSON(json, JSON_PARSER_RFC))
             return false;
         auto message = CefProcessMessage::Create("cyui.host");
         message->GetArgumentList()->SetString(0, json);
-        s_->browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, message);
+        message->GetArgumentList()->SetString(1, webOrigin(url));
+        frame->SendProcessMessage(PID_RENDERER, message);
         return true;
     }
     bool poll(WebEvent &event) override {
-        CEF_REQUIRE_UI_THREAD();
+        if (!uiThread())
+            return false;
+        if (s_->dropped) {
+            event = {WebEventKind::dropped, {}, std::to_string(s_->dropped)};
+            s_->dropped = 0;
+            return true;
+        }
         if (s_->events.empty())
             return false;
         event = std::move(s_->events.front());
-        s_->events.pop_front();
+        s_->pop();
         return true;
     }
     bool ready() const override {
@@ -416,8 +543,7 @@ class Backend final : public WebBackend {
         return s_->browser;
     }
     void input(const WebInput &e) override {
-        CEF_REQUIRE_UI_THREAD();
-        if (!s_->browser || s_->closing)
+        if (!uiThread() || !s_->browser || s_->closing)
             return;
         auto host = s_->browser->GetHost();
         CefMouseEvent mouse;
@@ -432,13 +558,18 @@ class Backend final : public WebBackend {
         case WebInputKind::move:
             host->SendMouseMoveEvent(mouse, !e.down);
             break;
-        case WebInputKind::button:
+        case WebInputKind::button: {
+            const int button = std::clamp(e.button, 0, 2);
+            // The release reuses the press's click count, or Blink never fires dblclick.
+            if (e.down)
+                s_->clicks[button] = std::clamp(e.clicks, 1, 16);
             host->SendMouseClickEvent(mouse,
-                                      e.button == 0   ? MBT_LEFT
-                                      : e.button == 1 ? MBT_RIGHT
-                                                      : MBT_MIDDLE,
-                                      !e.down, e.clicks);
+                                      button == 0   ? MBT_LEFT
+                                      : button == 1 ? MBT_RIGHT
+                                                    : MBT_MIDDLE,
+                                      !e.down, s_->clicks[button]);
             break;
+        }
         case WebInputKind::wheel:
             host->SendMouseWheelEvent(mouse, int(e.wheelX * 120), int(e.wheelY * 120));
             break;
@@ -447,9 +578,9 @@ class Backend final : public WebBackend {
                 host->SetFocus(true);
             CefKeyEvent key;
             key.type = e.down ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
-            key.windows_key_code = e.key;
-            key.native_key_code = e.nativeKey;
-            key.modifiers = mouse.modifiers;
+            key.windows_key_code = genericKey(e.key);
+            key.native_key_code = e.nativeKey ? e.nativeKey : nativeKey(e.key, e.down);
+            key.modifiers = mouse.modifiers | keyLocation(e.key);
             host->SendKeyEvent(key);
             break;
         }

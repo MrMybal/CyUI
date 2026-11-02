@@ -34,7 +34,9 @@ struct SourceSpan {
     std::size_t line = 0, startByte = 0, endByte = 0;
     TokenRole role = TokenRole::text;
 };
+// Byte offset in expandTabs(raw) matching byteOffset in raw (tabs widened to the next stop).
 CYUI_API std::size_t displayOffset(std::string_view raw, std::size_t byteOffset, unsigned tabSize = 4);
+// Replaces each tab by spaces up to the next multiple of tabSize columns (UTF-8 aware).
 CYUI_API std::string expandTabs(std::string_view, unsigned tabSize = 4);
 class CYUI_API CodeDocument {
   public:
@@ -81,7 +83,7 @@ struct CodeViewState {
 };
 struct CodeViewResult {
     int clickedLine = -1;
-    ItemId annotation = 0;
+    ItemId annotation = 0; // clicked annotation, 0 for none: give annotations nonzero IDs
 };
 CYUI_API CodeViewResult codeViewer(const char *id, CodeViewState &, const CodeDocument &, ImVec2 size = {},
                           ArrayView<CodeAnnotation> annotations = {});

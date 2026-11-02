@@ -46,6 +46,9 @@ Edit<std::array<float, 16>> gizmo3D(const char *id, Gizmo3DState &s, const std::
     style.ScaleLineCircleSize = dp(5);
     style.HatchedAxisLineThickness = dp(1);
     style.CenterCircleSize = dp(5);
+    // ImGuizmo keeps one process-wide state: scope ids by context so two contexts never share
+    // a hot/active gizmo id.
+    ImGuizmo::PushID(ImGui::GetCurrentContext());
     ImGuizmo::PushID(id);
     ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
     ImGuizmo::SetRect(rect.min.x, rect.min.y, rect.size().x, rect.size().y);
@@ -67,6 +70,7 @@ Edit<std::array<float, 16>> gizmo3D(const char *id, Gizmo3DState &s, const std::
         } else if (changed && result.phase != EditPhase::begin)
             result = {EditPhase::update, s.preview};
     }
+    ImGuizmo::PopID();
     ImGuizmo::PopID();
     ImGuizmo::GetStyle() = saved;
     return result;

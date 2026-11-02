@@ -69,9 +69,26 @@ cyui::apply(config);
 cyui::loadFonts();                       // Segoe UI + Semibold + Consolas + MDL2 icons
 ```
 
-When the DPI changes, call `cyui::applyDpi(newScale)`. At the end of every
-frame, after everything else, call `cyui::renderNotifications()`. It draws the
-toasts.
+When the DPI changes (`WM_DPICHANGED`), call `cyui::applyDpi(newScale)`. It
+does nothing when the scale is unchanged. `apply` and a real DPI change rebuild
+the whole `ImGuiStyle`, so make your own style tweaks after them. At the end of
+every frame, after everything else, call `cyui::renderNotifications()`. It
+draws the toasts.
+
+`Config` also has `squareWindows`: square, opaque windows for apps whose ImGui
+windows are OS windows (multi-viewports, plug-in editors). `FontConfig` has
+`size` (0: the density's font size), `fallbackFolder` (a folder of Inter,
+Roboto, JetBrains Mono or Cousine `.ttf` files, tried when the Windows fonts
+are missing) and `icons` (merge Segoe MDL2 Assets; on by default).
+
+**Several ImGui contexts** (plug-in windows, editor panels): everything CyUI
+keeps is per context and released when the context is destroyed. That covers
+the palette, theme key, density, DPI, fonts, typed entry and toasts. Call
+`apply` and `loadFonts` with each context current. Theme calls change the
+current context only. With **no** context current, `setPalette`, `setTheme`
+and `setDensity` change every live context, and the defaults new contexts
+start from. Make such calls while no other thread draws with those contexts.
+`apply` and `applyDpi` with no context current change the defaults only.
 
 | themeKey      | origin      | look                                       |
 |---------------|-------------|--------------------------------------------|
@@ -192,17 +209,42 @@ dark-on-dark or light-on-light.
 
 All functions are in `namespace cyui`. The headers carry the full comments.
 
+**Units.** Widget `size` and `width` parameters are screen pixels: wrap design
+values in `dp()`, as in `cyui::button("OK", cyui::dp(80, 0))`. 0 means
+automatic, and a negative width fills the row minus that much. These are
+design units, scaled inside:
+- `beginCard` height
+- `beginProperties` label width
+- `beginSidebar` and `beginModal` widths
+- `space` height, `divider` spacing, `spinner` radius
+- `KnobStyle::diameter`
+
+`beginTopBar`'s height is in pixels.
+
+**Disabled and edited.** Inside `ScopedDisabled`, CyUI's hand-drawn widgets
+fade and stop reacting, like stock ImGui. Every CyUI control that changes a
+value marks it edited, so `ImGui::IsItemEdited()` is true after it on that
+frame. Clicks and drags also give `ImGui::IsItemDeactivatedAfterEdit()` on
+release: one undo step per gesture. Wheel nudges and typed values are one-shot
+edits that only set `IsItemEdited()`. `markEdited(id)` does the same for your
+own controls.
+
 ### Theme (`Theme.h`)
 
-- **Setup:** `apply(Config)`, `applyDpi(s)`, `loadFonts(FontConfig)`.
+- **Setup:** `apply(Config)`, `applyDpi(s)`, `dpi()` (the current scale),
+  `loadFonts(FontConfig)`.
 - **Palette:** `palette()`, `setPalette(p)`, `setTheme("key")`,
-  `builtInThemes()`, `currentThemeKey()`.
+  `builtInThemes()`, `currentThemeKey()`. `paletteFields()` lists each role
+  with its key, label, group and member pointer, for editors and theme files.
 - **Density and metrics:** `setDensity(d)`, `density()`, `metrics()`. The
   metrics give the font size, paddings, roundings, `cardPadding` and
   `toolbarHeight`.
-- **Fonts:** `uiFont()`, `boldFont()`, `monoFont()`, `iconsAvailable()`.
+- **Fonts:** `uiFont()`, `boldFont()`, `monoFont()`, `iconsAvailable()`. The
+  fonts are null until `loadFonts` filled the context's atlas.
+  `ScopedFont(nullptr, factor)` then keeps the current font.
 - **Colour helpers:** `rgb(0xRRGGBB, a)`, `alpha`, `mix`, `brighter`,
-  `darker`, `vec`, `categorical(i)`.
+  `darker`, `vec`, `categorical(i)`. `categorical` gives 12 hues derived from
+  the palette, toned for light or dark grounds.
 - **Sizes:** `dp(v)` / `dp(x, y)`.
 - **Theme files:** `savePalette(path, p)`, `loadPalette(path, p)`,
   `paletteToText`, `paletteFromText`. The `.cytheme` format is
@@ -216,10 +258,16 @@ zoomIn, lock, filter, loop, library, star, copy, paste, info, warning, home,
 globe, people, mail, calendar, clock, cloud, upload, download, code, photo,
 document, ...` (104 icons). They are UTF-8 strings of Segoe MDL2 Assets, so
 they work in any label: `std::string(icon::save) + "  Save"`. They draw only
-on Windows. Guard with `iconsAvailable()` when a text fallback matters (the
-CyUI widgets already do).
+on Windows. Without the icon font, the CyUI widgets fall back:
+- `iconButton` shows the first letter of its tooltip when the current font
+  lacks the glyph (a host's own merged icon font still works).
+- `iconTextButton` shows the label alone.
+- `sidebarItem` and `emptyState` leave the icon out.
+- `helpMarker` shows `(?)`.
 
-### Text (`Widgets.h`)
+Guard your own icon labels with `iconsAvailable()`.
+
+### Text (`CoreWidgets.h`)
 
 - `heading(t, level)`, `sectionTitle(t)`, `overline(T)`
 - `textDim(fmt, ...)`, `textFaint(fmt, ...)`, `textColoured(c, fmt, ...)`,
@@ -229,6 +277,7 @@ CyUI widgets already do).
 
 ### Buttons
 
+- `toneColour(Tone)`: the palette colour of a tone (neutral is `textDim`).
 - `button(label, Variant, size)`. The variants are `secondary`, `primary`,
   `ghost`, `outline`, `danger` and `success`.
 - Shortcuts: `primaryButton`, `dangerButton`, `ghostButton`.
@@ -248,15 +297,25 @@ CyUI widgets already do).
   available.
 - `fader(id, &dB, minDb, maxDb, size, colour)`
 - `meter(id, size, peakL, peakR, rmsL, rmsR, vertical)`
-- `dragValue(id, &v, speed, min, max, fmt, width)`
-- `sliderBar(id, &v, min, max, fmt, width, colour)`
+- `dragValue(id, &v, speed, min, max, fmt, width)`. `speed` is per pixel
+  dragged. Once the field has the focus (clicked or navigated to), a wheel
+  notch moves 10 × `speed`; before that, the wheel scrolls the panel.
+  `min >= max` is unbounded.
+- `sliderBar(id, &v, min, max, fmt, width, colour)`. A click or a drag sets the
+  value. A wheel notch moves 1 % of the range.
 - `valueEntry(...)`: the typed number field these controls open.
-- `takeWheel()`, `wheelTaken()`, `valueSpeed()`
+  `valueEntryOpen()` says whether one is open (to hold back shortcuts while
+  the user types).
+- `itemWheel()`: the wheel for your own control, claimed in time so the panel
+  under it does not scroll. Also `takeWheel()`, `wheelTaken()` and
+  `valueSpeed()`.
 
 The value controls share the CyDAW behaviour:
-- drag to change; Ctrl is fine, Shift is fast
-- the mouse wheel nudges
-- a double click resets (a knob) or types the value (a slider bar)
+- drag to change; Ctrl is fine (× 0.15), Shift is fast (× 4)
+- the mouse wheel nudges the value and does not scroll the panel under it
+  (a `dragValue` only once it has the focus)
+- a double click types the value (`dragValue`, `sliderBar`) or resets it (a
+  knob)
 - a click on a knob's value types it
 
 ### Fields
@@ -285,8 +344,12 @@ The value controls share the CyDAW behaviour:
 - `emptyState(title, msg, icon)`
 - `callout(Tone, text)`
 - `colourChip(id, c, size)`
-- `notify(text, Tone, seconds)` and, once per frame,
-  `renderNotifications()`.
+- `notify(text, Tone, seconds)` shows a toast in the current ImGui context.
+  With no context current, it goes to the one context CyUI knows. When there
+  are several or none, it asserts in debug builds and drops the toast.
+  `notify(context, text, Tone, seconds)` posts to a given context, from any
+  thread. Call `renderNotifications()` once per frame. At most six toasts
+  show at a time.
 
 ### Layout (`Layout.h`)
 
@@ -303,14 +366,23 @@ bar, status bar, sidebar, then dock space.
 - `beginModal(title, &open, width)` / `endModal()`. Call `endModal` only
   when `beginModal` returned true. `modalButtons(confirm, cancel, danger)`
   returns 1 for confirm and 2 for cancel. Enter confirms and Escape cancels.
+  Modals can nest: each `modalButtons` closes its own modal.
 - `alignRight(width)`, `buttonWidth(label)`
 
 All `begin*Bar` / `beginSidebar` / `beginToolbar` must be paired with their
-`end*`, whatever they returned.
+`end*`, whatever they returned. Popups and tooltips opened from a bar keep the
+theme's style.
 
 ### Gallery (`Gallery.h`)
 
-- `showGallery(&open)`: every widget, a theme switcher and a density switcher.
+- `showGallery(&open, selectTab)`: every widget, a theme switcher and a
+  density switcher. `selectTab` brings a page to the front once:
+  - 0 text, 1 buttons, 2 controls, 3 containers
+  - 4–19 the optional modules
+  - 20 layout (the application shell)
+- `showGallery(&open, selectTab, GalleryResources)`: the same, with host
+  resources for the module pages: `texture`, `width` and `height` (Images,
+  Viewport), `web` (a live Web backend) and `previewCommands`.
 - `showThemeEditor(&open)`: live palette editing and `.cytheme`
   save and load.
 
@@ -389,7 +461,8 @@ draw->AddRect(selMin, selMax, p.accent, 0, 0, cyui::dp(1.5f));
   needed).
 - `cyui_demo.exe --capture out.bmp --theme navy --tab 2 [--comfortable]`
   renders 40 frames, writes the window to a BMP and quits. Use it to check a
-  theme visually without a person at the screen.
+  theme visually without a person at the screen. `--tab` takes a gallery
+  page, 0 to 20.
 - Screenshots are in `docs/screenshots/`.
 
 
@@ -432,7 +505,7 @@ JSON types. Keep arrays and callback captures alive for the duration of a draw.
 | API | Use |
 | --- | --- |
 | `CanvasView::world/screen/zoomAt/fit` | Double world coordinates and anchored transforms |
-| `CanvasScope(id, state, size, options)` / `frame()` | Reserve a canvas, draw its background/grid and scope clipping |
+| `CanvasScope(id, state, size, options)` / `frame()` | Reserve a canvas, draw its background/grid and scope clipping; `frame().wheel` when navigation or `claimWheel` takes the wheel |
 | `drawCanvasGrid(rect, view, step)` | Grid overlay in the current window draw list |
 | `Axis::fraction/value` | Inverse linear/log mapping; logarithmic values require positive bounds |
 | `plot(id, PlotState&, ArrayView<PlotSeries>, size, options)` | Line/step/points/bars, ticks, legend, pan/zoom, crosshair and nearest sample ID/index |
@@ -486,16 +559,17 @@ Time units and frame/sample rounding remain the application's responsibility.
 
 ### Audio controls and prepared signal views
 
-`modules/Audio.h` retains knob/fader/meter, meterPosition and MeterState. The
-separate AudioViews target offers:
+`modules/Audio.h` retains knob/fader/meter and meterPosition. A fader spreads its
+own minimumDb..maximumDb over its travel (size 0 or negative follows ImGui sizing).
+The separate AudioViews target offers:
 
 | API | Input |
 | --- | --- |
 | `makePeaks(samples, columns)` | Min/max envelope preparation, preserving missing-only buckets as NaN |
 | `waveform(id, WaveformState&, WaveformData, playhead, size)` | Coverage interval plus prepared per-channel peak arrays |
-| `spectrum(id, PlotState&, series, size)` | Frequency/value series, logarithmic X |
-| `oscilloscope(id, PlotState&, series, size)` | Prepared time/amplitude series |
-| `stereoScope(id, PlotState&, series, size)` | Prepared left/right or other host-defined stereo coordinates |
+| `spectrum(id, PlotState&, series, size[, PlotOptions])` | Frequency/value series, logarithmic X (invalid X resets to 20..20000) |
+| `oscilloscope(id, PlotState&, series, size[, PlotOptions])` | Prepared time/amplitude series |
+| `stereoScope(id, PlotState&, series, size[, PlotOptions])` | Square X/Y scope; both axes share one range symmetric around 0 |
 
 Waveform emits seek/range-selection state, supports wheel zoom, Shift-wheel pan
 and middle drag. Decode audio, query envelope caches and compute FFT/DSP on the
@@ -524,7 +598,10 @@ presentation heuristic; supply semantic parser/LSP results as overlays when need
   `hunks`, `columns`, `revision`, `approximate` expose prepared presentation data.
 - `diffViewer(id, DiffState&, document, size)` offers unified/side-by-side modes,
   synchronized vertical scrolling, hunk/search navigation, inline changed ranges
-  and old/new line navigation results. Final-newline-only changes are represented.
+  and old/new line navigation results. Final-newline-only changes are represented;
+  CRLF and LF lines compare equal, with a notice row when line endings differ.
+- `expandTabs(text, tabSize)` widens tabs to the next stop as displayed;
+  `displayOffset(raw, byteOffset, tabSize)` maps a raw byte offset to that display text.
 
 ```cpp
 cyui::DiffDocument comparison;
@@ -570,6 +647,9 @@ adds an interpolated stop, drag moves it, right-click removes a stop when more
 than two remain. Host color editors change stop colors. Texture lifetime, color
 management and document transforms remain host-owned.
 
+The transform gizmo's handles are ImGui items: over a canvas (imageViewport,
+viewport, CanvasScope) they take the hover and the click, so nothing underneath reacts.
+Host items drawn over a canvas get the same by calling `markCanvasOverlay()` each frame.
 Viewport: Alt-left drag orbits, middle drag pans, wheel changes distance. Host
 renderers produce the texture; CyUI does not render a 3D scene. Transform2D rotation
 is radians. Ctrl snaps rotation to 15-degree increments. Gizmo3DOptions selects
@@ -591,7 +671,8 @@ Link CyUI::ImGuizmo only when a compatible host target is supplied.
   quotes, bullet/numbered items, rules, fenced code, links, inline code/emphasis
   and pipe tables. `documentView(id, state, document, size)` returns link/copy
   results. Links are returned to the host, not opened by the renderer.
-- `transcript(id, TranscriptState&, messages, size)` caches Documents by message
+- `transcript(id, TranscriptState&, messages, size)` skips offscreen messages it has
+  measured, caches Documents by message
   ID, follows appended/streamed content when at the bottom, and reports copy/link
   requests. Messages contain id/role/content/time. Full CyMD rendering can use Web.
 
@@ -609,6 +690,24 @@ See [WEB.md](WEB.md) for the complete lifecycle, native/Python recipes, TypeScri
 bridge, CyMD iframe protocol, origin checks, process sandbox and OS packaging.
 CEF is separate from Core and from the module's neutral API. The local validated
 runtime is Windows; Linux/macOS build/deployment validation is explicitly pending.
+
+Rules when using it:
+
+- Pump `CefDoMessageLoopWork()` (Python `runtime.pump()`) outside the ImGui frame,
+  before `NewFrame`. `WebCEFOptions::upload` and the optional `release` callback run
+  inside it; `release(texture)` comes once after the browser closed: free that
+  texture only after the frames that used it (Python: `create(..., release=)`).
+- `external` events are page requests, never commands. Only
+  `WebPolicy::externalSchemes` (default http/https) are reported; check
+  `userGesture`, `mainFrame` and `sourceOrigin`, apply your own allow-list and ask
+  the user before opening anything with the shell. Sub-frame popups without a
+  gesture are dropped.
+- `WebEventKind::dropped` (data = count) reports events discarded by the queue caps
+  (`maxQueuedEvents`, `maxQueuedErrors` for errors/console) or by policy.
+- `WebPanelOptions::focus` is one-shot (taken on a false -> true change). A focused
+  panel owns the keys it forwards, so ImGui nav and other widgets do not act on them.
+- Backend calls must run on the CEF UI thread; others are ignored. The supplied
+  bridge, helper and demo run CEF unsandboxed on Windows (WEB.md "Process sandbox").
 
 ### Python examples
 
@@ -646,15 +745,24 @@ project. The module adds no menu or demo window when loaded. It owns ImGui frame
 renderer-managed fonts, clipping, input and clipboard. A separate Editor module depends on `CyUI`
 and uses `CyUIModule.h` / `FCyUIModule` to embed MakePanel or register an
 `FOnDrawCyUITool` with RegisterTool; unregister it before the owner unloads.
-Draw contents without another root Begin/End/frame.
+Draw contents without another root Begin/End/frame. A plugin redistributed to
+others embeds the module under its own name (`--module-name MyToolCyUI`, then
+depend on `MyToolCyUI`) or uses the shared provider; two modules named CyUI
+cannot load together. Check `FCyUIModule::IsAvailable()` before `Get()` at shutdown.
 
 `MakePanel` embeds a callback in another Slate layout. `RegisterTexture` returns
 an ImTextureID-compatible handle for a pinned Unreal texture; release it after
 stopping its use. Module feature definitions and DLL exports are propagated by
 UBT. No Unreal code enters CMake's Core or other standalone builds.
 
-Panels use separate ImGui contexts and a shared CyUI palette/density. Numeric
-entry and notifications stay local to their context. All drawing runs on the
+Panels use separate ImGui contexts. Each has its own CyUI palette, density and
+fonts (see "Several ImGui contexts" in section 1). Numeric entry and
+notifications stay local to their context. Outside the draw callback (Slate
+handlers, async results) use `SCyUIPanel::RunInContext([] { cyui::setTheme(...); })`
+and `SCyUIPanel::Notify(text, Tone)` (or `cyui::notify(context, ...)`). Each key goes
+to one side: ImGui only while it takes keyboard input (active item, text field, or a
+focused view calling `ImGui::SetNextFrameWantCaptureKeyboard(true)`) or for plain
+nav keys; otherwise Unreal, so editor shortcuts never run twice. All drawing runs on the
 editor game thread; host transactions and expensive data preparation remain the
 tool's responsibility. See [UNREAL.md](UNREAL.md) for complete recipes, lifecycle,
 automation tests, platform validation and current input/backend limitations.

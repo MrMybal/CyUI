@@ -20,6 +20,7 @@ def make_peaks(samples, columns):
 class WaveformState:
     view: Range = field(default_factory=Range)
     selection: Range = field(default_factory=lambda: Range(0, 0))
+    anchor: float = 0
     selecting: bool = False
     panning: bool = False
 
@@ -35,7 +36,8 @@ def waveform(identifier, state, channels, coverage, playhead=0., size=(0, 180)):
         if f.hovered and io.mouse_wheel and not wheel_taken():
             if io.key_shift:
                 delta = -io.mouse_wheel*state.view.span*.1
-                state.view = Range(state.view.minimum+delta, state.view.maximum+delta)
+                moved = Range(state.view.minimum+delta, state.view.maximum+delta)
+                state.view = moved if moved.valid else state.view
             else:
                 state.view = zoom_range(state.view, mouse, exp(-io.mouse_wheel*.15))
             take_wheel()
@@ -45,11 +47,12 @@ def waveform(identifier, state, channels, coverage, playhead=0., size=(0, 180)):
             state.panning = False
         if state.panning:
             delta = -io.mouse_delta.x/f.size[0]*state.view.span
-            state.view = Range(state.view.minimum+delta, state.view.maximum+delta)
+            moved = Range(state.view.minimum+delta, state.view.maximum+delta)
+            state.view = moved if moved.valid else state.view
         if f.hovered and i.is_mouse_clicked(0):
-            state.selection, state.selecting, result['seek'] = Range(mouse, mouse), True, mouse
+            state.selection, state.anchor, state.selecting, result['seek'] = Range(mouse, mouse), mouse, True, mouse
         if state.selecting:
-            state.selection.maximum = mouse
+            state.selection = Range(min(state.anchor, mouse), max(state.anchor, mouse))
             result['selection_changed'] = True
             if not i.is_mouse_down(0):
                 state.selecting = False
@@ -75,7 +78,7 @@ def waveform(identifier, state, channels, coverage, playhead=0., size=(0, 180)):
 
 def spectrum(identifier, state, series, size=(0, 240)):
     state.x.logarithmic = True
-    if state.x.view.minimum <= 0:
+    if not state.x.view.valid or state.x.view.minimum <= 0:
         state.x.view = Range(20, 20000)
     return plot(identifier, state, series, size)
 
@@ -85,4 +88,15 @@ def oscilloscope(identifier, state, series, size=(0, 200)):
     return plot(identifier, state, series, size)
 
 
-stereo_scope = oscilloscope
+def stereo_scope(identifier, state, series, size=(0, 200)):
+    # Square, with one symmetric extent on both axes: wheel zoom scales it, the centre stays at 0.
+    i, c = ui()
+    state.x.logarithmic = state.y.logarithmic = False
+    avail = i.get_content_region_avail()
+    side = max(c.dp(1), min(size[0] if size[0] > 0 else avail.x+size[0], size[1] if size[1] > 0 else avail.y+size[1]))
+    extent = state.x.view.span*.5 if state.x.view.valid else 1.
+    state.x.view, state.y.view = Range(-extent, extent), Range(-extent, extent)
+    result = plot(identifier, state, series, (side, side))
+    zoomed = state.x.view.span*.5 if state.x.view.valid else extent
+    state.x.view, state.y.view = Range(-zoomed, zoomed), Range(-zoomed, zoomed)
+    return result

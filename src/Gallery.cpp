@@ -66,6 +66,7 @@ void textPage()
     ImGui::TextUnformatted("Primary text");
     textDim("Secondary text");
     textFaint("Faint text, hints");
+    textColoured(palette().info, "Coloured text (a palette role)");
     textMono("C:/Projects/mono/path.txt");
     ImGui::TextUnformatted("Shortcut");
     ImGui::SameLine();
@@ -323,8 +324,100 @@ void containersPage()
     endCard();
 }
 
+// The application shell at a small scale. The real top bar, status bar and
+// sidebar are viewport bars (the demo application around this window shows
+// them); child regions stand in for them here.
+void layoutPage()
+{
+    const auto& p = palette();
+    callout(Tone::info, "beginTopBar, beginStatusBar and beginSidebar take their room off the main viewport, then dockSpace "
+                        "fills the rest. Below, child regions stand in for those bars.");
+    static auto mode = 0;
+    static auto page = 0;
+    static auto playing = false;
+
+    space();
+    sectionTitle("Top bar");
+    {
+        ScopedColor ground(ImGuiCol_ChildBg, p.bg1);
+        ScopedVar padding(ImGuiStyleVar_WindowPadding, dp(8.0f, metrics().toolbarHeight * 0.5f));
+        if (ImGui::BeginChild("##topBarPreview", ImVec2(0.0f, ImGui::GetFrameHeight() + dp(metrics().toolbarHeight)),
+                              ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar)) {
+            const char* modes[] { "Studio", "Mixer", "Library" };
+            segmented("##mode", modes, 3, &mode);
+            toolbarSeparator();
+            if (iconButton(playing ? icon::pause : icon::play, "Play / pause (Space)", playing, p.success))
+                playing = !playing;
+            ImGui::SameLine(0.0f, dp(2.0f));
+            iconButton(icon::stop, "Stop");
+        }
+        ImGui::EndChild();
+    }
+
+    space();
+    sectionTitle("Sidebar, panel header and toolbar");
+    const auto height = dp(250.0f);
+    {
+        ScopedColor ground(ImGuiCol_ChildBg, p.bg0);
+        ScopedVar padding(ImGuiStyleVar_WindowPadding, dp(10.0f, 12.0f));
+        if (ImGui::BeginChild("##sidebarPreview", ImVec2(dp(190.0f), height),
+                              ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding)) {
+            sidebarHeader("CYUI DEMO", "1.1");
+            sidebarGroup("WORKSPACE");
+            if (sidebarItem(icon::home, "Home", page == 0))
+                page = 0;
+            if (sidebarItem(icon::library, "Library", page == 1, "12"))
+                page = 1;
+            sidebarGroup("SYSTEM");
+            if (sidebarItem(icon::settings, "Settings", page == 2))
+                page = 2;
+        }
+        ImGui::EndChild();
+    }
+    ImGui::SameLine();
+    if (ImGui::BeginChild("##panelPreview", ImVec2(0.0f, height), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding)) {
+        panelHeader("Devices", "Kick drum - Track 1");
+        space(4.0f);
+        if (beginToolbar("##toolbarPreview")) {
+            iconButton(icon::add, "Add a device");
+            ImGui::SameLine(0.0f, dp(2.0f));
+            iconButton(icon::presets, "Presets");
+            toolbarSeparator();
+            badge("3 DEVICES");
+        }
+        endToolbar();
+        space(6.0f);
+        textDim("Panel content: cards, properties, views.");
+    }
+    ImGui::EndChild();
+
+    space();
+    sectionTitle("Status bar");
+    {
+        ScopedColor ground(ImGuiCol_ChildBg, p.bg0);
+        ScopedVar padding(ImGuiStyleVar_WindowPadding, dp(8.0f, 4.0f));
+        if (ImGui::BeginChild("##statusPreview", ImVec2(0.0f, ImGui::GetFontSize() * 0.86f + dp(10.0f) + dp(2.0f)),
+                              ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar)) {
+            statusText(Tone::neutral, "Ready");
+            ImGui::SameLine(0.0f, dp(18.0f));
+            statusText(Tone::success, "Audio: 48 kHz, 256 samples");
+            ImGui::SameLine(0.0f, dp(18.0f));
+            statusText(Tone::warning, "2 warnings");
+        }
+        ImGui::EndChild();
+    }
+
+    space();
+    sectionTitle("Dock space");
+#ifdef IMGUI_HAS_DOCK
+    textDim("dockSpace() docks the panels over what the bars leave of the main viewport.");
+#else
+    textFaint("dockSpace() needs ImGui's docking branch.");
+#endif
+}
 
 void moduleGallery(int selectedTab,const GalleryResources& resources) {
+    (void)resources;
     auto page=[&](const char*label,int index,auto body){if(ImGui::BeginTabItem(label,nullptr,selectedTab==index?ImGuiTabItemFlags_SetSelected:0)){body();ImGui::EndTabItem();}};
 #if defined(CYUI_HAS_CANVAS)
     page("Canvas",4,[]{textDim("Wheel: zoom at pointer. Middle drag: pan. Space + drag: pan.");static CanvasState state;CanvasScope canvas("##canvas",state,dp(0,320));const auto&f=canvas.frame();auto*d=ImGui::GetWindowDrawList();const auto a=state.view.screen({40,40},f.bounds.min),b=state.view.screen({220,160},f.bounds.min);d->AddRectFilled(a,b,palette().accentDim,dp(4));d->AddText(a,palette().text,"World-space content");});
@@ -405,23 +498,33 @@ void showGallery(bool* open, const int selectTab,const GalleryResources& resourc
     palettePreview();
     divider(2.0f);
     if (ImGui::BeginTabBar("##galleryTabs",ImGuiTabBarFlags_FittingPolicyScroll)) {
-        if (ImGui::BeginTabItem("Text & status", nullptr, selectTab == 0 ? ImGuiTabItemFlags_SetSelected : 0)) {
+        // Brings selectTab to the front once (and again when it changes): the
+        // tabs stay free to click.
+        auto* storage = ImGui::GetStateStorage();
+        const auto key = ImGui::GetID("##selectedTab");
+        const auto selected = selectTab != storage->GetInt(key, -1) ? selectTab : -1;
+        storage->SetInt(key, selectTab);
+        if (ImGui::BeginTabItem("Text & status", nullptr, selected == 0 ? ImGuiTabItemFlags_SetSelected : 0)) {
             textPage();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Buttons", nullptr, selectTab == 1 ? ImGuiTabItemFlags_SetSelected : 0)) {
+        if (ImGui::BeginTabItem("Buttons", nullptr, selected == 1 ? ImGuiTabItemFlags_SetSelected : 0)) {
             buttonsPage();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Controls", nullptr, selectTab == 2 ? ImGuiTabItemFlags_SetSelected : 0)) {
+        if (ImGui::BeginTabItem("Controls", nullptr, selected == 2 ? ImGuiTabItemFlags_SetSelected : 0)) {
             controlsPage();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Containers", nullptr, selectTab == 3 ? ImGuiTabItemFlags_SetSelected : 0)) {
+        if (ImGui::BeginTabItem("Containers", nullptr, selected == 3 ? ImGuiTabItemFlags_SetSelected : 0)) {
             containersPage();
             ImGui::EndTabItem();
         }
-        moduleGallery(selectTab,resources);
+        moduleGallery(selected,resources);
+        if (ImGui::BeginTabItem("Layout", nullptr, selected == 20 ? ImGuiTabItemFlags_SetSelected : 0)) {
+            layoutPage();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
     ImGui::End();

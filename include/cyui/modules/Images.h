@@ -27,9 +27,10 @@ struct GradientStop {
     ImVec4 color{0, 0, 0, 1};
 };
 struct GradientState {
-    ItemId selected = 0, dragging = 0;
+    ItemId selected = 0, dragging = 0; // valid while hasSelection / active
     std::vector<GradientStop> before, preview;
     std::uint64_t revision = 0;
+    bool hasSelection = false, active = false;
 };
 CYUI_API ImVec4 sampleGradient(ArrayView<GradientStop>, double position, bool linearLight = false);
 CYUI_API Edit<std::vector<GradientStop>> gradientEditor(const char *id, GradientState &,

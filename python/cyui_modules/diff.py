@@ -54,8 +54,11 @@ class DiffDocument:
         if max(len(before.encode('utf8')), len(after.encode('utf8'))) > 32*1024*1024:
             raise ValueError('DiffDocument exceeds 32 MiB per input')
         def lines(text):
-            return text.split('\n')[:-1] if text.endswith('\n') else text.split('\n') if text else []
-        a, b = lines(before), lines(after)
+            # A CR before each LF is a line ending, not content: CRLF against LF compares equal.
+            rows = text.split('\n')[:-1] if text.endswith('\n') else text.split('\n') if text else []
+            # Each line records whether it lost a CR, for the line-ending notice below.
+            return [row.removesuffix('\r') for row in rows], [row.endswith('\r') for row in rows]
+        (a, a_cr), (b, b_cr) = lines(before), lines(after)
         left, right = defaultdict(list), defaultdict(list)
         for n, text in enumerate(a):
             left[text].append(n)
@@ -112,9 +115,13 @@ class DiffDocument:
                 emit('context', ai, bi); ai += 1; bi += 1
             if anchor_a < len(a):
                 emit('context', ai, bi); ai += 1; bi += 1
-        if before != after and a == b and raw:
+        if a == b and raw and before.endswith('\n') != after.endswith('\n'):
+            # Only the final newline differs: show the last line as changed.
             _, old, new, text = raw.pop()
             raw.extend((('removed', old, 0, text), ('added', 0, new, text)))
+        # One notice when a line shown as unchanged differs only by its CR.
+        if any(kind == 'context' and a_cr[old-1] != b_cr[new-1] for kind, old, new, _ in raw):
+            raw.append(('notice', 0, 0, '\\ Line endings differ (CRLF / LF)'))
         if before and not before.endswith('\n'):
             raw.append(('notice', 0, 0, '\\ No newline at end of old document'))
         if after and not after.endswith('\n'):
@@ -126,7 +133,13 @@ class DiffDocument:
             raise ValueError('Unified diff exceeds 32 MiB')
         raw, a, b, in_hunk = [], 0, 0, False
         self.approximate = False
-        for line in text.splitlines():
+        # Only LF (and CRLF) end a line: splitlines() would also split on form feeds,
+        # U+2028 and other characters that belong to the content.
+        lines = text.split('\n')
+        if lines and lines[-1] == '':
+            lines.pop()
+        for line in lines:
+            line = line.removesuffix('\r')
             match = re.match(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@', line)
             if match:
                 a, b = map(int, match.groups())
@@ -160,18 +173,27 @@ def diff_viewer(identifier, state, document, size=(0, 320)):
     i.push_id(identifier)
     _, state.split = i.checkbox('Side by side', state.split)
     i.same_line()
-    if i.button('Next change') and document.hunks:
+    if c.ghost_button('Next change') and document.hunks:
         state.hunk = (state.hunk+1) % len(document.hunks)
         state.focus = document.hunks[state.hunk]
     i.same_line()
     i.set_next_item_width(c.dp(180))
     _, state.query = i.input_text('##find', state.query)
+    i.same_line()
+    if c.ghost_button('Find next') and state.query and document.rows:
+        count = len(document.rows)
+        for n in range(1, count+1):
+            index = (max(-1, state.selected)+n) % count
+            if state.query in document.rows[index].code.text:
+                state.focus = state.selected = index
+                break
     height = max(c.dp(1), size[1]-i.get_frame_height_with_spacing()) if size[1] else 0
     width = size[0] or i.get_content_region_avail().x
     request = None
     def pane(name, side, pane_width):
         nonlocal request
         count = len(document.rows) if side < 0 else len(document.pairs)
+        row_width = max(pane_width, max(c.dp(500), document.columns*i.calc_text_size('M').x+c.dp(90)))
         i.begin_child(name, (pane_width, height), i.ChildFlags_.borders, i.WindowFlags_.horizontal_scrollbar)
         row_height = i.get_text_line_height_with_spacing()
         if side >= 0:
@@ -183,22 +205,27 @@ def diff_viewer(identifier, state, document, size=(0, 320)):
             row = state.focus if side < 0 else next((n for n, pair in enumerate(document.pairs) if state.focus in pair), 0)
             state.scroll = max(0, row*row_height-i.get_window_height()*.25)
             i.set_scroll_y(state.scroll)
+        # Rows are exactly row_height tall, so the clipper and the scroll extent agree.
+        i.push_style_var(i.StyleVar_.item_spacing, (i.get_style().item_spacing.x, 0))
         clip = i.ListClipper(); clip.begin(count, row_height)
         while clip.step():
             for n in range(clip.display_start, clip.display_end):
                 index = n if side < 0 else document.pairs[n][side]
                 pos = tuple(i.get_cursor_screen_pos())
-                i.invisible_button(item_id(n), (max(pane_width, max(c.dp(500), document.columns*i.calc_text_size('M').x+c.dp(90))), row_height))
+                i.invisible_button(item_id(n), (row_width, row_height))
                 if index < 0:
                     continue
                 row, p, draw = document.rows[index], c.palette(), i.get_window_draw_list()
                 tint = p.success if row.kind == 'added' else p.error if row.kind == 'removed' else p.info if row.kind == 'hunk' else p.bg0
                 background = c.mix(p.bg0, tint, .14)
-                draw.add_rect_filled(pos, (pos[0]+max(pane_width, max(c.dp(500), document.columns*i.calc_text_size('M').x+c.dp(90))), pos[1]+row_height), p.selection if state.selected == index else background)
+                draw.add_rect_filled(pos, (pos[0]+row_width, pos[1]+row_height), p.selection if state.selected == index else background)
                 draw.add_text(pos, p.textFaint, f'{row.old_line:5} {row.new_line:5}' if side < 0 else str(row.old_line if side == 0 else row.new_line))
                 paint_line(draw, (pos[0]+c.dp(88), pos[1]), row.code, background)
+                if state.query and state.query in row.code.text:
+                    draw.add_rect(pos, (pos[0]+row_width, pos[1]+row_height), p.warning, 0, 0, c.dp(1))
                 if i.is_item_clicked():
                     state.selected, request = index, row
+        i.pop_style_var()
         i.end_child()
     if state.split:
         pane('##before', 0, (width-i.get_style().item_spacing.x)/2)

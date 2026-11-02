@@ -36,11 +36,15 @@ ID3D11ShaderResourceView* gGalleryTexture {};
 ID3D11Texture2D* gWebTexture {};
 ID3D11ShaderResourceView* gWebView {};
 int gWebWidth=0,gWebHeight=0;
+// Replaced/closed web textures wait here until after the next Present, so no draw list built
+// before the swap can still reference a released view.
+std::vector<IUnknown*> gWebRetired;
+void retireWeb(){if(gWebView){gWebRetired.push_back(gWebView);gWebView=nullptr;}if(gWebTexture){gWebRetired.push_back(gWebTexture);gWebTexture=nullptr;}gWebWidth=gWebHeight=0;}
+void releaseRetiredWeb(){for(auto*resource:gWebRetired)resource->Release();gWebRetired.clear();}
 
 ImTextureID uploadWeb(int width,int height,const void* pixels) {
     if(width!=gWebWidth||height!=gWebHeight){
-        if(gWebView){gWebView->Release();gWebView=nullptr;}
-        if(gWebTexture){gWebTexture->Release();gWebTexture=nullptr;}
+        retireWeb();
         D3D11_TEXTURE2D_DESC desc{};desc.Width=UINT(width);desc.Height=UINT(height);desc.MipLevels=1;desc.ArraySize=1;desc.Format=DXGI_FORMAT_B8G8R8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_DEFAULT;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
         if(FAILED(gDevice->CreateTexture2D(&desc,nullptr,&gWebTexture)))return 0;
         if(FAILED(gDevice->CreateShaderResourceView(gWebTexture,nullptr,&gWebView)))return 0;
@@ -53,16 +57,21 @@ void createGalleryTexture() {
     std::vector<ImU32> pixels(256*256);const auto&p=cyui::palette();
     for(int y=0;y<256;++y)for(int x=0;x<256;++x){const float k=float(x)/255;const float signal=.5f+.5f*std::sin(float(x*x+y*y)*.0007f);const auto color=cyui::mix(cyui::mix(p.bg0,p.info,k),p.accent,signal*.65f);pixels[std::size_t(y)*256+x]=color;}
     D3D11_TEXTURE2D_DESC desc{};desc.Width=desc.Height=256;desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_IMMUTABLE;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;D3D11_SUBRESOURCE_DATA data{};data.pSysMem=pixels.data();data.SysMemPitch=256*4;ID3D11Texture2D* texture=nullptr;
-    if(SUCCEEDED(gDevice->CreateTexture2D(&desc,&data,&texture))){gDevice->CreateShaderResourceView(texture,nullptr,&gGalleryTexture);texture->Release();}
+    if(SUCCEEDED(gDevice->CreateTexture2D(&desc,&data,&texture))){if(FAILED(gDevice->CreateShaderResourceView(texture,nullptr,&gGalleryTexture)))gGalleryTexture=nullptr;texture->Release();}
 }
 UINT gResizeWidth {}, gResizeHeight {};
+bool gOccluded = false;
 
-void createTarget()
+bool createTarget()
 {
     ID3D11Texture2D* back {};
-    gSwapChain->GetBuffer(0, IID_PPV_ARGS(&back));
-    gDevice->CreateRenderTargetView(back, nullptr, &gTarget);
+    if (FAILED(gSwapChain->GetBuffer(0, IID_PPV_ARGS(&back))))
+        return false;
+    const auto result = gDevice->CreateRenderTargetView(back, nullptr, &gTarget);
     back->Release();
+    if (FAILED(result))
+        gTarget = nullptr;
+    return gTarget != nullptr;
 }
 
 void releaseTarget()
@@ -95,15 +104,14 @@ bool createDevice(HWND hwnd)
                                                &gSwapChain, &gDevice, &level, &gContext);
     if (result != S_OK)
         return false;
-    createTarget();
-    return true;
+    return createTarget();
 }
 
 void releaseDevice()
 {
     if(gGalleryTexture)gGalleryTexture->Release();
-    if(gWebView)gWebView->Release();
-    if(gWebTexture)gWebTexture->Release();
+    retireWeb();
+    releaseRetiredWeb();
     releaseTarget();
     if (gSwapChain != nullptr)
         gSwapChain->Release();
@@ -184,6 +192,15 @@ LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             gResizeHeight = HIWORD(lParam);
         }
         return 0;
+    case WM_DPICHANGED: {
+        // Moved to a monitor with another scale: restyle, take the suggested size.
+        if (ImGui::GetCurrentContext() != nullptr)
+            cyui::applyDpi(static_cast<float>(HIWORD(wParam)) / 96.0f);
+        const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+        ::SetWindowPos(hwnd, nullptr, suggested->left, suggested->top, suggested->right - suggested->left,
+                       suggested->bottom - suggested->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU)
             return 0;
@@ -411,7 +428,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             const std::wstring arg = args[i];
             const auto next = [&]() { return i + 1 < count ? std::wstring(args[++i]) : std::wstring(); };
             if(arg==L"--web-url")webUrl=next();
-            else if(arg==L"--cef-no-sandbox")cefNoSandbox=true;
+            else if(arg==L"--cef-no-sandbox")cefNoSandbox=true; // Accepted; the demo is never sandboxed.
             else if (arg == L"--capture")
                 capturePath = next();
             else if (arg == L"--theme") {
@@ -472,9 +489,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 #if defined(CYUI_DEMO_CEF)
     std::unique_ptr<cyui::WebBackend> web;
     if(!webUrl.empty()){
-        CefSettings settings;settings.windowless_rendering_enabled=true;settings.no_sandbox=cefNoSandbox;CefString(&settings.root_cache_path)=std::filesystem::absolute("build/cef-demo-profile").string();
+        // No sandbox info is passed to CefExecuteProcess/CefInitialize, so CEF runs unsandboxed
+        // whatever --cef-no-sandbox says; say so explicitly (docs/WEB.md "Process sandbox").
+        (void)cefNoSandbox;
+        CefSettings settings;settings.windowless_rendering_enabled=true;settings.no_sandbox=true;CefString(&settings.root_cache_path)=std::filesystem::absolute("build/cef-demo-profile").string();
         cefStarted=CefInitialize(cefArgs,settings,cefApp,nullptr);
-        if(cefStarted){const int count=WideCharToMultiByte(CP_UTF8,0,webUrl.data(),int(webUrl.size()),nullptr,0,nullptr,nullptr);std::string url(std::size_t(count),'\0');WideCharToMultiByte(CP_UTF8,0,webUrl.data(),int(webUrl.size()),url.data(),count,nullptr,nullptr);cyui::WebCEFOptions options;options.parent=hwnd;options.url=url;options.policy.origins={cyui::webOrigin(url)};options.upload=uploadWeb;web=cyui::createWebCEF(options);app.resources.web=web.get();if(tab<0)tab=19;}
+        if(cefStarted){const int count=WideCharToMultiByte(CP_UTF8,0,webUrl.data(),int(webUrl.size()),nullptr,0,nullptr,nullptr);std::string url(std::size_t(count),'\0');WideCharToMultiByte(CP_UTF8,0,webUrl.data(),int(webUrl.size()),url.data(),count,nullptr,nullptr);cyui::WebCEFOptions options;options.parent=hwnd;options.url=url;options.policy.origins={cyui::webOrigin(url)};options.upload=uploadWeb;options.release=[](ImTextureID texture){if(texture==ImTextureID(reinterpret_cast<std::uintptr_t>(gWebView)))retireWeb();};web=cyui::createWebCEF(options);app.resources.web=web.get();if(tab<0)tab=19;}
     }
 #else
     (void)webUrl;(void)cefNoSandbox;
@@ -495,11 +515,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         }
         if (done)
             break;
+        // Minimised or screen locked: wait instead of spinning a core.
+        if (gOccluded && gSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
+            ::Sleep(10);
+            continue;
+        }
+        gOccluded = false;
         if (gResizeWidth != 0 && gResizeHeight != 0) {
             releaseTarget();
-            gSwapChain->ResizeBuffers(0, gResizeWidth, gResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
+            const auto resized = gSwapChain->ResizeBuffers(0, gResizeWidth, gResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
             gResizeWidth = gResizeHeight = 0;
-            createTarget();
+            if (FAILED(resized) || !createTarget()) {
+                ::OutputDebugStringA("CyUI demo: could not resize the swap chain\n");
+                break;
+            }
         }
 
 #if defined(CYUI_DEMO_CEF)
@@ -528,7 +557,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             captureBackBuffer(capturePath.c_str());
             done = true;
         }
-        gSwapChain->Present(1, 0);
+        const auto presented = gSwapChain->Present(1, 0);
+        releaseRetiredWeb();
+        gOccluded = presented == DXGI_STATUS_OCCLUDED;
+        if (presented == DXGI_ERROR_DEVICE_REMOVED || presented == DXGI_ERROR_DEVICE_RESET) {
+            ::OutputDebugStringA("CyUI demo: the graphics device was lost\n");
+            break;
+        }
     }
 
 #if defined(CYUI_DEMO_CEF)

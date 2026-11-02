@@ -25,7 +25,7 @@ struct PlotState {
 struct PlotResult {
     bool hovered = false, viewChanged = false;
     Point mouse;
-    ItemId series = 0;
+    ItemId series = 0; // nearest sample's series, 0 for none: give series nonzero IDs
     std::size_t index = 0;
     std::vector<ItemId> skippedSeries;
 };

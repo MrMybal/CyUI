@@ -1,4 +1,5 @@
 #include "cyui/modules/Timeline.h"
+#include "ModuleInternal.h"
 #include <cstdio>
 
 namespace cyui {
@@ -9,6 +10,7 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
     CanvasState canvas;
     CanvasOptions options;
     options.grid = options.navigation = false;
+    options.claimWheel = true;
     CanvasScope scope(id, canvas, size, options);
     const auto f = scope.frame();
     const auto r = f.bounds;
@@ -31,26 +33,20 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
         clear();
         result.clips.phase = EditPhase::cancel;
     }
-    if (f.hovered && io.MouseWheel && !wheelTaken()) {
+    if (f.wheel != 0) {
         if (io.KeyCtrl)
-            s.verticalScroll = std::max(0., s.verticalScroll - io.MouseWheel * dp(40));
-        else if (io.KeyShift) {
-            const double shift = -io.MouseWheel * s.view.span() * .1;
-            s.view.min += shift;
-            s.view.max += shift;
-        } else
-            s.view = zoomRange(s.view, mouse, std::exp(-io.MouseWheel * .15));
-        takeWheel();
+            s.verticalScroll = std::max(0., s.verticalScroll - f.wheel * dp(40));
+        else if (io.KeyShift)
+            s.view = detail::panView(s.view, -f.wheel * s.view.span() * .1);
+        else
+            s.view = detail::zoomView(s.view, mouse, std::exp(-f.wheel * .15));
     }
     if (f.hovered && ImGui::IsMouseClicked(2))
         s.panning = true;
     if (!ImGui::IsMouseDown(2))
         s.panning = false;
-    if (s.panning) {
-        const double delta = -io.MouseDelta.x / width * s.view.span();
-        s.view.min += delta;
-        s.view.max += delta;
-    }
+    if (s.panning)
+        s.view = detail::panView(s.view, -io.MouseDelta.x / width * s.view.span());
     struct Row {
         ItemId id;
         float top, bottom;
@@ -77,21 +73,21 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
     const double desired = s.view.span() * dp(90) / width,
                  power = std::pow(10., std::floor(std::log10(std::max(1e-12, desired))));
     const double step = (desired / power < 2 ? 1 : desired / power < 5 ? 2 : 5) * power;
-    for (double t = std::ceil(s.view.min / step) * step; t <= s.view.max; t += step) {
+    detail::forEachTick(s.view.min, s.view.max, step, [&](double t) {
         const float px = x(t);
         d->AddLine({px, r.min.y}, {px, r.max.y}, palette().grid, dp(1));
         char text[48];
         std::snprintf(text, sizeof(text), "%.5g", t);
         const auto label = o.formatTime ? o.formatTime(t) : std::string(text);
         d->AddText({px + dp(3), r.min.y + dp(3)}, palette().textDim, label.c_str());
-    }
+    });
     const auto &shown = s.mode > 0 ? s.preview : clips;
-    ItemId hit = 0;
+    const TimelineClip *hit = nullptr;
     int edge = 1;
-    ItemId hoveredLane = 0;
+    const Row *hoveredLane = nullptr;
     for (const auto &row : rows)
         if (io.MousePos.y >= row.top && io.MousePos.y < row.bottom)
-            hoveredLane = row.id;
+            hoveredLane = &row;
     d->PushClipRect({left, r.min.y + ruler}, r.max, true);
     for (const auto &c : shown) {
         const auto it = std::find_if(rows.begin(), rows.end(), [&](const Row &a) { return a.id == c.lane; });
@@ -109,7 +105,7 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
         if (o.drawClip)
             o.drawClip(c, rect);
         if (rect.contains(io.MousePos)) {
-            hit = c.id;
+            hit = &c;
             edge = std::abs(io.MousePos.x - rect.min.x) < dp(7)   ? 2
                    : std::abs(io.MousePos.x - rect.max.x) < dp(7) ? 3
                                                                   : 1;
@@ -134,12 +130,13 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
             result.seek = true;
             result.time = snap(mouse);
         } else if (hit) {
-            if (!selected(s.selected, hit) || io.KeyCtrl)
-                selectItem(s.selected, hit, io.KeyCtrl || io.KeyShift);
+            const auto key = hit->id;
+            if (!selected(s.selected, key) || io.KeyCtrl)
+                selectItem(s.selected, key, io.KeyCtrl || io.KeyShift);
             const auto it =
-                std::find_if(clips.begin(), clips.end(), [&](const TimelineClip &c) { return c.id == hit; });
+                std::find_if(clips.begin(), clips.end(), [&](const TimelineClip &c) { return c.id == key; });
             if (!o.readOnly && it != clips.end() && !it->locked) {
-                s.active = hit;
+                s.active = key;
                 s.mode = edge;
                 s.grab = mouse;
                 s.before = s.preview = clips;
@@ -148,6 +145,7 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
             }
         } else if (io.MousePos.x >= left) {
             s.selection = {mouse, mouse};
+            s.anchor = mouse;
             s.mode = -1;
             result.seek = true;
             result.time = mouse;
@@ -159,19 +157,24 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
     if (s.mode > 0) {
         if (ImGui::IsMouseDown(0)) {
             s.preview = s.before;
+            // The grabbed clip snaps; the others follow by the same delta and keep their spacing.
+            double delta = mouse - s.grab;
+            for (const auto &c : s.before)
+                if (c.id == s.active)
+                    delta = s.mode == 3 ? snap(c.start + c.duration + delta) - (c.start + c.duration)
+                                        : snap(c.start + delta) - c.start;
             for (auto &c : s.preview)
                 if (!c.locked && ((s.mode == 1 && selected(s.selected, c.id)) || c.id == s.active)) {
                     if (s.mode == 1) {
-                        c.start = snap(c.start + mouse - s.grab);
+                        c.start += delta;
                         if (c.id == s.active && hoveredLane)
-                            c.lane = hoveredLane;
+                            c.lane = hoveredLane->id;
                     } else if (s.mode == 2) {
                         const double end = c.start + c.duration;
-                        c.start = std::min(end - o.minDuration, snap(c.start + mouse - s.grab));
+                        c.start = std::min(end - o.minDuration, c.start + delta);
                         c.duration = end - c.start;
                     } else
-                        c.duration =
-                            std::max(o.minDuration, snap(c.start + c.duration + mouse - s.grab) - c.start);
+                        c.duration = std::max(o.minDuration, c.duration + delta);
                 }
             if (result.clips.phase != EditPhase::begin && (io.MouseDelta.x || io.MouseDelta.y))
                 result.clips = {EditPhase::update, s.preview};
@@ -181,11 +184,13 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
         }
     }
     if (s.mode == -1) {
-        s.selection.max = mouse;
+        s.selection = {std::min(s.anchor, mouse), std::max(s.anchor, mouse)};
         result.rangeChanged = true;
         if (!ImGui::IsMouseDown(0))
             s.mode = 0;
     }
+    if (s.focused && f.focused && !io.WantTextInput && !o.readOnly)
+        ImGui::SetNextFrameWantCaptureKeyboard(true); // Hosts (Unreal) route Delete here.
     if (s.focused && f.focused && !io.WantTextInput && !o.readOnly && ImGui::IsKeyPressed(ImGuiKey_Delete))
         for (const auto &c : clips)
             if (!c.locked && selected(s.selected, c.id))

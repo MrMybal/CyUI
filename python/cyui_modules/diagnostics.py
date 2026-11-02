@@ -1,8 +1,13 @@
 """Bounded thread-safe logs. Drawing stays on the UI thread."""
 from dataclasses import dataclass, field
 from collections import deque
+from itertools import count
 from threading import Lock
 from .common import ui, item_id
+
+# Revisions are unique per buffer (instance << 40, as in C++), so a LogState moved to a
+# recreated buffer never mistakes its revision for the new buffer's and keeps stale rows.
+_instances = count(1)
 
 
 @dataclass(frozen=True)
@@ -16,7 +21,7 @@ class LogEntry:
 class LogBuffer:
     def __init__(self, capacity=10000, max_bytes=8*1024*1024):
         self.capacity, self.max_bytes = max(1, capacity), max(1, max_bytes)
-        self._rows, self._lock, self._bytes, self._next, self._revision = deque(), Lock(), 0, 1, 1
+        self._rows, self._lock, self._bytes, self._next, self._revision = deque(), Lock(), 0, 1, (next(_instances) << 40) | 1
 
     def append(self, level, text, source=''):
         lines = text.split('\n')

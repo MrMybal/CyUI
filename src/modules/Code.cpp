@@ -339,7 +339,7 @@ CodeViewResult codeViewer(const char *id, CodeViewState &s, const CodeDocument &
         for (int i = clip.DisplayStart; i < clip.DisplayEnd; ++i) {
             ScopedID row(i);
             const auto p = ImGui::GetCursorScreenPos();
-            ImGui::InvisibleButton("##line", {width, height});
+            detail::listRow("##line", {width, height});
             auto *d = ImGui::GetWindowDrawList();
             if (i == s.selectedLine)
                 d->AddRectFilled(p, {p.x + width, p.y + height}, palette().selection);

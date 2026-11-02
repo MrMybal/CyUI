@@ -8,17 +8,26 @@
 
 namespace cyui {
 namespace {
-std::vector<std::string> linesOf(const std::string &text) {
+// A trailing '\r' is cut so CRLF and LF lines compare equal; `cr` records which lines had one.
+std::vector<std::string> linesOf(const std::string &text, std::vector<char> *cr = nullptr) {
     std::vector<std::string> out;
     std::size_t a = 0;
     while (a < text.size()) {
         const auto b = text.find('\n', a);
         out.push_back(text.substr(a, b == std::string::npos ? b : b - a));
+        const bool carriage = !out.back().empty() && out.back().back() == '\r';
+        if (carriage)
+            out.back().pop_back();
+        if (cr)
+            cr->push_back(carriage);
         if (b == std::string::npos)
             break;
         a = b + 1;
     }
     return out;
+}
+bool endsWithNewline(const std::string &text) {
+    return !text.empty() && text.back() == '\n';
 }
 DiffRow rowOf(DiffKind kind, const std::string &text, int oldLine, int newLine) {
     DiffRow row;
@@ -35,7 +44,8 @@ void DiffDocument::setTexts(const std::string &before, const std::string &after,
         throw std::length_error("DiffDocument exceeds 32 MiB per input");
     rows_.clear();
     approximate_ = false;
-    const auto a = linesOf(before), b = linesOf(after);
+    std::vector<char> crA, crB;
+    const auto a = linesOf(before, &crA), b = linesOf(after, &crB);
     std::unordered_map<std::string, std::vector<std::size_t>> left, right;
     for (std::size_t i = 0; i < a.size(); ++i)
         left[a[i]].push_back(i);
@@ -121,7 +131,7 @@ void DiffDocument::setTexts(const std::string &before, const std::string &after,
             emit(DiffKind::context, ai++, bi++);
         }
     }
-    if (before != after && a == b && !rows_.empty()) {
+    if (a == b && endsWithNewline(before) != endsWithNewline(after) && !rows_.empty()) {
         const auto last = rows_.back();
         rows_.pop_back();
         rows_.push_back(rowOf(DiffKind::removed, last.code.text, last.oldLine, 0));
@@ -131,6 +141,13 @@ void DiffDocument::setTexts(const std::string &before, const std::string &after,
         rows_.push_back(rowOf(DiffKind::notice, "\\ No newline at end of old document", 0, 0));
     if (!after.empty() && after.back() != '\n')
         rows_.push_back(rowOf(DiffKind::notice, "\\ No newline at end of new document", 0, 0));
+    // Lines shown as unchanged may still differ by their '\r': say so once.
+    bool endings = false;
+    for (const auto &r : rows_)
+        endings = endings || (r.kind == DiffKind::context && r.oldLine && r.newLine &&
+                              crA[std::size_t(r.oldLine - 1)] != crB[std::size_t(r.newLine - 1)]);
+    if (endings)
+        rows_.push_back(rowOf(DiffKind::notice, "\\ Line endings differ (CRLF / LF)", 0, 0));
     prepare(language);
 }
 void DiffDocument::setUnified(const std::string &text, CodeLanguage language) {
@@ -302,7 +319,7 @@ DiffResult diffViewer(const char *id, DiffState &s, const DiffDocument &doc, ImV
                                               : doc.pairs()[std::size_t(i)].right;
                 const auto p = ImGui::GetCursorScreenPos();
                 ScopedID row(i);
-                ImGui::InvisibleButton("##line", {width, height});
+                detail::listRow("##line", {width, height});
                 if (index < 0)
                     continue;
                 const auto &r = doc.rows()[std::size_t(index)];

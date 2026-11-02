@@ -1,15 +1,21 @@
-"""Model and real ImGui frame tests; no application engine or desktop automation."""
+"""Model and real ImGui frame tests; no application engine or desktop automation.
+
+The frame tests need imgui-bundle and are skipped without it, unless CYUI_REQUIRE_UI=1
+(set in CI), which turns a missing or broken imgui-bundle into a failure.
+"""
 import importlib
 import math
+import os
 import random
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'python'))
-from cyui_modules.common import Range, snap, zoom_range
+from cyui_modules.common import Edit, Range, snap, zoom_range
 from cyui_modules.canvas import CanvasView, CanvasState, Canvas
-from cyui_modules.plots import Axis, Series, PlotState, plot, heatmap, reduce_plot, histogram
+from cyui_modules.plots import Axis, Series, PlotState, plot, heatmap, reduce_plot, histogram, _navigate
+from cyui_modules.audio import fader_position, fader_gain, meter_position
 from cyui_modules.curves import CurvePoint, CurveState, evaluate_curve, curve_editor
 from cyui_modules.nodes import Node, Pin, Link, NodeState, node_editor, arrange_nodes
 from cyui_modules.timeline import Lane, Clip, TimelineState, timeline
@@ -85,9 +91,32 @@ class Models(unittest.TestCase):
         revision, rows = buffer.snapshot()
         self.assertEqual([e.text for e in rows], ['7', '8', '9'])
         self.assertIsNone(buffer.snapshot(revision)[1])
+        # A recreated buffer never shares a revision with the old one: its rows are copied.
+        recreated = LogBuffer(3, 1024)
+        for n in range(10):
+            recreated.append('info', 'new')
+        self.assertNotEqual(recreated.snapshot()[0], revision)
+        self.assertEqual([e.text for e in recreated.snapshot(revision)[1]], ['new']*3)
         doc = Document('# Title\n```cpp\nint x=1;\n```\n> Note\n| A | B |\n|---|---|\n| 1 | 2 |\n')
         self.assertEqual([b.kind for b in doc.blocks], ['heading', 'code', 'quote', 'table'])
         self.assertEqual(rank_commands([Command(1, 'Save document'), Command(2, 'Open document')], 'document save'), [0])
+
+    def test_inline_markdown_tokens(self):
+        from cyui_modules.documents import _INLINE
+        kinds = [(m.group(), m.lastgroup) for m in _INLINE.finditer('**bold** *em* `code` [a](https://x) f(*args) g(**kw) `')]
+        self.assertEqual(kinds, [('**bold**', 'strong'), ('*em*', 'emphasis'), ('`code`', 'mono'), ('[a](https://x)', 'link'),
+                                 ('f(*args) ', 'word'), ('g(**kw) ', 'word'), ('`', 'word')])
+        # As in C++: no emphasis without text right inside the markers.
+        self.assertEqual([m.lastgroup for m in _INLINE.finditer('2 * 3 * 4 ** x **')], ['word']*8)
+
+    def test_arrange_nodes_with_a_cycle(self):
+        # 1 -> 2 <-> 3 -> 4: nodes in and after the cycle still advance by column.
+        nodes = [Node(1, (0, 0), 'A', outputs=[Pin(11, 'o')]), Node(2, (0, 0), 'B', inputs=[Pin(21, 'i')], outputs=[Pin(22, 'o')]),
+                 Node(3, (0, 0), 'C', inputs=[Pin(31, 'i')], outputs=[Pin(32, 'o'), Pin(33, 'o')]), Node(4, (0, 0), 'D', inputs=[Pin(41, 'i')])]
+        layout = arrange_nodes(nodes, [Link(1, 11, 21), Link(2, 22, 31), Link(3, 32, 21), Link(4, 33, 41)])
+        self.assertLess(layout[1][0], layout[2][0])
+        self.assertLess(layout[2][0], layout[3][0])
+        self.assertLess(layout[3][0], layout[4][0])
 
     def test_web_policy(self):
         policy = WebPolicy(('http://127.0.0.1:4173', 'https://EXAMPLE.com:443'))
@@ -97,12 +126,88 @@ class Models(unittest.TestCase):
             self.assertFalse(policy.allows(url), url)
         self.assertEqual(web_origin('https://EXAMPLE.com:00443/a'), 'https://example.com')
 
+    def test_comment_syntax_follows_language(self):
+        def roles(text, language):
+            return [(text[a:a+n], role) for a, n, role in CodeDocument(text, language).lines[0].spans if role == 'comment']
+        self.assertEqual(roles('a = b // 2  # half', 'python'), [('# half', 'comment')])
+        self.assertEqual(roles('x = 1 /* not a comment */', 'python'), [])
+        self.assertEqual(roles('key = a // b ; note', 'ini'), [('; note', 'comment')])
+        self.assertEqual(roles('select 4 // 2 -- note', 'sql'), [('-- note', 'comment')])
+        self.assertEqual(roles('x = 7 // 2 -- note', 'lua'), [('-- note', 'comment')])
+        self.assertEqual(roles('int a; // note', 'cpp'), [('// note', 'comment')])
+        self.assertEqual(roles('int a; /* note */', 'cpp'), [('/* note */', 'comment')])
+        self.assertEqual(CodeDocument('ab\n\tlonger line\n', 'cpp').columns, len('    longer line'))
 
+    def test_diff_line_endings(self):
+        diff = DiffDocument(); diff.set_texts('a\r\nb\r\n', 'a\nb\n')
+        self.assertEqual([r.kind for r in diff.rows], ['context', 'context', 'notice'])
+        diff.set_texts('a\r\nb\r\n', 'a\r\nc\r\n')
+        self.assertEqual([r.code.text for r in diff.rows if r.kind != 'context'], ['b', 'c'])
+        notice = '\\ Line endings differ (CRLF / LF)'
+        # CRLF on different lines in both texts, and a lone trailing CR: one notice each time.
+        diff.set_texts('a\r\nb\n', 'a\nb\r\n')
+        self.assertEqual([r.code.text for r in diff.rows if r.kind == 'notice'], [notice])
+        diff.set_texts('a\nb\r', 'a\nb')
+        self.assertEqual([r.kind for r in diff.rows[:2]], ['context', 'context'])
+        self.assertEqual([r.code.text for r in diff.rows].count(notice), 1)
+        diff.set_texts('a\r\nb\r\n', 'a\r\nb\r\n')
+        self.assertEqual([r.kind for r in diff.rows], ['context', 'context'])
+        # Form feed, U+2028 and U+0085 are content in a unified diff, not line breaks.
+        diff.set_unified('@@ -1,1 +1,1 @@\r\n-a\x0cb c\x85d\r\n+e\r\n')
+        self.assertEqual([(r.kind, r.code.text) for r in diff.rows], [('hunk', '@@ -1,1 +1,1 @@'), ('removed', 'a\x0cb c\x85d'), ('added', 'e')])
+
+    def test_navigation_limits(self):
+        deep = Range(1e18, 1e18+4096)
+        for _ in range(200):
+            deep = zoom_range(deep, 1e18+1, .5)
+        self.assertTrue(deep.valid)
+        self.assertGreater(deep.span, 0)
+        for minimum in (0., -5.):
+            axis = Axis(Range(minimum, 100), True)
+            _navigate(axis, 0, 50, math.exp(-.15))   # wheel zoom
+            _navigate(axis, .1, 50, 1)               # drag
+            self.assertTrue(axis.view.valid)
+        axis = Axis(Range(1, 10), True)
+        _navigate(axis, 0, 5, 1e300)                 # would overflow exp(): keeps the range
+        self.assertEqual(axis.view, Range(1, 10))
+        _navigate(axis, 0, -1, .5)                   # no log of a negative anchor
+        self.assertTrue(axis.view.valid)
+
+    def test_fader_curve(self):
+        self.assertEqual(fader_position(-70), 0)
+        self.assertEqual(fader_position(6), 1)
+        # Continuous at the bottom: a small drag from -70 dB is a small move, not a jump.
+        self.assertLess(fader_position(-69.5), .01)
+        self.assertGreater(fader_gain(.005), -70)
+        for part in (.001, .1, .5, .9, 1):
+            self.assertAlmostEqual(fader_position(fader_gain(part)), part)
+        self.assertLess(fader_position(6, -70, 12), 1)
+        self.assertEqual(fader_position(12, -70, 12), 1)
+        self.assertEqual(fader_position(math.nan), 0)
+        self.assertEqual(fader_gain(.5, 0, 0), 0)
+        self.assertEqual(fader_position(-10, 0, 0), 0)
+        # A tiny range stays finite and invertible.
+        for part in (0, .25, 1):
+            level = fader_gain(part, 0, 1e-7)
+            self.assertTrue(math.isfinite(level))
+            self.assertAlmostEqual(fader_position(level, 0, 1e-7), part, places=6)
+        self.assertEqual(fader_position(math.inf), 1)
+        self.assertEqual(fader_position(1e6), 1)
+        self.assertEqual(meter_position(-70), 0)
+
+
+_ui_error = None
 try:
     from imgui_bundle import imgui as i
     import cyui as c
-except ImportError:
-    i = None
+except ImportError as error:
+    i, _ui_error = None, error
+
+
+class Environment(unittest.TestCase):
+    def test_ui_tests_can_run_when_required(self):
+        if os.environ.get('CYUI_REQUIRE_UI') == '1' and i is None:
+            self.fail(f'CYUI_REQUIRE_UI=1 but imgui-bundle could not be imported: {_ui_error}')
 
 
 @unittest.skipIf(i is None, 'imgui-bundle is required for real UI frame tests')
@@ -240,6 +345,228 @@ class Frames(unittest.TestCase):
         self.assertEqual(event.phase, 'cancel')
         self.frame(draw, (140, 140), (0, False))
         self.assertEqual(points[0].time, 2)
+
+    def key_frame(self, draw, key):
+        i.get_io().add_key_event(key, True)
+        result = self.frame(draw)
+        i.get_io().add_key_event(key, False)
+        return result
+
+    def click(self, draw, position):
+        """Mouse down then up at position; the results of both frames."""
+        return self.frame(draw, position, (0, True)), self.frame(draw, position, (0, False))
+
+    def test_modal_buttons_close_the_host_flag(self):
+        host = {'open': True}
+        def draw(answer=False):
+            shown, host['open'] = c.begin_modal('Delete layer?', host['open'])
+            result = 0
+            if shown:
+                result = c.modal_buttons('Delete', 'Cancel', True)
+                c.end_modal()
+            return shown, result
+        self.assertEqual(self.frame(draw), (True, 0))
+        self.assertTrue(host['open'])
+        self.assertEqual(self.key_frame(draw, i.Key.enter), (True, 1))
+        # modal_buttons ran after begin_modal returned: the flag follows on the next call...
+        self.assertEqual(self.frame(draw), (False, 0))
+        self.assertFalse(host['open'])
+        # ...and the modal stays closed instead of reopening from a stale True.
+        self.assertEqual(self.frame(draw), (False, 0))
+        self.assertFalse(self.frame(lambda: i.is_popup_open('Delete layer?')))
+        # A one-item list is written at once, like the C++ bool*.
+        flag = [True]
+        def listed():
+            shown, _ = c.begin_modal('Rename', flag)
+            if shown:
+                c.modal_buttons('Rename')
+                c.end_modal()
+            return shown
+        self.assertTrue(self.frame(listed))
+        self.key_frame(listed, i.Key.escape)
+        self.assertEqual(flag, [False])
+        self.assertFalse(self.frame(listed))
+        # Reopening later works: the closed marker does not outlive the next call.
+        host['open'] = True
+        for _ in range(3):
+            self.frame(draw)
+        self.assertEqual(self.frame(draw), (True, 0))
+        self.key_frame(draw, i.Key.escape)
+        self.frame(draw)
+        self.assertFalse(host['open'])
+
+    def test_notifications_reuse_slot_windows_per_context(self):
+        for n in range(10):
+            c.notify(f'Saved {n}', 'success')
+        self.assertEqual([t['text'] for t in c._toasts()], [f'Saved {n}' for n in range(4, 10)])
+        self.frame(c.render_notifications)
+        self.assertIsNotNone(i.internal.find_window_by_name('##cyuiToast5'))
+        self.assertIsNone(i.internal.find_window_by_name('##cyuiToast6'))
+        here = i.get_current_context()
+        other = i.create_context()
+        try:
+            i.set_current_context(other)
+            self.assertEqual(c._toasts(), [])
+            c.notify('Elsewhere')
+        finally:
+            i.set_current_context(here)
+            i.destroy_context(other)
+        self.assertNotIn('Elsewhere', [t['text'] for t in c._toasts()])
+        for toast in c._toasts():
+            toast['until'] = 0
+        self.frame(c.render_notifications)
+        self.assertEqual(c._toasts(), [])
+
+    def test_core_value_controls(self):
+        state = {'on': False, 'mode': 0, 'level': 0.}
+        def switch():
+            changed, state['on'] = c.toggle_switch('Enabled', state['on'])
+            return changed
+        self.assertEqual(self.click(switch, (30, 28)), (False, True))
+        self.assertTrue(state['on'])
+        def modes():
+            changed, state['mode'] = c.segmented('Mode', ['One', 'Two', 'Three'], state['mode'], 300)
+            return changed
+        self.assertEqual(self.click(modes, (170, 28)), (False, True))
+        self.assertEqual(state['mode'], 1)
+        def level():
+            changed, state['level'] = c.slider_bar('Level', state['level'], 0., 1., width=200)
+            return changed
+        self.assertTrue(self.frame(level, (120, 28), (0, True)))
+        self.assertAlmostEqual(state['level'], .5)
+        self.frame(level, (120, 28), (0, False))
+        i.get_io().add_mouse_wheel_event(0, 1)
+        self.assertTrue(self.frame(level, (120, 28)))
+        self.assertAlmostEqual(state['level'], .51)
+
+    def test_core_edits_wheel_and_disabled(self):
+        state = {'level': .25, 'on': False}
+        def level():
+            changed, state['level'] = c.slider_bar('Restore', state['level'], 0., 1., width=200)
+            return changed, i.is_item_deactivated_after_edit()
+        # Click (jumps to .5), then the second click of a double click restores .25.
+        self.click(level, (120, 28))
+        self.assertAlmostEqual(state['level'], .5)
+        self.click(level, (120, 28))
+        self.assertAlmostEqual(state['level'], .25)
+        self.frame(level, (120, 28))  # hovered: the wheel is owned before it turns
+        self.assertNotEqual(i.internal.get_key_owner(i.Key.mouse_wheel_y), 0)
+        def switch():
+            changed, state['on'] = c.toggle_switch('Edited', state['on'])
+            return changed, i.is_item_deactivated_after_edit()
+        self.assertEqual(self.click(switch, (30, 28))[1], (True, True))
+        def faded():
+            normal = c._faded(c.palette().accent)
+            i.begin_disabled()
+            dim = c._faded(c.palette().accent)
+            i.end_disabled()
+            return normal >> 24, dim >> 24
+        normal, dim = self.frame(faded)
+        self.assertLess(dim, normal)
+        colours = {c.categorical(n) for n in range(12)}
+        self.assertEqual(len(colours), 12)
+        self.assertEqual(c.categorical(12), c.categorical(0))
+        p = c.palette()
+        self.assertIn(c.contrast_text(p.accent), (p.text, p.bg0, p.bg5))
+
+    def test_nested_modals_close_only_themselves(self):
+        flags = {'outer': True, 'inner': True}
+        def draw():
+            shown, flags['outer'] = c.begin_modal('Outer', flags['outer'])
+            inner_result = 0
+            if shown:
+                inner, flags['inner'] = c.begin_modal('Inner', flags['inner'])
+                if inner:
+                    inner_result = c.modal_buttons('OK')
+                    c.end_modal()
+                c.end_modal()
+            return shown, inner_result
+        self.frame(draw); self.frame(draw)
+        self.assertEqual(self.key_frame(draw, i.Key.escape), (True, 2))
+        self.assertEqual(self.frame(draw), (True, 0))
+        self.assertEqual(flags, {'outer': True, 'inner': False})
+        self.assertEqual(self.frame(draw), (True, 0))
+
+    def test_audio_fader_slow_drag_and_meter_hold(self):
+        from cyui_modules import audio
+        state = {'gain': -70.}
+        def fader():
+            changed, state['gain'] = audio.fader('Gain', state['gain'])
+            return changed
+        self.frame(fader, (35, 150), (0, True))
+        for step in range(1, 11):
+            self.frame(fader, (35, 150-step))
+        self.frame(fader, (35, 140), (0, False))
+        self.assertGreater(state['gain'], -70)
+        held = []
+        def meter(peaks):
+            audio.meter('Meter', peaks, [])
+            storage = i.get_state_storage()
+            held.append(storage.get_float(i.get_id('Meter##hold0'), -120.))
+        self.frame(lambda: meter([1.]))
+        self.frame(lambda: meter([0.]))
+        self.assertGreater(held[-1], -1)       # the 0 dB peak is still held
+        self.frame(lambda: meter([]))          # no channel: drawn empty, no IndexError
+        knob = audio.knob
+        self.frame(lambda: knob('Flat', 1., 1., 1., 1., logarithmic=True))
+        self.frame(lambda: knob('Nan', math.nan, 20., 20000., 1000., logarithmic=True))
+
+    def test_ordered_selections_and_square_scope(self):
+        from cyui_modules.audioviews import stereo_scope
+        state = TimelineState()
+        draw = lambda: timeline('Ordered', state, [], [], size=(800, 300))
+        self.frame(draw); self.frame(draw)
+        self.frame(draw, (600, 250), (0, True))
+        self.frame(draw, (400, 250))
+        self.frame(draw, (400, 250), (0, False))
+        self.assertLess(state.selection.minimum, state.selection.maximum)
+        self.assertAlmostEqual(state.anchor, state.selection.maximum)
+        scope = PlotState(); scope.x.view = Range(0, 4)
+        self.frame(lambda: stereo_scope('Scope', scope, [], (300, 200)))
+        self.assertEqual((scope.x.view, scope.y.view), (Range(-2, 2), Range(-2, 2)))
+        commands, palette = [Command(1, 'One'), Command(2, 'Two')], CommandState()
+        draw = lambda: command_palette('Keys', True, palette, commands)
+        self.frame(draw); self.frame(draw)
+        self.assertEqual(self.key_frame(draw, i.Key.down_arrow), (True, 0))
+        self.assertEqual(palette.selected, 1)
+        self.assertEqual(self.key_frame(draw, i.Key.enter), (False, 2))
+
+    def test_inspector_edit_cycle(self):
+        state, choice, flag, name = InspectorState(), Property(1, 'Choice', 'a', choices=('a', 'b')), Property(2, 'Flag', True), Property(3, 'Name', 'old')
+        def draw():
+            return inspector('Edit cycle', state, [choice, flag, name])
+        line, spacing, frame = self.frame(lambda: (i.get_text_line_height(), i.get_style().item_spacing.y, i.get_frame_height()))
+        row = line + spacing + frame + spacing
+        combo_y = 20 + line + spacing + frame/2
+        # Choice: open the combo, then pick 'b' in its popup; the pick commits at once.
+        self.click(draw, (100, combo_y))
+        self.frame(draw)   # the popup takes its size and place
+        popup = i.internal.find_window_by_name('##Combo_00')
+        self.assertIsNotNone(popup)
+        padding = i.get_style().window_padding
+        events = []
+        for result in self.click(draw, (popup.pos.x+padding.x+10, popup.pos.y+padding.y+line+spacing+line/2)):
+            events += result
+        self.assertIn((1, Edit('commit', 'b')), events)
+        choice.value = 'b'
+        # Flag: one click commits the new value.
+        events = sum(self.click(draw, (26, combo_y+row)), [])
+        self.assertIn((2, Edit('commit', False)), events)
+        flag.value = False
+        # Name: focused and left without an edit is cancelled, so outside changes show again.
+        events = sum(self.click(draw, (100, combo_y+2*row)), [])
+        self.assertEqual([e.phase for k, e in events if k == 3], ['begin'])
+        events = sum(self.click(draw, (900, 700)), [])
+        self.assertEqual([e.phase for k, e in events if k == 3], ['cancel'])
+        self.assertEqual(state.active, set())
+        name.value = 'from host'
+        self.frame(draw)
+        self.assertEqual(state.drafts[3], 'from host')
+        # Escape with no field being edited cancels nothing.
+        state.active.add(3); state.before[3] = 'from host'; state.errors[3] = 'kept with its error'
+        events = self.key_frame(draw, i.Key.escape)
+        self.assertEqual(events, [])
+        self.assertIn(3, state.active)
 
 
 if __name__ == '__main__':

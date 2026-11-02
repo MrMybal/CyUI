@@ -1,4 +1,5 @@
 #include "cyui/modules/Curves.h"
+#include "ModuleInternal.h"
 #include <limits>
 #include <unordered_set>
 
@@ -66,6 +67,7 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
     CanvasState canvas;
     CanvasOptions options;
     options.navigation = false;
+    options.claimWheel = true;
     options.grid = false;
     CanvasScope scope(id, canvas, size, options);
     const auto f = scope.frame();
@@ -88,21 +90,16 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
         clear();
         result.phase = EditPhase::cancel;
     }
-    if (f.hovered && io.MouseWheel != 0 && !wheelTaken()) {
-        s.view.x.range = zoomRange(s.view.x.range, mouse.x, std::exp(-io.MouseWheel * .15));
-        takeWheel();
-    }
-    if (f.hovered && ImGui::IsMouseDragging(2)) {
-        const double delta = -io.MouseDelta.x / room.x * s.view.x.range.span();
-        s.view.x.range.min += delta;
-        s.view.x.range.max += delta;
-    }
+    if (f.wheel != 0)
+        detail::navigateAxis(s.view.x, 0, mouse.x, std::exp(-f.wheel * .15));
+    if (f.hovered && ImGui::IsMouseDragging(2))
+        detail::navigateAxis(s.view.x, -io.MouseDelta.x / room.x, mouse.x, 1);
     if (f.hovered && ImGui::IsMouseClicked(0))
         s.focused = true;
     else if (ImGui::IsMouseClicked(0))
         s.focused = false;
     const auto &shown = s.dragging ? s.preview : points;
-    ItemId hit = 0;
+    const CurvePoint *hit = nullptr;
     int handle = 0;
     float distance = dp(8);
     for (const auto &p : shown) {
@@ -110,7 +107,7 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
         const float dist = std::hypot(q.x - io.MousePos.x, q.y - io.MousePos.y);
         if (dist < distance) {
             distance = dist;
-            hit = p.id;
+            hit = &p;
             handle = 0;
         }
         if (o.handles && selected(s.selection, p.id) && p.shape == CurveShape::bezier)
@@ -122,18 +119,19 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
                 const float hd = std::hypot(a.x - io.MousePos.x, a.y - io.MousePos.y);
                 if (hd < distance) {
                     distance = hd;
-                    hit = p.id;
+                    hit = &p;
                     handle = side;
                 }
             }
     }
     if (!o.readOnly && f.hovered && ImGui::IsMouseDoubleClicked(0)) {
         result.value = points;
-        if (hit)
+        if (hit) {
+            const auto key = hit->id;
             result.value.erase(std::remove_if(result.value.begin(), result.value.end(),
-                                              [&](const CurvePoint &p) { return p.id == hit; }),
+                                              [&](const CurvePoint &p) { return p.id == key; }),
                                result.value.end());
-        else {
+        } else {
             const double t = o.snapTime ? o.snapTime(mouse.x) : snapValue(mouse.x, o.snap);
             result.value.push_back({fresh(points), t, mouse.y});
         }
@@ -143,10 +141,11 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
         result.phase = EditPhase::commit;
     } else if (f.hovered && ImGui::IsMouseClicked(0)) {
         if (hit) {
-            if (!selected(s.selection, hit) || io.KeyCtrl)
-                selectItem(s.selection, hit, io.KeyCtrl || io.KeyShift);
-            if (!o.readOnly && selected(s.selection, hit)) {
-                s.active = hit;
+            const auto key = hit->id;
+            if (!selected(s.selection, key) || io.KeyCtrl)
+                selectItem(s.selection, key, io.KeyCtrl || io.KeyShift);
+            if (!o.readOnly && selected(s.selection, key)) {
+                s.active = key;
                 s.handle = handle;
                 s.grab = mouse;
                 s.before = s.preview = points;
@@ -164,7 +163,14 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
     if (s.dragging) {
         if (ImGui::IsMouseDown(0)) {
             s.preview = s.before;
-            const double delta = mouse.x - s.grab.x, dy = mouse.y - s.grab.y;
+            double delta = mouse.x - s.grab.x;
+            const double dy = mouse.y - s.grab.y;
+            // The grabbed key snaps; the other selected keys follow by the same delta.
+            if (!s.handle && !io.KeyAlt)
+                for (const auto &p : s.before)
+                    if (p.id == s.active)
+                        delta = (o.snapTime ? o.snapTime(p.time + delta) : snapValue(p.time + delta, o.snap)) -
+                                p.time;
             for (auto &p : s.preview)
                 if (selected(s.selection, p.id)) {
                     if (s.handle && p.id == s.active) {
@@ -174,8 +180,6 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
                         h.x = s.handle < 0 ? std::min(0., h.x) : std::max(0., h.x);
                     } else if (!s.handle) {
                         p.time += delta;
-                        if (!io.KeyAlt)
-                            p.time = o.snapTime ? o.snapTime(p.time) : snapValue(p.time, o.snap);
                         p.value += dy;
                     }
                 }
@@ -201,6 +205,7 @@ Edit<std::vector<CurvePoint>> curveEditor(const char *id, CurveState &s,
         }
     }
     if (s.focused && f.focused && !io.WantTextInput) {
+        ImGui::SetNextFrameWantCaptureKeyboard(true); // Hosts (Unreal) route the shortcuts here.
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A)) {
             s.selection.clear();
             for (const auto &p : points)

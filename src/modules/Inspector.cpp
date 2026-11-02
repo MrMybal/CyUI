@@ -61,7 +61,25 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
             }
         }
         EditPhase phase = EditPhase::none;
-        if (!p.readOnly) {
+        const bool itemActive = ImGui::IsItemActive(), deactivated = ImGui::IsItemDeactivated();
+        // Escape cancels whoever ends the edit: this code (still active), ImGui's own drag cancel or
+        // keyboard navigation (deactivated this frame). Either way the draft must not commit.
+        const bool escaped =
+            draft.active && (itemActive || deactivated) && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+        // The frame after ClearActiveID() ImGui reports the deactivation of an edit already cancelled.
+        const bool stale = draft.cancelled && !itemActive;
+        draft.cancelled = false;
+        if (stale) {
+        } else if (!p.readOnly && escaped) {
+            if (itemActive) {
+                ImGui::ClearActiveID();
+                draft.cancelled = true;
+            }
+            phase = EditPhase::cancel;
+            draft.value = draft.before;
+            draft.active = false;
+            draft.error.clear();
+        } else if (!p.readOnly) {
             if (ImGui::IsItemActivated()) {
                 draft.active = true;
                 draft.before = p.value;
@@ -80,13 +98,7 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
                 } else
                     phase = EditPhase::none;
             }
-            if (draft.active && ImGui::IsItemActive() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-                phase = EditPhase::cancel;
-                draft.value = draft.before;
-                draft.active = false;
-                draft.error.clear();
-            }
-            if (ImGui::IsItemDeactivated() && !ImGui::IsItemDeactivatedAfterEdit() && draft.active) {
+            if (deactivated && !ImGui::IsItemDeactivatedAfterEdit() && draft.active) {
                 phase = EditPhase::cancel;
                 draft.active = false;
                 draft.value = draft.before;

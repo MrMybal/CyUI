@@ -116,12 +116,13 @@ Edit<std::vector<GradientStop>> gradientEditor(const char *id, GradientState &s,
     auto *d = ImGui::GetWindowDrawList();
     auto &io = ImGui::GetIO();
     Edit<std::vector<GradientStop>> result;
-    if (s.dragging && (s.revision != revision || ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+    if (s.active && (s.revision != revision || ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+        s.active = false;
         s.dragging = 0;
         s.preview.clear();
         result.phase = EditPhase::cancel;
     }
-    const auto &shown = s.dragging ? s.preview : stops;
+    const auto &shown = s.active ? s.preview : stops;
     const float barBottom = f.bounds.max.y - dp(14);
     const int samples = std::clamp(int(room.x / dp(2)), 1, 4096);
     for (int i = 0; i < samples; ++i) {
@@ -130,14 +131,15 @@ Edit<std::vector<GradientStop>> gradientEditor(const char *id, GradientState &s,
                          {f.bounds.min.x + room.x * (i + 1) / samples, barBottom},
                          ImGui::ColorConvertFloat4ToU32(color));
     }
-    ItemId hit = 0;
+    const GradientStop *hit = nullptr;
     for (const auto &stop : shown) {
         const float x = f.bounds.min.x + room.x * float(stop.position);
         const ImVec2 a{x, barBottom}, b{x - dp(6), barBottom + dp(10)}, c{x + dp(6), barBottom + dp(10)};
         d->AddTriangleFilled(a, b, c, ImGui::ColorConvertFloat4ToU32(stop.color));
-        d->AddTriangle(a, b, c, s.selected == stop.id ? palette().accent : palette().text, dp(1.5f));
+        d->AddTriangle(a, b, c, s.hasSelection && s.selected == stop.id ? palette().accent : palette().text,
+                       dp(1.5f));
         if (std::abs(io.MousePos.x - x) < dp(8))
-            hit = stop.id;
+            hit = &stop;
     }
     const double mouse = std::clamp(double((io.MousePos.x - f.bounds.min.x) / room.x), 0., 1.);
     if (f.hovered && ImGui::IsMouseDoubleClicked(0) && !hit) {
@@ -147,14 +149,16 @@ Edit<std::vector<GradientStop>> gradientEditor(const char *id, GradientState &s,
             next = std::max(next, v.id + 1);
         result.value.push_back({next, mouse, sampleGradient(stops, mouse, linear)});
         s.selected = next;
+        s.hasSelection = true;
         result.phase = EditPhase::commit;
     } else if (f.hovered && ImGui::IsMouseClicked(0) && hit) {
-        s.selected = s.dragging = hit;
+        s.selected = s.dragging = hit->id;
+        s.hasSelection = s.active = true;
         s.before = s.preview = stops;
         s.revision = revision;
         result = {EditPhase::begin, s.preview};
     }
-    if (s.dragging) {
+    if (s.active) {
         if (ImGui::IsMouseDown(0)) {
             for (auto &stop : s.preview)
                 if (stop.id == s.dragging)
@@ -163,13 +167,15 @@ Edit<std::vector<GradientStop>> gradientEditor(const char *id, GradientState &s,
                 result = {EditPhase::update, s.preview};
         } else {
             result = {EditPhase::commit, s.preview};
+            s.active = false;
             s.dragging = 0;
         }
     }
     if (f.hovered && hit && ImGui::IsMouseClicked(1) && stops.size() > 2) {
+        const auto key = hit->id;
         result.value = stops;
         result.value.erase(std::remove_if(result.value.begin(), result.value.end(),
-                                          [&](const GradientStop &p) { return p.id == hit; }),
+                                          [&](const GradientStop &p) { return p.id == key; }),
                            result.value.end());
         result.phase = EditPhase::commit;
     }

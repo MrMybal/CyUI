@@ -21,9 +21,10 @@ AssetResult assetBrowser(const char *id, AssetState &s, ArrayView<AssetItem> ite
         size.y = std::max(dp(1), size.y - ImGui::GetFrameHeightWithSpacing());
     ImGui::BeginChild("##assets", size, ImGuiChildFlags_Borders);
     std::vector<std::size_t> filtered;
+    const auto query = detail::folded(s.query); // folded once, matched without allocating per item
     for (std::size_t i = 0; i < items.count; ++i)
-        if ((s.query.empty() ? items[i].parent == s.folder
-                             : detail::matches(items[i].label + " " + items[i].type, s.query)))
+        if ((query.empty() ? items[i].parent == s.folder
+                           : detail::matchesPair(items[i].label, items[i].type, query)))
             filtered.push_back(i);
     const float cell = s.grid ? dp(120) : ImGui::GetContentRegionAvail().x;
     const int columns = s.grid ? std::max(1, int(ImGui::GetContentRegionAvail().x / cell)) : 1;
@@ -41,7 +42,7 @@ AssetResult assetBrowser(const char *id, AssetState &s, ArrayView<AssetItem> ite
                 if (col)
                     ImGui::SameLine(0, 0);
                 const auto p = ImGui::GetCursorScreenPos();
-                ImGui::InvisibleButton("##asset", {cell, height});
+                detail::listRow("##asset", {cell, height});
                 auto *d = ImGui::GetWindowDrawList();
                 if (selected(s.selection, item.id))
                     d->AddRectFilled(p, {p.x + cell - dp(4), p.y + height - dp(4)}, palette().selection,

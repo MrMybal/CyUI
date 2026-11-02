@@ -1,4 +1,5 @@
 #include "cyui/modules/AudioViews.h"
+#include "ModuleInternal.h"
 #include <limits>
 
 namespace cyui {
@@ -30,6 +31,7 @@ WaveformResult waveform(const char *id, WaveformState &s, const WaveformData &da
     CanvasState canvas;
     CanvasOptions o;
     o.grid = o.navigation = false;
+    o.claimWheel = true;
     CanvasScope scope(id, canvas, size, o);
     const auto f = scope.frame();
     const auto room = f.bounds.size();
@@ -40,32 +42,27 @@ WaveformResult waveform(const char *id, WaveformState &s, const WaveformData &da
         s.view = data.coverage.valid() ? data.coverage : Range{0, 1};
     const double mouse = s.view.min + (io.MousePos.x - f.bounds.min.x) / room.x * s.view.span();
     auto x = [&](double t) { return f.bounds.min.x + float((t - s.view.min) / s.view.span()) * room.x; };
-    if (f.hovered && io.MouseWheel && !wheelTaken()) {
-        if (io.KeyShift) {
-            const double delta = -io.MouseWheel * s.view.span() * .1;
-            s.view.min += delta;
-            s.view.max += delta;
-        } else
-            s.view = zoomRange(s.view, mouse, std::exp(-io.MouseWheel * .15));
-        takeWheel();
+    if (f.wheel != 0) {
+        if (io.KeyShift)
+            s.view = detail::panView(s.view, -f.wheel * s.view.span() * .1);
+        else
+            s.view = detail::zoomView(s.view, mouse, std::exp(-f.wheel * .15));
     }
     if (f.hovered && ImGui::IsMouseClicked(2))
         s.panning = true;
     if (!ImGui::IsMouseDown(2))
         s.panning = false;
-    if (s.panning) {
-        const double delta = -io.MouseDelta.x / room.x * s.view.span();
-        s.view.min += delta;
-        s.view.max += delta;
-    }
+    if (s.panning)
+        s.view = detail::panView(s.view, -io.MouseDelta.x / room.x * s.view.span());
     if (f.hovered && ImGui::IsMouseClicked(0)) {
         s.selection = {mouse, mouse};
+        s.anchor = mouse;
         s.selecting = true;
         result.seek = true;
         result.time = mouse;
     }
     if (s.selecting) {
-        s.selection.max = mouse;
+        s.selection = {std::min(s.anchor, mouse), std::max(s.anchor, mouse)};
         result.selectionChanged = true;
         if (!ImGui::IsMouseDown(0))
             s.selecting = false;
@@ -106,18 +103,39 @@ WaveformResult waveform(const char *id, WaveformState &s, const WaveformData &da
     d->AddLine({x(playhead), f.bounds.min.y}, {x(playhead), f.bounds.max.y}, palette().accent, dp(2));
     return result;
 }
-PlotResult spectrum(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size) {
+PlotResult spectrum(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size,
+                    const PlotOptions &o) {
     s.x.logarithmic = true;
-    if (s.x.range.min <= 0)
+    if (!s.x.range.valid() || s.x.range.min <= 0)
         s.x.range = {20, 20000};
-    return plot(id, s, data, size);
+    return plot(id, s, data, size, o);
+}
+PlotResult spectrum(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size) {
+    return spectrum(id, s, data, size, PlotOptions{});
+}
+PlotResult oscilloscope(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size,
+                        const PlotOptions &o) {
+    s.x.logarithmic = s.y.logarithmic = false;
+    return plot(id, s, data, size, o);
 }
 PlotResult oscilloscope(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size) {
+    return oscilloscope(id, s, data, size, PlotOptions{});
+}
+PlotResult stereoScope(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size,
+                       const PlotOptions &o) {
+    // Square, with one symmetric extent on both axes: wheel zoom scales it, the centre stays at 0.
     s.x.logarithmic = s.y.logarithmic = false;
-    return plot(id, s, data, size);
+    const auto avail = ImGui::GetContentRegionAvail();
+    const float side = std::max(dp(1), std::min(size.x > 0 ? size.x : avail.x + size.x,
+                                                 size.y > 0 ? size.y : avail.y + size.y));
+    const double extent = s.x.range.valid() ? s.x.range.span() * .5 : 1;
+    s.x.range = s.y.range = {-extent, extent};
+    auto result = plot(id, s, data, {side, side}, o);
+    const double zoomed = s.x.range.valid() ? s.x.range.span() * .5 : extent;
+    s.x.range = s.y.range = {-zoomed, zoomed};
+    return result;
 }
 PlotResult stereoScope(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size) {
-    s.x.logarithmic = s.y.logarithmic = false;
-    return plot(id, s, data, size);
+    return stereoScope(id, s, data, size, PlotOptions{});
 }
 } // namespace cyui

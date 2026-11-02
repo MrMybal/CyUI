@@ -45,6 +45,31 @@ paths and the API remain unchanged. `Library/SOURCE_LAYOUT.json` records the
 original-to-packaged paths; the TextEditor hash manifest uses its packaged name.
 No engine code is copied. `CYUI_API` remains empty for static CMake integration.
 
+### A plugin you redistribute: unique module name
+
+Two enabled plugins that each embed a module named `CyUI` cannot load together:
+Unreal needs one definition per module name. A plugin distributed to others (a
+Marketplace/Fab or studio-wide tool) should therefore either depend on the shared
+provider plugin below, or embed a copy under its own module name:
+
+```sh
+python tools/package_unreal.py --layout module --module-name MyToolCyUI --output build/unreal-module/MyToolCyUI --modules Core Plots
+```
+
+Copy the folder to `<YourPlugin>/Source/MyToolCyUI`, list
+`{ "Name": "MyToolCyUI", "Type": "Editor", "LoadingPhase": "PostEngineInit" }`
+in your `.uplugin` and depend on `"MyToolCyUI"` in Build.cs. The script renames the
+Build.cs class/file, the folder, the descriptor and test names; the Build.cs
+defines `CYUI_UNREAL_MODULE` (used by `IMPLEMENT_MODULE` and `FCyUIModule::Get()`)
+and maps `CYUI_API` to `MYTOOLCYUI_API`. C++ class names and headers are unchanged.
+
+Each embedded copy still contains its own Dear ImGui build and exports it
+(`IMGUI_API=CYUI_API`, public `third_party/imgui` include path). A consumer module
+must depend on exactly one CyUI module, and must not also use another ImGui plugin's
+headers. ImGui itself is not renamespaced: with two copies loaded, Windows keeps
+each DLL's symbols separate; Linux/macOS symbol resolution between two copies has
+not been validated.
+
 ## Share one module between several plugins
 
 A project must contain **one definition of the module named CyUI**. To use several
@@ -67,7 +92,8 @@ this reference to its existing Plugins array:
 The consumer's Build.cs still depends on the **module** `CyUI`. The provider
 plugin is only a container and adds no interface on its own. If your provider has
 a different plugin name, use that name in the Plugins reference; the module name
-in Build.cs remains CyUI. Follow Unreal's project/engine dependency hierarchy.
+in Build.cs remains CyUI (or the `--module-name` you packaged it with). Follow
+Unreal's project/engine dependency hierarchy.
 
 `--modules Core` is minimal; `All` includes all ordinary CyUI modules. Dependencies
 are selected automatically. `--gallery` only includes the gallery API: your plugin
@@ -118,7 +144,7 @@ void FMyEditorTools::DrawInspector()
 
 void FMyEditorTools::ShutdownModule()
 {
-    if (FModuleManager::Get().IsModuleLoaded("CyUI"))
+    if (FCyUIModule::IsAvailable())
         FCyUIModule::Get().UnregisterTool("MyTools.Inspector");
 }
 ```
@@ -168,10 +194,28 @@ the paint callback.
 
 Each panel owns an independent ImGui context. Numeric-entry buffers, wheel state
 and notifications are scoped to that context and released on context shutdown.
-Palette and density are shared by CyUI's module instance, so changing the theme
-in one tool styles the other panels on their next paint. Slate handles desktop
-DPI, while `DisplayFramebufferScale` supplies font rasterization density. Keep
-CyUI's logical DPI at 1 within this host.
+Palette, density, DPI and fonts are per context too: a theme call styles the panel
+whose context is current (inside its draw/initialize callback), and a new panel
+starts from the defaults set by theme calls made while no ImGui context is current.
+From Slate handlers or other code outside the draw callback, use the panel helpers:
+`Panel->RunInContext([] { cyui::setTheme("navy"); })`, and
+`Panel->Notify("Saved", cyui::Tone::success)` (or `cyui::notify(context, ...)`).
+A plain `cyui::notify()` with no current context is dropped. Slate's render
+transform handles desktop DPI, while `DisplayFramebufferScale` supplies font
+rasterization density; the panel keeps CyUI's logical DPI at 1 and does not
+re-apply the style on every paint.
+
+Input routing: each key goes to exactly one side. ImGui receives it (and Slate
+sees it handled) while ImGui takes keyboard input: an active item or text field, a
+modal, or a focused view that calls `ImGui::SetNextFrameWantCaptureKeyboard(true)`
+(as `webPanel` does); plain navigation keys (arrows, Tab, Space, Enter, Escape,
+Page/Home/End) also go to ImGui while its keyboard navigation is active. Every
+other key goes only to Unreal, so editor shortcuts such as Ctrl+S, Ctrl+Z, Delete
+or F7 work over the panel and never run twice. A tool with its own shortcuts
+(Delete, Ctrl+C/V in a canvas) must claim the keyboard that way while focused.
+Characters go to ImGui only while it takes keyboard input. The mouse wheel is sent
+as vertical; ImGui turns Shift+wheel into horizontal scrolling. ImGui's own textures (font atlas) are transient
+`UTexture2D`s updated in place, only in the changed rectangle.
 
 ## Show Unreal textures
 

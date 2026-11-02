@@ -120,4 +120,6 @@ void FCyUIEditorModule::ShutdownModule() {
         UnregisterTexture(Id);
     Panels.Empty();
 }
-IMPLEMENT_MODULE(FCyUIEditorModule, CyUI)
+// Expands CYUI_UNREAL_MODULE before IMPLEMENT_MODULE pastes/stringizes the name.
+#define CYUI_IMPLEMENT_MODULE(Name) IMPLEMENT_MODULE(FCyUIEditorModule, Name)
+CYUI_IMPLEMENT_MODULE(CYUI_UNREAL_MODULE)

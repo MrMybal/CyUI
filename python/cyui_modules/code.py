@@ -5,7 +5,7 @@ from .common import ui, item_id
 
 KEYWORDS = set('async await break case catch class const constexpr continue def default delete do else enum export extern false finally fn for from function if impl import in interface let match namespace new None null nullptr override pass private protected pub public raise return self sizeof static struct super switch template this throw trait true try type typedef using var virtual void while with yield'.split())
 TYPES = set('auto bool byte char double float float2 float3 float4 float4x4 half int int32_t int64_t long short signed size_t std string String uint uint32_t uint64_t unsigned Vec2 Vec3 vec2 vec3 vec4'.split())
-TOKEN = re.compile(r'(?P<comment>//.*|/\*.*?\*/)|(?P<string>"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')|(?P<number>\b\d[\w.]*)|(?P<word>[^\W\d]\w*)|(?P<text>.)', re.UNICODE)
+TOKEN = re.compile(r'(?P<string>"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')|(?P<number>\b\d[\w.]*)|(?P<word>[^\W\d]\w*)|(?P<text>.)', re.UNICODE)
 
 
 def expand_tabs(text, tab_size=4):
@@ -34,7 +34,7 @@ class SourceSpan:
 
 class CodeDocument:
     def __init__(self, text='', language='plain', revision=0):
-        self.text, self.language, self.revision, self.lines = None, language, 0, []
+        self.text, self.language, self.revision, self.lines, self.columns = None, language, 0, [], 0
         self.set_text(text, language, revision)
 
     def set_text(self, text, language='plain', revision=0):
@@ -49,6 +49,9 @@ class CodeDocument:
         self.text, self.language, self.revision = text, language, revision or self.revision+1
         self.raw_lines = [line.removesuffix('\r') for line in text.split('\n')]
         self.lines, block_comment, quote = [], False, ''
+        # As in C++: '#' comments in Python/INI, '--' in SQL/Lua, '//' in the C family only,
+        # and '/* */' everywhere except Python/INI.
+        hash_comments, dash_comments = language in ('python', 'ini'), language in ('sql', 'lua')
         for raw in self.raw_lines:
             text = expand_tabs(raw)
             line, at = CodeLine(text), 0
@@ -65,7 +68,7 @@ class CodeDocument:
                     if end >= 0:
                         block_comment, quote = False, ''
                     continue
-                if text.startswith('/*', at):
+                if not hash_comments and text.startswith('/*', at):
                     end = text.find('*/', at+2)
                     block_comment = end < 0
                     at = len(text) if end < 0 else end+2
@@ -79,10 +82,10 @@ class CodeDocument:
                         quote = ''
                     line.spans.append((start, at-start, 'string'))
                     continue
-                if (language in ('python', 'ini') and text[at] == '#') or (language in ('sql', 'lua') and text.startswith('--', at)) or (language == 'ini' and text[at] == ';'):
+                if (hash_comments and text[at] == '#') or (dash_comments and text.startswith('--', at)) or (language == 'ini' and text[at] == ';') or (not hash_comments and not dash_comments and text.startswith('//', at)):
                     line.spans.append((at, len(text)-at, 'comment'))
                     break
-                if text[at] == '#' and language not in ('python', 'ini'):
+                if text[at] == '#' and not hash_comments:
                     line.spans.append((at, len(text)-at, 'preprocessor'))
                     break
                 token = TOKEN.match(text, at)
@@ -93,6 +96,8 @@ class CodeDocument:
                     role = 'keyword' if word in KEYWORDS else 'type' if word in TYPES else 'function' if text[at:].lstrip().startswith('(') else 'text'
                 line.spans.append((start, at-start, role))
             self.lines.append(line)
+        # The widest line in characters; the viewer sizes its scroll width from it, like C++.
+        self.columns = max((len(line.text) for line in self.lines), default=0)
         return True
 
     def set_overlays(self, spans, revision):
@@ -168,11 +173,14 @@ def code_viewer(identifier, state, document, size=(0, 300), annotations=()):
     if hasattr(c, 'mono_font'):
         i.push_font(c.mono_font(), 0.)
     height, gutter = i.get_text_line_height_with_spacing(), c.dp(56)
-    width = max(i.get_content_region_avail().x, gutter+max([i.calc_text_size(line.text).x for line in document.lines] or [0]))
+    width = max(i.get_content_region_avail().x, gutter+document.columns*i.calc_text_size('M').x)
     if state.focus_line >= 0:
         i.set_scroll_y(max(0, state.focus_line*height-i.get_window_height()*.25))
         state.focus_line = -1
     request = None
+    # Each row is exactly height tall (it already holds the spacing), so the clipper, the
+    # scroll extent and focus_line agree down to the last line.
+    i.push_style_var(i.StyleVar_.item_spacing, (i.get_style().item_spacing.x, 0))
     clip = i.ListClipper()
     clip.begin(len(document.lines), height)
     while clip.step():
@@ -184,11 +192,14 @@ def code_viewer(identifier, state, document, size=(0, 300), annotations=()):
                 draw.add_rect_filled(position, (position[0]+width, position[1]+height), p.selection)
             draw.add_text((position[0]+c.dp(4), position[1]), p.textFaint, str(index+1))
             paint_line(draw, (position[0]+gutter, position[1]), document.lines[index])
+            if state.query and state.query in document.lines[index].text:
+                draw.add_rect((position[0]+gutter, position[1]), (position[0]+width, position[1]+height), p.warning, 0, 0, c.dp(1))
             if i.is_item_clicked():
                 request = state.selected_line = index
             for line, message in annotations:
                 if line == index and i.is_item_hovered():
                     i.set_tooltip(message)
+    i.pop_style_var()
     if hasattr(c, 'mono_font'):
         i.pop_font()
     i.end_child()

@@ -62,21 +62,27 @@ class DocumentState:
     code_views: dict = field(default_factory=dict)
 
 
+# Explicit tokens plus words allow wrapping at each word, including links. The group that
+# matched says what a token is: an unmatched '*', '**' or '`' is part of a plain word and is
+# drawn as written (*args, **kwargs, a lone backtick).
+_INLINE = re.compile(r'(?P<link>\[(?P<label>[^\]]+)\]\((?P<url>[^)]+)\))|(?P<mono>`[^`]+`)'
+                     r'|(?P<strong>\*\*[^*\s](?:[^*]*[^*\s])?\*\*)|(?P<emphasis>\*[^*\s](?:[^*]*[^*\s])?\*)|(?P<word>\S+\s*)')
+
+
 def _inline(text):
     i, c = ui()
     link, first = '', True
-    # Explicit tokens plus words allow wrapping at each word, including links.
-    tokens = re.finditer(r'\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|[^\s]+\s*', text)
+    tokens = _INLINE.finditer(text)
     right = i.get_cursor_screen_pos().x+i.get_content_region_avail().x
     previous_end = 0
     for token_match in tokens:
         gap = i.calc_text_size(" ").x if token_match.start() > previous_end else 0
         previous_end = token_match.end()
-        token = token_match.group()
+        token, kind = token_match.group(), token_match.lastgroup
         i.push_id(token_match.start())
-        match = re.fullmatch(r'\[([^\]]+)\]\(([^)]+)\)', token)
-        mono, strong, emphasis = token.startswith('`'), token.startswith('**'), token.startswith('*')
-        label = match[1] if match else token[1:-1] if mono or (emphasis and not strong) else token[2:-2] if strong else token
+        match = token_match if kind == 'link' else None
+        mono, strong, emphasis = kind == 'mono', kind == 'strong', kind == 'emphasis'
+        label = match['label'] if match else token[1:-1] if mono or emphasis else token[2:-2] if strong else token
         font = c.mono_font() if mono else c.bold_font() if strong else None
         if font:
             i.push_font(font, 0.)
@@ -86,7 +92,7 @@ def _inline(text):
                 i.same_line(0, gap)
         if match:
             if c.link_text(label):
-                link = match[2]
+                link = match['url']
         elif mono:
             c.text_coloured(c.palette().accent, label)
         elif emphasis:

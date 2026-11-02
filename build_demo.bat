@@ -2,9 +2,20 @@
 rem Builds the CyUI demo with MSVC, without CMake. Run from any prompt.
 setlocal
 set ROOT=%~dp0
-if not defined VCINSTALLDIR (
-    call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
+if defined VCINSTALLDIR goto :compile
+rem Any edition of Visual Studio 2022 or later with the x64 C++ tools, found by vswhere.
+set VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe
+set VSDIR=
+if exist "%VSWHERE%" (
+    for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
 )
+if not defined VSDIR set "VSDIR=C:\Program Files\Microsoft Visual Studio\2022\Community"
+if not exist "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" (
+    echo MSVC x64 tools not found. Install Visual Studio 2022 with "Desktop development with C++". 1>&2
+    exit /b 1
+)
+call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
+:compile
 if not exist "%ROOT%build" mkdir "%ROOT%build"
 pushd "%ROOT%build"
 set IMGUI=%ROOT%third_party\imgui

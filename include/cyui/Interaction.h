@@ -65,12 +65,16 @@ template <class T> struct ArrayView {
 inline double snapValue(double value, double step) {
     return step > 0 && std::isfinite(step) ? std::round(value / step) * step : value;
 }
+// Zooms around `anchor`. The span never drops below minSpan nor below what the
+// magnitude of the values can still resolve; an unusable result keeps `r`.
 inline Range zoomRange(Range r, double anchor, double factor, double minSpan = 1e-9, double maxSpan = 1e15) {
     if (!r.valid() || !std::isfinite(anchor) || !std::isfinite(factor) || factor <= 0)
         return r;
-    const double span = std::clamp(r.span() * factor, minSpan, maxSpan);
+    const double floor = std::min({std::max(minSpan, std::max(std::abs(r.min), std::abs(r.max)) * 1e-12), maxSpan, r.span()});
+    const double span = std::clamp(r.span() * factor, floor, std::max(floor, maxSpan));
     const double part = (anchor - r.min) / r.span();
-    return {anchor - part * span, anchor + (1 - part) * span};
+    const Range out{anchor - part * span, anchor + (1 - part) * span};
+    return out.valid() ? out : r;
 }
 inline bool selected(const std::vector<ItemId> &ids, ItemId id) {
     return std::find(ids.begin(), ids.end(), id) != ids.end();

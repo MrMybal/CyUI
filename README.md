@@ -74,6 +74,12 @@ add_subdirectory(external/CyUI cyui)
 target_link_libraries(mon_app PRIVATE CyUI::CyUI)
 ```
 
+Les variables `CYUI_*` posées par un simple `set()` avant `add_subdirectory` sont
+respectées dès le premier configure (CMake 3.16 ou plus). CyUI s'intègre par
+`add_subdirectory` (ou `FetchContent`) : il n'y a pas de cible `install()` ni de
+`find_package(CyUI)`, car CyUI se compile contre la cible ImGui de l'application,
+qu'un paquet installé à part ne peut pas connaître.
+
 ### Choisir les modules
 
 `CyUI::Core` fournit le socle. Les modules disponibles sont **Audio, Canvas,
@@ -83,25 +89,29 @@ Chaque application lie seulement les cibles utiles ; les dépendances entre modu
 sont résolues automatiquement. La galerie et les adaptateurs ImGuizmo/CEF sont optionnels.
 
 ```cmake
-set(CYUI_BUILD_DEMO OFF CACHE BOOL "" FORCE)
-set(CYUI_BUILD_AUDIO OFF CACHE BOOL "" FORCE)
-set(CYUI_BUILD_GALLERY OFF CACHE BOOL "" FORCE)
-set(CYUI_MODULES "Code;Diff;Inspector" CACHE STRING "" FORCE)
-add_subdirectory(external/CyUI)
+set(CYUI_IMGUI_TARGET ma_target_imgui)
+set(CYUI_BUILD_DEMO OFF)
+set(CYUI_BUILD_AUDIO OFF)
+set(CYUI_BUILD_GALLERY OFF)
+set(CYUI_MODULES "Code;Diff;Inspector")
+add_subdirectory(external/CyUI cyui)
 target_link_libraries(mon_app PRIVATE CyUI::Diff CyUI::Inspector)
 ```
 
 `CyUI::CyUI` conserve l'API globale et lie les modules sélectionnés. Les contrôles
-Audio et Gallery gardent leurs options ON pour les intégrations existantes ; le
-nouveau sélecteur `CYUI_MODULES` est vide par défaut dans une application hôte.
+Audio et Gallery gardent leurs options `CYUI_BUILD_AUDIO` / `CYUI_BUILD_GALLERY`,
+ON pour les intégrations existantes ; les nommer dans `CYUI_MODULES` les active
+aussi. Le sélecteur `CYUI_MODULES` est vide par défaut dans une application hôte.
 Le [guide des modules](docs/MODULES.md) décrit toutes les API, dépendances et
 frontières avec les moteurs et documents propres à chaque application.
 
 ### Python et Web
 
 ```sh
-python -m pip install -e ".[ui]"
+python -m pip install -e .
 ```
+
+imgui-bundle est installé avec le paquet (l'extra `[ui]` reste accepté).
 
 `cyui` conserve le thème et les widgets généraux. `cyui_modules` ajoute les modules
 facultatifs en Python, avec des modèles importables sans moteur audio, vidéo ou 3D.
@@ -147,12 +157,13 @@ Le guide contient :
 build_demo.bat
 ```
 
-`build_demo.bat` compile `build/cyui_demo.exe` avec MSVC 2022. La démo
-montre une app complète : barre de menus, barre du haut, sidebar, dock,
-inspecteur, galerie et toasts.
+`build_demo.bat` compile `build/cyui_demo.exe` avec MSVC (Visual Studio 2022 ou
+plus récent, trouvé par vswhere). La démo montre une app complète : barre de
+menus, barre du haut, sidebar, dock, inspecteur, galerie et toasts.
 
 La démo utilise une copie de Dear ImGui 1.93 WIP (docking) placée dans
-`third_party/imgui`. Les apps gardent leur propre ImGui.
+`third_party/imgui`. CMake lie aussi cette copie quand `CYUI_IMGUI_TARGET` est
+vide ; les apps gardent leur propre ImGui en passant leur cible.
 
 ## Arborescence
 

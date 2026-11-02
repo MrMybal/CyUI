@@ -6,6 +6,14 @@
 // takes its colours from cyui::palette() and its sizes from cyui::metrics(),
 // never from hard-coded values. Changing theme is then one call.
 //
+// Every setting here (palette, theme key, density, metrics, DPI, fonts) belongs
+// to the current ImGui context: several contexts (plug-in windows, editor
+// panels) each keep their own, and a call changes the current context only.
+// With NO context current, setPalette / setTheme / setDensity change every
+// live context (and the defaults new contexts start from): one call themes
+// all panels. Do that while no other thread draws with those contexts.
+// apply / applyDpi with no context current change the defaults only.
+//
 // Requires Dear ImGui 1.92 or newer (dynamic font sizes, FontScaleDpi).
 
 #include "cyui/Export.h"
@@ -109,7 +117,9 @@ CYUI_API bool loadPalette(const char* path, Palette& palette);
 [[nodiscard]] CYUI_API ImU32 brighter(ImU32 colour, float amount);  // towards white
 [[nodiscard]] CYUI_API ImU32 darker(ImU32 colour, float amount);    // towards black
 [[nodiscard]] CYUI_API ImVec4 vec(ImU32 colour);
-// The n-th colour of a pleasant categorical set (tracks, layers, tags, series).
+// The n-th colour of a categorical set (tracks, layers, tags, series): 12 hues
+// derived from the palette (spread from the accent's hue, toned for a light
+// or a dark ground).
 [[nodiscard]] CYUI_API ImU32 categorical(int index);
 
 // ---- Metrics ---------------------------------------------------------------
@@ -152,9 +162,11 @@ struct Config {
 };
 
 // Sets ImGui's style (sizes, roundings, colours) from the theme, scaled.
-// Call after ImGui::CreateContext(), and again when the DPI changes.
+// Call after ImGui::CreateContext(), and again when the DPI changes. It
+// replaces the whole ImGuiStyle: make style tweaks after it.
 CYUI_API void apply(const Config& config = {});
-// Re-applies with the current settings and a new DPI scale.
+// Re-applies with the current settings and a new DPI scale; nothing when the
+// scale (and density) did not change, so calling it every frame is harmless.
 CYUI_API void applyDpi(float dpiScale);
 [[nodiscard]] CYUI_API float dpi();
 
@@ -182,7 +194,10 @@ struct FontConfig {
 
 // Loads the interface font (Segoe UI), semibold (Segoe UI Semibold), mono
 // (Consolas), each with the icon glyphs merged; falls back to ImGui's own
-// font. Call before the first frame (the backend builds the atlas).
+// font. Call before the first frame (the backend builds the atlas). It clears
+// the atlas first. uiFont / boldFont / monoFont return those fonts (for a
+// context that shares the atlas too), or null when loadFonts did not fill
+// this atlas: PushFont(null) and ScopedFont(null) keep the current font.
 CYUI_API void loadFonts(const FontConfig& config = {});
 [[nodiscard]] CYUI_API ImFont* uiFont();
 [[nodiscard]] CYUI_API ImFont* boldFont();

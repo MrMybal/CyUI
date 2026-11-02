@@ -19,11 +19,15 @@ struct CanvasOptions {
     bool grid = true, navigation = true, spacePan = true;
     double gridStep = 32;
     float minZoom = .05f, maxZoom = 64.f;
+    // Take the mouse wheel (frame().wheel) without navigation; navigating canvases always take it.
+    // An unclaimed wheel scrolls the window underneath.
+    bool claimWheel = false;
 };
 struct CanvasFrame {
     Rect bounds;
     bool hovered = false, focused = false;
     Point mouse;
+    float wheel = 0; // itemWheel() of the canvas item; 0 when its navigation used it
 };
 // Reserves an ImGui item, handles navigation and clips all drawing until destruction.
 class CYUI_API CanvasScope {
@@ -40,4 +44,8 @@ class CYUI_API CanvasScope {
     CanvasFrame frame_;
 };
 CYUI_API void drawCanvasGrid(const Rect &, const CanvasView &, double step = 32);
+// Call each frame an interactive item is drawn over a CanvasScope (as transformGizmo does), in the
+// same window. Canvases there then use ImGui's overlap mode: the later item takes the hover and the
+// click, at the cost of one frame of hover delay on the canvas.
+CYUI_API void markCanvasOverlay();
 } // namespace cyui

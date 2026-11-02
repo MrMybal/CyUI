@@ -39,6 +39,43 @@ class WebPolicy:
         return bool(origin) and any(web_origin(entry) == origin for entry in self.origins)
 
 
+# imgui Key name -> Windows virtual-key code (DOM keyCode). Left/right modifiers keep their side;
+# the CEF adapter maps them to the generic code and adds the scan code on Windows.
+_KEYS = [(chr(97+n), 0x41+n) for n in range(26)] + [(f'_{n}', 0x30+n) for n in range(10)] \
+    + [(f'keypad{n}', 0x60+n) for n in range(10)] + [(f'f{n+1}', 0x70+n) for n in range(24)] + [
+    ('backspace', 0x08), ('tab', 0x09), ('enter', 0x0d), ('keypad_enter', 0x0d), ('pause', 0x13),
+    ('caps_lock', 0x14), ('escape', 0x1b), ('space', 0x20), ('page_up', 0x21), ('page_down', 0x22),
+    ('end', 0x23), ('home', 0x24), ('left_arrow', 0x25), ('up_arrow', 0x26), ('right_arrow', 0x27),
+    ('down_arrow', 0x28), ('print_screen', 0x2c), ('insert', 0x2d), ('delete', 0x2e),
+    ('left_super', 0x5b), ('right_super', 0x5c), ('menu', 0x5d), ('keypad_multiply', 0x6a),
+    ('keypad_add', 0x6b), ('keypad_subtract', 0x6d), ('keypad_decimal', 0x6e), ('keypad_divide', 0x6f),
+    ('num_lock', 0x90), ('scroll_lock', 0x91), ('left_shift', 0xa0), ('right_shift', 0xa1),
+    ('left_ctrl', 0xa2), ('right_ctrl', 0xa3), ('left_alt', 0xa4), ('right_alt', 0xa5),
+    ('app_back', 0xa6), ('app_forward', 0xa7), ('semicolon', 0xba), ('equal', 0xbb), ('comma', 0xbc),
+    ('minus', 0xbd), ('period', 0xbe), ('slash', 0xbf), ('grave_accent', 0xc0), ('left_bracket', 0xdb),
+    ('backslash', 0xdc), ('right_bracket', 0xdd), ('apostrophe', 0xde), ('oem102', 0xe2)]
+
+
+def _forward_keys(i, backend, owner, modifiers):
+    """Forwards keys and claims them (key ownership) so ImGui nav/widgets do not also act."""
+    internal = getattr(i, 'internal', None)
+    owned = internal is not None and hasattr(internal, 'set_key_owner')
+    for name, code in _KEYS:
+        key = getattr(i.Key, name, None)
+        if key is None:
+            continue
+        if owned:
+            pressed = internal.is_key_pressed(key, int(i.InputFlags_.repeat), owner)
+            released = internal.is_key_released(key, owner)
+            internal.set_key_owner(key, owner, int(internal.InputFlagsPrivate_.lock_until_release))
+        else:  # Older bindings: forward only (ImGui nav may also see the key).
+            pressed, released = i.is_key_pressed(key), i.is_key_released(key)
+        if pressed:
+            backend.input('key', key=code, down=True, modifiers=modifiers)
+        if released:
+            backend.input('key', key=code, down=False, modifiers=modifiers)
+
+
 def theme_message():
     _, c = ui()
     p = c.palette()
@@ -52,7 +89,8 @@ def theme_message():
 def web_panel(identifier, backend, size=(0, 320), visible=True, focus=False, viewport_origin=(0, 0)):
     """backend implements place(bounds, clip, visible, focus), poll(), ready().
 
-    Call CEFRuntime.begin_frame()/end_frame(), including frames with hidden tabs.
+    Call CEFRuntime.pump() before new_frame, then begin_frame()/end_frame() every frame,
+    including frames with hidden tabs. focus is one-shot (taken on a False -> True change).
     """
     i, c = ui()
     available = i.get_content_region_avail()
@@ -60,6 +98,7 @@ def web_panel(identifier, backend, size=(0, 320), visible=True, focus=False, vie
     low = tuple(i.get_cursor_screen_pos())
     high = tuple(low[n]+extent[n] for n in (0, 1))
     i.invisible_button(identifier, extent)
+    owner = i.get_item_id()
     draw = i.get_window_draw_list()
     clip_low, clip_high = tuple(draw.get_clip_rect_min()), tuple(draw.get_clip_rect_max())
     bounds = tuple(tuple(point[n]-viewport_origin[n] for n in (0, 1)) for point in (low, high))
@@ -80,19 +119,20 @@ def web_panel(identifier, backend, size=(0, 320), visible=True, focus=False, vie
             if i.is_mouse_clicked(0):
                 backend.input('focus', down=hovered)
             backend.input('move', down=hovered, **args)
+            storage = i.get_state_storage()
             for button in range(3):
                 if (hovered or backend.focused()) and (i.is_mouse_clicked(button) or i.is_mouse_released(button)):
-                    backend.input('button', button=button, down=i.is_mouse_clicked(button), clicks=2 if i.is_mouse_double_clicked(button) else 1, **args)
+                    # The release repeats the press's click count, or the page never sees dblclick.
+                    down, slot = i.is_mouse_clicked(button), i.get_id(f'{identifier}##clicks{button}')
+                    if down:
+                        storage.set_int(slot, max(1, i.get_mouse_clicked_count(button)))
+                    backend.input('button', button=button, down=down, clicks=storage.get_int(slot, 1), **args)
             if hovered and (io.mouse_wheel or io.mouse_wheel_h) and not wheel_taken():
                 backend.input('wheel', wheel_x=io.mouse_wheel_h, wheel_y=io.mouse_wheel, **args)
                 take_wheel()
             if backend.focused():
                 i.set_next_frame_want_capture_keyboard(True)
-                keys = [(getattr(i.Key, chr(97+n)), 65+n) for n in range(26)]
-                keys += [(getattr(i.Key, name), value) for name, value in (('backspace', 8), ('tab', 9), ('enter', 13), ('escape', 27), ('space', 32), ('page_up', 33), ('page_down', 34), ('end', 35), ('home', 36), ('left_arrow', 37), ('up_arrow', 38), ('right_arrow', 39), ('down_arrow', 40), ('insert', 45), ('delete', 46))]
-                for key, value in keys:
-                    if i.is_key_pressed(key) or i.is_key_released(key):
-                        backend.input('key', key=value, down=i.is_key_down(key), modifiers=modifiers)
+                _forward_keys(i, backend, owner, modifiers)
                 for cp in io.input_queue_characters:
                     backend.input('text', codepoint=cp, modifiers=modifiers)
     events = []

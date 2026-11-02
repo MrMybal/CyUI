@@ -89,6 +89,47 @@ class UnrealPackage(unittest.TestCase):
             self.assertNotIn('"ToolMenus"', rules)
             self.assertNotIn('"UnrealEd"', rules)
 
+    def test_output_outside_copied_trees(self):
+        for inside in ('docs/x', 'src/x', 'web/x', 'tools/x', 'examples/x', 'Build2/x'):
+            with self.assertRaises(ValueError, msg=inside):
+                package.validate_output(ROOT/inside)
+        self.assertEqual(package.validate_output(ROOT/'build/cyui-package-test-unused'), (ROOT/'build/cyui-package-test-unused').resolve())
+
+    def test_renamed_embedded_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/'Source/MyToolCyUI'
+            package.prepare_module(output, ['Core'], module_name='MyToolCyUI')
+            self.assertFalse((output/'CyUI.Build.cs').exists())
+            rules = (output/'MyToolCyUI.Build.cs').read_text()
+            self.assertIn('public class MyToolCyUI : ModuleRules', rules)
+            self.assertIn('public MyToolCyUI(ReadOnlyTargetRules Target)', rules)
+            self.assertIn('"CYUI_UNREAL_MODULE=" + Name', rules)
+            self.assertIn('"CYUI_API=" + Name.ToUpperInvariant() + "_API"', rules)
+            self.assertEqual(json.loads((output/'ModuleDescriptor.json').read_text())['Name'], 'MyToolCyUI')
+            self.assertIn('"MyToolCyUI.Editor.Lifecycle"', (output/'Private/Tests/CyUIEditorTests.cpp').read_text())
+            module = (output/'Private/CyUIEditorModule.cpp').read_text()
+            self.assertIn('CYUI_IMPLEMENT_MODULE(CYUI_UNREAL_MODULE)', module)
+            self.assertNotIn('IMPLEMENT_MODULE(FCyUIEditorModule, CyUI)', module)
+            self.assertNotIn('"CyUI"', (output/'Public/CyUIEditorModule.h').read_text())
+            for bridge in (output/'Private').glob('CyUILibrary_*.cpp'):
+                include = bridge.read_text().split('#include "../Library/')[1].split('"')[0]
+                self.assertTrue((output/'Library'/include).is_file(), include)
+
+    def test_renamed_provider_plugin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/'MyToolCyUI'
+            package.prepare_plugin(output, ['Core'], module_name='MyToolCyUI')
+            descriptor = json.loads((output/'CyUI.uplugin').read_text())
+            self.assertEqual(descriptor['Modules'][0]['Name'], 'MyToolCyUI')
+            self.assertFalse((output/'Source/CyUI').exists())
+            self.assertTrue((output/'Source/MyToolCyUI/MyToolCyUI.Build.cs').is_file())
+            for source in (output/'Source/MyToolCyUI/Private').glob('CyUILibrary_*.cpp'):
+                include = '../../../ThirdParty/'+source.read_text().split('#include "../../../ThirdParty/')[1].split('"')[0]
+                self.assertTrue((source.parent/include).is_file(), include)
+            for bad in ('', '1CyUI', 'My-UI', 'a'*65):
+                with self.assertRaises(ValueError):
+                    package.prepare_plugin(Path(directory)/'bad', ['Core'], module_name=bad)
+
     def test_example_plugin_declares_shared_dependency(self):
         path = ROOT/'examples/unreal/CyUIToolExample'
         descriptor = json.loads((path/'CyUIToolExample.uplugin').read_text())

@@ -41,9 +41,14 @@ def snap(value, step):
 def zoom_range(view, anchor, factor):
     if not view.valid or not isfinite(anchor) or not isfinite(factor) or factor <= 0:
         return deepcopy(view)
-    span = max(1e-9, min(1e15, view.span * factor))
+    # The smallest span stays well above the spacing of doubles at this magnitude, so a deep
+    # zoom on large values (times in ns) never collapses to minimum == maximum.
+    magnitude = max(abs(view.minimum), abs(view.maximum), abs(anchor))
+    floor = max(1e-9, magnitude * 1e-12)
+    span = max(min(1e15, view.span * factor), min(view.span, floor))
     part = (anchor - view.minimum) / view.span
-    return Range(anchor - part * span, anchor + (1 - part) * span)
+    result = Range(anchor - part * span, anchor + (1 - part) * span)
+    return result if result.valid else deepcopy(view)
 
 
 def select(selection, identifier, extend=False):

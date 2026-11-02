@@ -114,7 +114,7 @@ IMPLEMENT_MODULE(FCyUIToolExampleModule, CyUIToolExample)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCyUIConsumerPluginTest, "CyUI.ConsumerPlugin.EmbeddedPanel",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 bool FCyUIConsumerPluginTest::RunTest(const FString &) {
-    TestTrue(TEXT("Shared CyUI service module is loaded"), FModuleManager::Get().IsModuleLoaded("CyUI"));
+    TestTrue(TEXT("Shared CyUI service module is loaded"), FCyUIModule::IsAvailable());
     TestFalse(TEXT("Shared module has no built-in demo"), FCyUIModule::Get().OpenTool("CyUI.Example"));
     auto &Consumer = FModuleManager::LoadModuleChecked<FCyUIToolExampleModule>("CyUIToolExample");
     const int BeforeDraw = Consumer.DrawCalls;

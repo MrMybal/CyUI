@@ -4,10 +4,14 @@ import json
 import os
 import threading
 import time
+import warnings
 
 
 class CEFRuntime:
     def __init__(self, library, helper, cache_directory, *, no_sandbox=False):
+        """no_sandbox=False requests the CEF sandbox. The bridge library cannot provide it on
+        Windows (see docs/WEB.md); `sandboxed` reports the result and a RuntimeWarning is
+        issued when the request could not be honoured."""
         import ctypes as t
         self._t, self._thread, self._views, self._errors = t, threading.get_ident(), [], []
         library, helper, cache = (Path(p).resolve() for p in (library, helper, cache_directory))
@@ -16,8 +20,14 @@ class CEFRuntime:
         d.cyui_cef_error.restype = t.c_char_p
         d.cyui_cef_initialize.argtypes = [t.c_char_p, t.c_char_p, t.c_int]
         self._upload_type = t.CFUNCTYPE(t.c_uint64, t.c_int, t.c_int, t.c_void_p, t.c_void_p)
+        self._release_type = t.CFUNCTYPE(None, t.c_uint64, t.c_void_p)
+        # ABI 2 adds create2 (release callback) and sandboxed(); ABI 1 libraries still load.
+        self._abi = d.cyui_cef_abi_version() if hasattr(d, 'cyui_cef_abi_version') else 1
         d.cyui_cef_create.argtypes = [t.c_char_p, t.c_char_p, self._upload_type, t.c_void_p]
         d.cyui_cef_create.restype = t.c_void_p
+        if self._abi >= 2:
+            d.cyui_cef_create2.argtypes = [t.c_char_p, t.c_char_p, self._upload_type, self._release_type, t.c_void_p]
+            d.cyui_cef_create2.restype = t.c_void_p
         for name in ('ready', 'focused', 'texture', 'poll', 'close', 'closed', 'destroy'):
             getattr(d, 'cyui_cef_'+name).argtypes = [t.c_void_p]
         d.cyui_cef_texture.restype = t.c_uint64
@@ -30,30 +40,40 @@ class CEFRuntime:
         self._active = bool(d.cyui_cef_initialize(str(cache).encode(), str(helper).encode(), no_sandbox))
         if not self._active:
             raise RuntimeError(d.cyui_cef_error().decode() or 'CEF initialization failed')
+        # ABI 1 libraries cannot report it: assume unsandboxed rather than claim protection.
+        self.sandboxed = bool(d.cyui_cef_sandboxed()) if self._abi >= 2 else False
+        if not no_sandbox and not self.sandboxed:
+            warnings.warn('CEF sandbox requested but not available from the bridge library; '
+                          'the browser runs unsandboxed (docs/WEB.md)', RuntimeWarning, stacklevel=2)
 
     def _check(self):
         if threading.get_ident() != self._thread or not self._active:
             raise RuntimeError('CEF must run on its owning UI thread before shutdown')
 
-    def create(self, url, origins, upload):
+    def create(self, url, origins, upload, release=None):
         """upload(width, height, bgra_pointer) returns a host-owned ImTextureID.
 
         Copy/update the GPU texture during this callback; the CPU pointer expires
         when it returns. Native CEF popups are composited in the same texture.
+        release(texture_id), optional, runs once from pump() after the view closed:
+        free that texture once no submitted frame uses it.
         """
         self._check()
-        view = CEFView(self, url, origins, upload)
+        view = CEFView(self, url, origins, upload, release)
         self._views.append(view)
         return view
 
     def pump(self):
+        """Run CEF work: paints (upload), events and release. Call once per loop iteration
+        outside the ImGui frame (before new_frame), never between new_frame and render."""
         self._check()
         self._dll.cyui_cef_pump()
         if self._errors:
-            raise RuntimeError('CEF texture upload failed') from self._errors.pop(0)
+            raise RuntimeError('CEF texture callback failed') from self._errors.pop(0)
 
     def begin_frame(self):
-        self.pump()
+        """After new_frame. Does not pump: call pump() before new_frame."""
+        self._check()
         for view in self._views:
             if view._handle:
                 self._dll.cyui_cef_frame(view._handle, True)
@@ -78,7 +98,8 @@ class CEFRuntime:
             if view._handle:
                 self._dll.cyui_cef_destroy(view._handle)
                 view._handle = None
-        self._dll.cyui_cef_shutdown()
+        if not self._dll.cyui_cef_shutdown():
+            raise RuntimeError(self._dll.cyui_cef_error().decode() or 'CEF shutdown failed')
         self._active = False
         if self._search:
             self._search.close()
@@ -87,11 +108,12 @@ class CEFRuntime:
         return self
 
     def __exit__(self, *_):
-        self.close()
+        if self._active:
+            self.close()
 
 
 class CEFView:
-    def __init__(self, runtime, url, origins, upload):
+    def __init__(self, runtime, url, origins, upload, release=None):
         self._runtime, self._dll = runtime, runtime._dll
         def callback(width, height, pointer, _):
             try:
@@ -99,8 +121,21 @@ class CEFView:
             except BaseException as error:
                 runtime._errors.append(error)
                 return 0
+        def released(texture, _):
+            try:
+                if release:
+                    release(texture)
+            except BaseException as error:
+                runtime._errors.append(error)
         self._upload = runtime._upload_type(callback)
-        self._handle = self._dll.cyui_cef_create(url.encode(), '\n'.join(origins).encode(), self._upload, None)
+        self._release = runtime._release_type(released)
+        encoded = url.encode(), '\n'.join(origins).encode()
+        if runtime._abi >= 2:
+            self._handle = self._dll.cyui_cef_create2(*encoded, self._upload, self._release, None)
+        elif release:
+            raise RuntimeError('This CyUI CEF bridge library has no release callback (ABI 1)')
+        else:
+            self._handle = self._dll.cyui_cef_create(*encoded, self._upload, None)
         if not self._handle:
             raise RuntimeError(self._dll.cyui_cef_error().decode() or 'CEF view creation failed')
 
@@ -134,6 +169,7 @@ class CEFView:
         return json.loads(raw) if raw else None
 
     def place(self, bounds, clip, visible=True, focus=False):
+        """focus is one-shot: keyboard focus is taken when it changes from False to True."""
         self._runtime._check()
         args = []
         for low, high in (bounds, clip):

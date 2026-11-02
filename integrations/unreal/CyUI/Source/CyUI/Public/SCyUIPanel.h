@@ -1,6 +1,7 @@
 #pragma once
 #include "Widgets/SLeafWidget.h"
 #include "CyUIEditorModule.h"
+#include "cyui/CoreWidgets.h"
 
 // A single ImGui context per Slate panel. Unreal owns OS windows and docking.
 class CYUI_API SCyUIPanel : public SLeafWidget {
@@ -13,6 +14,11 @@ class CYUI_API SCyUIPanel : public SLeafWidget {
     void Construct(const FArguments &);
     virtual ~SCyUIPanel() override;
     void Detach();
+    // Runs Function with this panel's ImGui context current (theme/density calls from Slate
+    // handlers or setup code). Nothing runs once detached.
+    void RunInContext(TFunctionRef<void()> Function);
+    // Queues a toast in this panel from outside its draw callback (Slate handlers, async results).
+    void Notify(const char *Text, cyui::Tone Tone = cyui::Tone::neutral, float Seconds = 4.f);
     virtual bool SupportsKeyboardFocus() const override {
         return true;
     }

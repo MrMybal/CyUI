@@ -1,4 +1,5 @@
 #include "cyui/modules/Web.h"
+#include <imgui_internal.h>
 #include <cctype>
 #include <sstream>
 #include <locale>
@@ -20,6 +21,44 @@ std::string quote(const std::string &value) {
             out += char(c);
     }
     return out + '"';
+}
+std::string lower(std::string value) {
+    for (auto &c : value)
+        c = char(std::tolower(static_cast<unsigned char>(c)));
+    return value;
+}
+// ImGui key -> Windows virtual-key code (the DOM keyCode CEF expects). Left/right modifiers keep
+// their side (0xA0-0xA5); the CEF adapter turns them into the generic code plus a scan code.
+struct KeyMap {
+    ImGuiKey key;
+    int code;
+};
+constexpr KeyMap kKeys[] = {
+    {ImGuiKey_Backspace, 0x08}, {ImGuiKey_Tab, 0x09}, {ImGuiKey_Enter, 0x0d}, {ImGuiKey_KeypadEnter, 0x0d},
+    {ImGuiKey_Pause, 0x13}, {ImGuiKey_CapsLock, 0x14}, {ImGuiKey_Escape, 0x1b}, {ImGuiKey_Space, 0x20},
+    {ImGuiKey_PageUp, 0x21}, {ImGuiKey_PageDown, 0x22}, {ImGuiKey_End, 0x23}, {ImGuiKey_Home, 0x24},
+    {ImGuiKey_LeftArrow, 0x25}, {ImGuiKey_UpArrow, 0x26}, {ImGuiKey_RightArrow, 0x27},
+    {ImGuiKey_DownArrow, 0x28}, {ImGuiKey_PrintScreen, 0x2c}, {ImGuiKey_Insert, 0x2d},
+    {ImGuiKey_Delete, 0x2e}, {ImGuiKey_LeftSuper, 0x5b}, {ImGuiKey_RightSuper, 0x5c}, {ImGuiKey_Menu, 0x5d},
+    {ImGuiKey_KeypadMultiply, 0x6a}, {ImGuiKey_KeypadAdd, 0x6b}, {ImGuiKey_KeypadSubtract, 0x6d},
+    {ImGuiKey_KeypadDecimal, 0x6e}, {ImGuiKey_KeypadDivide, 0x6f}, {ImGuiKey_NumLock, 0x90},
+    {ImGuiKey_ScrollLock, 0x91}, {ImGuiKey_LeftShift, 0xa0}, {ImGuiKey_RightShift, 0xa1},
+    {ImGuiKey_LeftCtrl, 0xa2}, {ImGuiKey_RightCtrl, 0xa3}, {ImGuiKey_LeftAlt, 0xa4}, {ImGuiKey_RightAlt, 0xa5},
+    {ImGuiKey_AppBack, 0xa6}, {ImGuiKey_AppForward, 0xa7}, {ImGuiKey_Semicolon, 0xba}, {ImGuiKey_Equal, 0xbb},
+    {ImGuiKey_Comma, 0xbc}, {ImGuiKey_Minus, 0xbd}, {ImGuiKey_Period, 0xbe}, {ImGuiKey_Slash, 0xbf},
+    {ImGuiKey_GraveAccent, 0xc0}, {ImGuiKey_LeftBracket, 0xdb}, {ImGuiKey_Backslash, 0xdc},
+    {ImGuiKey_RightBracket, 0xdd}, {ImGuiKey_Apostrophe, 0xde}, {ImGuiKey_Oem102, 0xe2}};
+template <class F> void forEachKey(F &&f) {
+    for (int n = 0; n < 26; ++n)
+        f(ImGuiKey(ImGuiKey_A + n), 0x41 + n);
+    for (int n = 0; n < 10; ++n) {
+        f(ImGuiKey(ImGuiKey_0 + n), 0x30 + n);
+        f(ImGuiKey(ImGuiKey_Keypad0 + n), 0x60 + n);
+    }
+    for (int n = 0; n < 24; ++n)
+        f(ImGuiKey(ImGuiKey_F1 + n), 0x70 + n);
+    for (const auto &k : kKeys)
+        f(k.key, k.code);
 }
 } // namespace
 std::string webOrigin(const std::string &url) {
@@ -93,6 +132,31 @@ std::string webOrigin(const std::string &url) {
     }
     return scheme + "://" + host + (port.empty() ? "" : ":" + port);
 }
+std::string webScheme(const std::string &url) {
+    const auto colon = url.find(':');
+    if (colon == std::string::npos || colon == 0 || colon > 64 ||
+        !std::isalpha(static_cast<unsigned char>(url[0])))
+        return {};
+    for (std::size_t n = 0; n < colon; ++n) {
+        const auto c = static_cast<unsigned char>(url[n]);
+        if (!std::isalnum(c) && c != '+' && c != '-' && c != '.')
+            return {};
+    }
+    return lower(url.substr(0, colon));
+}
+bool WebPolicy::allowsExternal(const std::string &url) const {
+    const auto scheme = webScheme(url);
+    if (scheme.empty() || url.size() > 8192 ||
+        ((scheme == "http" || scheme == "https") && webOrigin(url).empty()))
+        return false;
+    for (unsigned char c : url)
+        if (c < 32 || c == 127)
+            return false;
+    for (const auto &entry : externalSchemes)
+        if (lower(entry) == scheme)
+            return true;
+    return false;
+}
 bool WebPolicy::allows(const std::string &url) const {
     const auto origin = webOrigin(url);
     if (origin.empty())
@@ -109,6 +173,7 @@ std::vector<WebEvent> webPanel(const char *id, WebBackend &backend, ImVec2 size,
         size.y = std::max(dp(1), ImGui::GetContentRegionAvail().y + size.y);
     const auto a = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton(id, size);
+    const ImGuiID owner = ImGui::GetItemID();
     const auto b = ImVec2(a.x + size.x, a.y + size.y);
     auto *d = ImGui::GetWindowDrawList();
     const auto low = d->GetClipRectMin(), high = d->GetClipRectMax();
@@ -144,51 +209,54 @@ std::vector<WebEvent> webPanel(const char *id, WebBackend &backend, ImVec2 size,
         event.kind = WebInputKind::move;
         event.down = hovered;
         backend.input(event);
+        auto *storage = ImGui::GetStateStorage();
         for (int button = 0; button < 3; ++button)
             if ((hovered || backend.focused()) &&
                 (ImGui::IsMouseClicked(button) || ImGui::IsMouseReleased(button))) {
                 event.kind = WebInputKind::button;
                 event.button = button;
                 event.down = ImGui::IsMouseClicked(button);
-                event.clicks = ImGui::IsMouseDoubleClicked(button) ? 2 : 1;
+                // The release repeats the press's count, or Blink never fires dblclick.
+                const ImGuiID clicks = ImHashData(&button, sizeof button, owner);
+                if (event.down)
+                    storage->SetInt(clicks, std::max(1, ImGui::GetMouseClickedCount(button)));
+                event.clicks = storage->GetInt(clicks, 1);
                 backend.input(event);
             }
-        if (hovered && (io.MouseWheel || io.MouseWheelH) && !wheelTaken()) {
-            event.kind = WebInputKind::wheel;
-            event.wheelX = io.MouseWheelH;
-            event.wheelY = io.MouseWheel;
-            backend.input(event);
-            takeWheel();
+        // The panel is still the last item: claim both wheels in time so the parent never scrolls too.
+        // Horizontal first: itemWheel() marks the wheel taken, which must not drop a diagonal X.
+        event.wheelX = 0;
+        if (hovered) {
+            if (ImGui::TestKeyOwner(ImGuiKey_MouseWheelX, owner) && !wheelTaken())
+                event.wheelX = io.MouseWheelH;
+            ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelX);
         }
+        event.wheelY = itemWheel();
+        if (event.wheelX || event.wheelY) {
+            event.kind = WebInputKind::wheel;
+            backend.input(event);
+        }
+        event.wheelX = event.wheelY = 0;
         if (backend.focused()) {
             ImGui::SetNextFrameWantCaptureKeyboard(true);
             event.kind = WebInputKind::key;
-            auto key = [&](ImGuiKey code, int virtualKey) {
-                if (ImGui::IsKeyPressed(code) || ImGui::IsKeyReleased(code)) {
-                    event.key = virtualKey;
-                    event.down = ImGui::IsKeyDown(code);
+            // Claim every forwarded key: locked for the rest of this frame (until release when
+            // held) and owned next frame, so keyboard nav (Tab/arrows/Space/Enter/Escape),
+            // shortcuts and widgets drawn later do not act on keys meant for the page.
+            forEachKey([&](ImGuiKey code, int virtualKey) {
+                const bool pressed = ImGui::IsKeyPressed(code, ImGuiInputFlags_Repeat, owner),
+                           released = ImGui::IsKeyReleased(code, owner);
+                ImGui::SetKeyOwner(code, owner, ImGuiInputFlags_LockUntilRelease);
+                event.key = virtualKey;
+                if (pressed) {
+                    event.down = true;
                     backend.input(event);
                 }
-            };
-            for (int n = 0; n < 26; ++n)
-                key(ImGuiKey(ImGuiKey_A + n), 0x41 + n);
-            for (int n = 0; n < 10; ++n)
-                key(ImGuiKey(ImGuiKey_0 + n), 0x30 + n);
-            key(ImGuiKey_Backspace, 8);
-            key(ImGuiKey_Tab, 9);
-            key(ImGuiKey_Enter, 13);
-            key(ImGuiKey_Escape, 27);
-            key(ImGuiKey_Space, 32);
-            key(ImGuiKey_PageUp, 33);
-            key(ImGuiKey_PageDown, 34);
-            key(ImGuiKey_End, 35);
-            key(ImGuiKey_Home, 36);
-            key(ImGuiKey_LeftArrow, 37);
-            key(ImGuiKey_UpArrow, 38);
-            key(ImGuiKey_RightArrow, 39);
-            key(ImGuiKey_DownArrow, 40);
-            key(ImGuiKey_Insert, 45);
-            key(ImGuiKey_Delete, 46);
+                if (released) {
+                    event.down = false;
+                    backend.input(event);
+                }
+            });
             event.kind = WebInputKind::text;
             for (auto cp : io.InputQueueCharacters) {
                 event.codepoint = unsigned(cp);
@@ -239,7 +307,11 @@ std::string webEventJson(const WebEvent &e) {
                        : e.kind == WebEventKind::navigated ? "navigated"
                        : e.kind == WebEventKind::message   ? "message"
                        : e.kind == WebEventKind::external  ? "external"
+                       : e.kind == WebEventKind::dropped   ? "dropped"
                                                            : "error";
-    return "{\"kind\":" + quote(kind) + ",\"url\":" + quote(e.url) + ",\"data\":" + quote(e.data) + "}";
+    return "{\"kind\":" + quote(kind) + ",\"url\":" + quote(e.url) + ",\"data\":" + quote(e.data) +
+           ",\"userGesture\":" + (e.userGesture ? "true" : "false") +
+           ",\"mainFrame\":" + (e.mainFrame ? "true" : "false") +
+           ",\"sourceOrigin\":" + quote(e.sourceOrigin) + "}";
 }
 } // namespace cyui

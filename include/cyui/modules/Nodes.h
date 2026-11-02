@@ -26,18 +26,20 @@ struct NodeMove {
 };
 struct NodeResult {
     Edit<std::vector<NodeMove>> moved;
-    ItemId connectFrom = 0, connectTo = 0;
+    ItemId connectFrom = 0, connectTo = 0; // valid when connect
     std::vector<ItemId> removeNodes;
-    ItemId removeLink = 0;
+    ItemId removeLink = 0; // valid when linkRemoved
+    bool connect = false, linkRemoved = false;
 };
 struct NodeState {
     CanvasState canvas;
     std::vector<ItemId> selection;
     std::vector<NodeMove> before, preview;
     Point grab, boxStart;
-    ItemId wire = 0;
+    ItemId wire = 0; // the pin a new link starts from, while wiring
     bool wireOutput = false, dragging = false, boxing = false, focused = false;
     std::uint64_t revision = 0;
+    bool wiring = false;
 };
 struct NodeOptions {
     bool readOnly = false;

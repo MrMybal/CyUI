@@ -1,4 +1,5 @@
 #include "cyui/modules/Canvas.h"
+#include "ModuleInternal.h"
 
 namespace cyui {
 Point CanvasView::world(ImVec2 p, ImVec2 top) const {
@@ -24,6 +25,14 @@ void CanvasView::fit(Point low, Point high, ImVec2 room, double padding) {
                       .001, 1000.);
     origin = {(low.x + high.x) * .5 - room.x / (2 * zoom), (low.y + high.y) * .5 - room.y / (2 * zoom)};
 }
+namespace {
+ImGuiID overlayKey() {
+    return ImHashStr("cyuiCanvasOverlayFrame");
+}
+} // namespace
+void markCanvasOverlay() {
+    ImGui::GetStateStorage()->SetInt(overlayKey(), ImGui::GetFrameCount());
+}
 void drawCanvasGrid(const Rect &r, const CanvasView &v, double step) {
     if (step <= 0 || !std::isfinite(step) || !std::isfinite(v.zoom) || v.zoom <= 0)
         return;
@@ -31,18 +40,16 @@ void drawCanvasGrid(const Rect &r, const CanvasView &v, double step) {
         step *= 2;
     const auto low = v.world(r.min, r.min), high = v.world(r.max, r.min);
     auto *d = ImGui::GetWindowDrawList();
-    int budget = 4096;
-    for (double x = std::ceil(low.x / step) * step; x <= high.x && budget-- > 0; x += step) {
+    detail::forEachTick(low.x, high.x, step, [&](double x) {
         const auto p = v.screen({x, 0}, r.min);
         d->AddLine({p.x, r.min.y}, {p.x, r.max.y},
                    std::abs(x) < step * .01 ? palette().gridStrong : palette().grid, dp(1));
-    }
-    budget = 4096;
-    for (double y = std::ceil(low.y / step) * step; y <= high.y && budget-- > 0; y += step) {
+    }, 4096);
+    detail::forEachTick(low.y, high.y, step, [&](double y) {
         const auto p = v.screen({0, y}, r.min);
         d->AddLine({r.min.x, p.y}, {r.max.x, p.y},
                    std::abs(y) < step * .01 ? palette().gridStrong : palette().grid, dp(1));
-    }
+    }, 4096);
 }
 CanvasScope::CanvasScope(const char *id, CanvasState &s, ImVec2 size, const CanvasOptions &o) {
     if (size.x <= 0)
@@ -51,7 +58,13 @@ CanvasScope::CanvasScope(const char *id, CanvasState &s, ImVec2 size, const Canv
         size.y = std::max(dp(1), ImGui::GetContentRegionAvail().y + size.y);
     frame_.bounds.min = ImGui::GetCursorScreenPos();
     frame_.bounds.max = {frame_.bounds.min.x + size.x, frame_.bounds.min.y + size.y};
+    // With an overlay in this window last frame (markCanvasOverlay), standard overlap mode lets the
+    // overlay's items take the hover and the click; plain canvases keep immediate hover.
+    if (ImGui::GetStateStorage()->GetInt(overlayKey(), -10) >= ImGui::GetFrameCount() - 1)
+        ImGui::SetNextItemAllowOverlap();
     ImGui::InvisibleButton(id, size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
+    if (o.navigation || o.claimWheel)
+        frame_.wheel = itemWheel(); // claimed while hovered, so the window underneath does not scroll
     frame_.hovered = ImGui::IsItemHovered();
     frame_.focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     auto &io = ImGui::GetIO();
@@ -67,11 +80,11 @@ CanvasScope::CanvasScope(const char *id, CanvasState &s, ImVec2 size, const Canv
             s.view.origin.x -= io.MouseDelta.x / s.view.zoom;
             s.view.origin.y -= io.MouseDelta.y / s.view.zoom;
         }
-        if (frame_.hovered && io.MouseWheel != 0 && !wheelTaken()) {
+        if (frame_.wheel != 0) {
             const double z =
-                std::clamp(s.view.zoom * std::exp(io.MouseWheel * .15), double(o.minZoom), double(o.maxZoom));
+                std::clamp(s.view.zoom * std::exp(frame_.wheel * .15), double(o.minZoom), double(o.maxZoom));
             s.view.zoomAt(io.MousePos, z, frame_.bounds.min);
-            takeWheel();
+            frame_.wheel = 0;
         }
     }
     frame_.mouse = s.view.world(io.MousePos, frame_.bounds.min);

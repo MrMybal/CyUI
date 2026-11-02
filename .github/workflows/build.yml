@@ -5,18 +5,44 @@ permissions:
 jobs:
   native:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - run: cmake -S . -B build/check -DCYUI_BUILD_DEMO=OFF -DCYUI_MODULES=All -DCYUI_BUILD_TESTS=ON
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      # On Windows the same configure also builds the Win32 + DX11 demo through CMake.
+      - run: cmake -S . -B build/check -DCYUI_BUILD_DEMO=${{ runner.os == 'Windows' && 'ON' || 'OFF' }} -DCYUI_MODULES=All -DCYUI_BUILD_TESTS=ON
       - run: cmake --build build/check --config Release --parallel 4
       - run: ctest --test-dir build/check -C Release --output-on-failure
-      - run: cmake -S tests/module_consumer -B build/core -DCYUI_SELECTED_MODULE=Core
-      - run: cmake --build build/core --config Release --parallel 4
+      # Every module alone, configured the way a host does it (plain set() before
+      # add_subdirectory): exact dependency closure, host ImGui only, then its checks run.
+      # The ImGui library built above stands in for the host's, so ImGui compiles once.
+      - name: Module isolation matrix
+        shell: bash
+        run: |
+          imgui=$(find build/check \( -name cyui_imgui.lib -o -name libcyui_imgui.a \) -print -quit)
+          test -n "$imgui"
+          python tests/module_matrix.py --imgui-library "$imgui" --build-dir build/matrix
+  windows-demo:
+    # The no-CMake build in build_demo.bat (MSVC found by vswhere), as documented in README.md.
+    # The CEF adapter (CYUI_BUILD_WEB_CEF) is not built here: it needs a CEF binary
+    # distribution (hundreds of MB per OS/architecture) that the repository does not ship.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: cmd
+        run: build_demo.bat
+      - shell: bash
+        run: test -f build/cyui_demo.exe
   python-and-web:
     runs-on: ubuntu-latest
+    env:
+      # A missing or broken imgui-bundle fails the run instead of skipping the frame tests.
+      CYUI_REQUIRE_UI: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,7 +51,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: python -m pip install ".[ui]"
+      - run: python -m pip install .
       - run: python -B tests/test_python_modules.py
       - run: python -B tests/test_unreal_package.py
       - run: node --test tests/web_bridge.test.mjs

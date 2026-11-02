@@ -49,7 +49,9 @@ def command_palette(identifier, opened, state, commands, size=(560, 400)):
         if i.is_window_appearing():
             i.set_keyboard_focus_here()
         i.set_next_item_width(-1)
-        changed, state.query = i.input_text('##query', state.query)
+        # CallbackHistory makes the field own Up/Down, so keyboard navigation does not move
+        # the focus out of it; the list selection below reads them instead.
+        changed, state.query = i.input_text('##query', state.query, i.InputTextFlags_.callback_history, lambda data: 0)
         if changed:
             state.selected = 0
         ranked = rank_commands(commands, state.query)

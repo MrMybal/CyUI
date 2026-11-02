@@ -22,7 +22,7 @@ struct TimelineMarker {
     std::string label;
 };
 struct TimelineState {
-    Range view{0, 10}, selection{0, 0};
+    Range view{0, 10}, selection{0, 0}; // selection is kept ordered (min <= max)
     double verticalScroll = 0;
     std::vector<ItemId> selected;
     std::vector<TimelineClip> before, preview;
@@ -31,6 +31,7 @@ struct TimelineState {
     int mode = 0;
     bool focused = false, panning = false;
     std::uint64_t revision = 0;
+    double anchor = 0; // where a range-selection drag started
 };
 struct TimelineOptions {
     double playhead = 0, snap = 0, minDuration = 1e-6;
@@ -40,6 +41,7 @@ struct TimelineOptions {
     std::function<std::string(double)> formatTime;
     std::function<void(const TimelineClip &, const Rect &)> drawClip;
 };
+// Lane and clip IDs may be any value, 0 included.
 struct TimelineResult {
     Edit<std::vector<TimelineClip>> clips;
     bool seek = false, rangeChanged = false;

@@ -7,7 +7,9 @@ and permission notice. It does not require an application's own source to be pub
 
 Keep [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) and the notices for the
 dependencies actually included in your distribution. The bundled Dear ImGui and
-TextEditor code retain their MIT notices. Optional host dependencies retain their
+TextEditor code retain their MIT notices, as do the stb headers inside the Dear ImGui
+copy (`imstb_*.h`, MIT or public domain). CMake links that Dear ImGui copy whenever
+the host does not name its own target in `CYUI_IMGUI_TARGET`. Optional host dependencies retain their
 own licenses; they are not covered by CyUI's MIT grant.
 
 For CEF, ship the license and Chromium credits/component notices belonging to the

@@ -1,4 +1,5 @@
 #include "cyui/modules/Plots.h"
+#include "ModuleInternal.h"
 #include <limits>
 #include <cstdio>
 
@@ -67,6 +68,7 @@ PlotResult plot(const char *id, PlotState &s, ArrayView<PlotSeries> series, ImVe
     CanvasOptions options;
     options.grid = false;
     options.navigation = false;
+    options.claimWheel = o.navigation;
     CanvasScope scope(id, canvas, size, options);
     const auto &f = scope.frame();
     const auto r = f.bounds;
@@ -82,34 +84,17 @@ PlotResult plot(const char *id, PlotState &s, ArrayView<PlotSeries> series, ImVe
             s.dragging = true;
         if (!ImGui::IsMouseDown(2))
             s.dragging = false;
-        auto change = [](Axis &a, double shift, double anchor, double factor) {
-            if (a.logarithmic && a.range.min > 0) {
-                Range log{std::log(a.range.min), std::log(a.range.max)};
-                const double delta = shift * log.span();
-                log.min += delta;
-                log.max += delta;
-                if (anchor > 0)
-                    log = zoomRange(log, std::log(anchor), factor);
-                a.range = {std::exp(log.min), std::exp(log.max)};
-            } else {
-                const double delta = shift * a.range.span();
-                a.range.min += delta;
-                a.range.max += delta;
-                a.range = zoomRange(a.range, anchor, factor);
-            }
-        };
         if (s.dragging) {
-            change(s.x, -io.MouseDelta.x / room.x, result.mouse.x, 1);
-            change(s.y, io.MouseDelta.y / room.y, result.mouse.y, 1);
-            result.viewChanged = true;
+            const bool x = detail::navigateAxis(s.x, -io.MouseDelta.x / room.x, result.mouse.x, 1),
+                       y = detail::navigateAxis(s.y, io.MouseDelta.y / room.y, result.mouse.y, 1);
+            result.viewChanged = x || y;
         }
-        if (f.hovered && io.MouseWheel != 0 && !wheelTaken()) {
-            const double factor = std::exp(-io.MouseWheel * .15);
-            change(s.x, 0, result.mouse.x, factor);
+        if (f.wheel != 0) {
+            const double factor = std::exp(-f.wheel * .15);
+            bool changed = detail::navigateAxis(s.x, 0, result.mouse.x, factor);
             if (io.KeyCtrl)
-                change(s.y, 0, result.mouse.y, factor);
-            takeWheel();
-            result.viewChanged = true;
+                changed = detail::navigateAxis(s.y, 0, result.mouse.y, factor) || changed;
+            result.viewChanged = result.viewChanged || changed;
         }
     }
     if (o.grid)
@@ -181,8 +166,9 @@ PlotResult plot(const char *id, PlotState &s, ArrayView<PlotSeries> series, ImVe
                        r.max.y - fontHeight - dp(3)},
                       xText);
             if (tick)
-                axisLabel({r.min.x + dp(4), std::clamp(r.max.y - room.y * float(part) - fontHeight * .5f,
-                                                       r.min.y + dp(3), r.max.y - fontHeight - dp(3))},
+                axisLabel({r.min.x + dp(4),
+                           std::clamp(r.max.y - room.y * float(part) - fontHeight * .5f, r.min.y + dp(3),
+                                      std::max(r.min.y + dp(3), r.max.y - fontHeight - dp(3)))},
                           yText);
         }
     if (o.legend) {

@@ -6,7 +6,8 @@ own copyright and licenses. Selecting a module does not relicense its dependenci
 
 | Component | License | Included / optional | Notice |
 | --- | --- | --- | --- |
-| Dear ImGui | MIT | Demo copy; hosts may supply their own target | [third_party/imgui/LICENSE.txt](third_party/imgui/LICENSE.txt) |
+| Dear ImGui | MIT | Bundled: built and linked by CMake when `CYUI_IMGUI_TARGET` is empty, and by the demo; hosts normally supply their own target | [third_party/imgui/LICENSE.txt](third_party/imgui/LICENSE.txt) |
+| stb_truetype, stb_rect_pack, stb_textedit (Sean Barrett), as `imstb_*.h` | MIT or public domain (Unlicense), at the user's choice | Bundled inside the Dear ImGui copy and compiled with it | License text at the end of each [third_party/imgui/imstb_*.h](third_party/imgui) file |
 | ImGuiColorTextEdit, Johan A. Goossens | MIT | Bundled only for the optional C++ CodeEditor target | [third_party/texteditor/LICENSE](third_party/texteditor/LICENSE) |
 | ImGuizmo | MIT upstream | Optional host-supplied target | Preserve the license of the exact host dependency |
 | Chromium Embedded Framework | BSD-style, three conditions | Optional host-supplied SDK/runtime; no CEF binaries in this repository | Preserve the selected SDK's LICENSE.txt and Chromium CREDITS.html, plus its component notices |

@@ -57,11 +57,14 @@ int main(int argc, char **argv) {
         if (web->navigate("https://example.invalid/") || web->navigate("file:///private.txt"))
             return 4;
         bool page = false, reply = false, typed = false, sentInput = false, focused = false,
-             sentTyping = false, pointer = false;
+             sentTyping = false, pointer = false, doubleClick = false, keyCode = false;
+#if !defined(OS_WIN)
+        keyCode = true; // Native scan codes are synthesized on Windows only.
+#endif
         float inputX = 100, inputY = 100;
         const auto start = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - start < std::chrono::seconds(25) &&
-               (!reply || !frames || !typed)) {
+               (!reply || !frames || !typed || !doubleClick || !keyCode)) {
 #if defined(OS_WIN)
             MSG nativeMessage;
             while (PeekMessageW(&nativeMessage, nullptr, 0, 0, PM_REMOVE)) {
@@ -94,6 +97,11 @@ int main(int argc, char **argv) {
                 reply = reply || event.data.find("test.reply") != std::string::npos;
                 focused = focused || event.data.find("test.focus") != std::string::npos;
                 pointer = pointer || event.data.find("test.pointer.any") != std::string::npos;
+                doubleClick = doubleClick || event.data.find("test.dblclick") != std::string::npos;
+                // Windows: the adapter supplies the layout's scan code, so the page sees
+                // KeyboardEvent.code (KeyA on QWERTY, KeyQ on AZERTY).
+                keyCode = keyCode || (event.data.find("test.key") != std::string::npos &&
+                                      event.data.find("\"code\":\"Key") != std::string::npos);
                 typed = typed || (event.data.find("test.input") != std::string::npos &&
                                   event.data.find("\xe9\x9f\xb3\xe6\xa5\xbd") != std::string::npos);
             }
@@ -114,6 +122,15 @@ int main(int argc, char **argv) {
                 input.modifiers = 16;
                 web->input(input);
                 input.down = false;
+                input.modifiers = 0;
+                web->input(input);
+                // Second click: the release says clicks=1, the adapter reuses the press's 2.
+                input.down = true;
+                input.clicks = 2;
+                input.modifiers = 16;
+                web->input(input);
+                input.down = false;
+                input.clicks = 1;
                 input.modifiers = 0;
                 web->input(input);
                 sentInput = true;
@@ -138,9 +155,11 @@ int main(int argc, char **argv) {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
-        if (reply && frames && typed && pointer) {
+        std::fprintf(stderr, "reply=%d frames=%zu typed=%d pointer=%d dblclick=%d code=%d\n", reply, frames,
+                     typed, pointer, doubleClick, keyCode);
+        if (reply && frames && typed && pointer && doubleClick && keyCode) {
             std::ofstream(std::filesystem::path(argv[2]) / "cyui-result.txt")
-                << "painted=" << frames << ";messages=bidirectional;input=unicode";
+                << "painted=" << frames << ";messages=bidirectional;input=unicode;dblclick;code";
             std::printf("CEF real page, %zu painted frames, messages and Unicode input passed\n", frames);
             result = 0;
         }

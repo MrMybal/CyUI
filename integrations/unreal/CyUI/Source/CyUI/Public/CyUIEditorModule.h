@@ -12,14 +12,26 @@ class UTexture;
 class FSpawnTabArgs;
 struct FSlateBrush;
 DECLARE_DELEGATE(FOnDrawCyUITool);
+// The module's own name, set by its Build.cs (renamed copies: tools/package_unreal.py --module-name).
+#ifndef CYUI_UNREAL_MODULE
+#define CYUI_UNREAL_MODULE CyUI
+#endif
+#define CYUI_UNREAL_STRINGIFY_(Name) #Name
+#define CYUI_UNREAL_STRINGIFY(Name) CYUI_UNREAL_STRINGIFY_(Name)
 DECLARE_DELEGATE(FOnInitializeCyUITool);
 
 // All calls and draw callbacks run on the editor game thread.
 // The callback draws contents; the connector owns ImGui NewFrame/Begin/End/Render.
 class CYUI_API FCyUIEditorModule : public IModuleInterface {
   public:
+    static FName ModuleName() {
+        return FName(CYUI_UNREAL_STRINGIFY(CYUI_UNREAL_MODULE));
+    }
     static FCyUIEditorModule &Get() {
-        return FModuleManager::LoadModuleChecked<FCyUIEditorModule>("CyUI");
+        return FModuleManager::LoadModuleChecked<FCyUIEditorModule>(ModuleName());
+    }
+    static bool IsAvailable() {
+        return FModuleManager::Get().IsModuleLoaded(ModuleName());
     }
     virtual void StartupModule() override;
     virtual void ShutdownModule() override;

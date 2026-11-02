@@ -1,5 +1,5 @@
 #include "SCyUIPanel.h"
-#include "Brushes/SlateDynamicImageBrush.h"
+#include "Engine/Texture2D.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "InputCoreTypes.h"
@@ -7,7 +7,12 @@
 #include "Misc/ScopeExit.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
+#include "RenderingThread.h"
+#include "Styling/SlateBrush.h"
+#include "TextureResource.h"
+#include "UObject/StrongObjectPtr.h"
 #include "cyui/Core.h"
+#include <imgui_internal.h>
 #include <cfloat>
 #include <limits>
 
@@ -125,6 +130,28 @@ void Modifiers(const FInputEvent &Event) {
     IO.AddKeyEvent(ImGuiMod_Alt, Event.IsAltDown());
     IO.AddKeyEvent(ImGuiMod_Super, Event.IsCommandDown());
 }
+// A key goes to exactly one side. ImGui gets it while it wants the keyboard (active item, text
+// field, modal, or a focused view that called SetNextFrameWantCaptureKeyboard(true), as webPanel
+// does), or for plain navigation keys while ImGui keyboard nav is active. Otherwise only Slate
+// sees it, so Ctrl+S, Ctrl+Z, Delete, F7... reach the editor and never run twice.
+// io.WantCaptureKeyboard/WantTextInput are refreshed only at the next NewFrame: also read the
+// state the last frame left (active item, requests made during it).
+bool WantsKeyboard() {
+    const auto &G = *ImGui::GetCurrentContext();
+    return G.IO.WantCaptureKeyboard || G.IO.WantTextInput || G.ActiveId != 0 ||
+           G.WantCaptureKeyboardNextFrame == 1 || G.WantTextInputNextFrame == 1;
+}
+bool Captures(ImGuiKey Key, const FInputEvent &Event) {
+    const auto &IO = ImGui::GetIO();
+    if (WantsKeyboard())
+        return true;
+    const bool Nav = Key == ImGuiKey_Tab || Key == ImGuiKey_LeftArrow || Key == ImGuiKey_RightArrow ||
+                     Key == ImGuiKey_UpArrow || Key == ImGuiKey_DownArrow || Key == ImGuiKey_Space ||
+                     Key == ImGuiKey_Enter || Key == ImGuiKey_KeypadEnter || Key == ImGuiKey_Escape ||
+                     Key == ImGuiKey_PageUp || Key == ImGuiKey_PageDown || Key == ImGuiKey_Home ||
+                     Key == ImGuiKey_End;
+    return Nav && IO.NavActive && !Event.IsControlDown() && !Event.IsAltDown() && !Event.IsCommandDown();
+}
 void MousePosition(const FGeometry &Geometry, const FPointerEvent &Event) {
     Modifiers(Event);
     const auto Local = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
@@ -132,19 +159,52 @@ void MousePosition(const FGeometry &Geometry, const FPointerEvent &Event) {
 }
 } // namespace
 struct SCyUIPanel::FState {
+    // An ImGui-managed texture (font atlas...): a transient UTexture2D updated in place.
+    struct FAtlas {
+        TStrongObjectPtr<UTexture2D> Texture;
+        FSlateBrush Brush;
+    };
     ImGuiContext *Context = nullptr;
     FOnDrawCyUITool Draw;
-    TMap<ImTextureID, TSharedPtr<FSlateDynamicImageBrush>> Atlases;
+    TMap<ImTextureID, TSharedPtr<FAtlas>> Atlases;
     std::string Clipboard;
     ImGuiMouseCursor Cursor = ImGuiMouseCursor_Arrow;
     uint32 Buttons = 0;
+    TSet<int32> KeysToImGui; // Pressed keys sent to ImGui: their release goes there too.
     bool bDetached = false, bPainting = false, bDetachRequested = false;
     void ReleaseAtlas(ImTextureID Id) {
-        if (auto *Brush = Atlases.Find(Id)) {
-            if (FSlateApplication::IsInitialized())
-                FSlateApplication::Get().GetRenderer()->RemoveDynamicBrushResource(*Brush);
-            Atlases.Remove(Id);
+        if (!Atlases.Contains(Id))
+            return;
+        // Finish submitted Slate/render work before dropping the GC pin (rare: atlas rebuilds).
+        if (FSlateApplication::IsInitialized())
+            FSlateApplication::Get().GetRenderer()->FlushCommands();
+        FlushRenderingCommands();
+        Atlases.Remove(Id);
+    }
+    // Converts a rectangle to BGRA8 and queues it on the render thread; the copy is freed there.
+    static void Upload(UTexture2D *Object, ImTextureData *Texture, int X, int Y, int Width, int Height) {
+        // Without a render resource (-nullrhi) UpdateTextureRegions never runs the cleanup.
+        if (!Object->GetResource())
+            return;
+        const uint32 Pitch = uint32(Width) * 4;
+        auto *Bytes = new uint8[size_t(Pitch) * Height];
+        const bool bRGBA = Texture->Format == ImTextureFormat_RGBA32;
+        for (int Row = 0; Row < Height; ++Row) {
+            const auto *Source = static_cast<const uint8 *>(Texture->GetPixelsAt(X, Y + Row));
+            uint8 *Target = Bytes + size_t(Row) * Pitch;
+            for (int Column = 0; Column < Width; ++Column, Target += 4) {
+                Target[0] = bRGBA ? Source[Column * 4 + 2] : 255;
+                Target[1] = bRGBA ? Source[Column * 4 + 1] : 255;
+                Target[2] = bRGBA ? Source[Column * 4] : 255;
+                Target[3] = bRGBA ? Source[Column * 4 + 3] : Source[Column];
+            }
         }
+        auto *Region = new FUpdateTextureRegion2D(X, Y, 0, 0, Width, Height);
+        Object->UpdateTextureRegions(0, 1, Region, Pitch, 4, Bytes,
+                                     [](uint8 *Data, const FUpdateTextureRegion2D *Done) {
+                                         delete[] Data;
+                                         delete Done;
+                                     });
     }
     bool UpdateTextures(ImDrawData *Data) {
         if (!Data->Textures)
@@ -155,29 +215,38 @@ struct SCyUIPanel::FState {
                 ReleaseAtlas(Texture->GetTexID());
                 Texture->SetTexID(0);
                 Texture->SetStatus(ImTextureStatus_Destroyed);
+            } else if (auto *Atlas = Texture->Status == ImTextureStatus_WantUpdates
+                                         ? Atlases.Find(Texture->GetTexID())
+                                         : nullptr) {
+                // In place: only the bounding box of the queued updates is converted and uploaded.
+                const auto &R = Texture->UpdateRect;
+                if (R.x + R.w > Texture->Width || R.y + R.h > Texture->Height)
+                    return false;
+                if (R.w > 0 && R.h > 0)
+                    Upload((*Atlas)->Texture.Get(), Texture, R.x, R.y, R.w, R.h);
+                Texture->SetStatus(ImTextureStatus_OK);
             } else if (Texture->Status == ImTextureStatus_WantCreate ||
-                       Texture->Status == ImTextureStatus_WantUpdates) {
+                       Texture->Status == ImTextureStatus_WantUpdates) { // Updates without a texture: recreate.
                 if (Texture->Width <= 0 || Texture->Height <= 0 ||
                     int64(Texture->Width) * Texture->Height > MAX_int32 / 4)
                     return false;
-                TArray<uint8> Bytes;
-                Bytes.SetNumUninitialized(Texture->Width * Texture->Height * 4);
-                const auto *Source = static_cast<const uint8 *>(Texture->GetPixels());
-                for (int Pixel = 0; Pixel < Texture->Width * Texture->Height; ++Pixel) {
-                    const bool bRGBA = Texture->Format == ImTextureFormat_RGBA32;
-                    Bytes[Pixel * 4] = bRGBA ? Source[Pixel * 4 + 2] : 255;
-                    Bytes[Pixel * 4 + 1] = bRGBA ? Source[Pixel * 4 + 1] : 255;
-                    Bytes[Pixel * 4 + 2] = bRGBA ? Source[Pixel * 4] : 255;
-                    Bytes[Pixel * 4 + 3] = bRGBA ? Source[Pixel * 4 + 3] : Source[Pixel];
-                }
-                const uint64 Id = NextAtlas++;
-                auto Brush = FSlateDynamicImageBrush::CreateWithImageData(
-                    FName(*FString::Printf(TEXT("CyUIAtlas_%llu"), Id)),
-                    FVector2D(Texture->Width, Texture->Height), Bytes);
-                if (!Brush.IsValid())
+                UTexture2D *Object = UTexture2D::CreateTransient(Texture->Width, Texture->Height, PF_B8G8R8A8);
+                if (!Object)
                     return false;
+                Object->Filter = TF_Bilinear;
+                // As the previous FSlateDynamicImageBrush path (Slate dynamic image resources are
+                // created sRGB, to our reading of the engine source; unverified in-engine).
+                Object->SRGB = true;
+                Object->UpdateResource();
+                auto Atlas = MakeShared<FAtlas>();
+                Atlas->Texture.Reset(Object);
+                Atlas->Brush.SetResourceObject(Object);
+                Atlas->Brush.ImageSize = FVector2D(Texture->Width, Texture->Height);
+                Atlas->Brush.DrawAs = ESlateBrushDrawType::Image;
+                Upload(Object, Texture, 0, 0, Texture->Width, Texture->Height);
+                const uint64 Id = NextAtlas++;
                 ReleaseAtlas(Texture->GetTexID());
-                Atlases.Add(Id, Brush);
+                Atlases.Add(Id, Atlas);
                 Texture->SetTexID(Id);
                 Texture->SetStatus(ImTextureStatus_OK);
             }
@@ -199,9 +268,13 @@ void SCyUIPanel::Construct(const FArguments &Arguments) {
     IO.BackendPlatformName = "cyui_unreal_slate";
     IO.BackendRendererName = "cyui_unreal_slate";
     IO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // Keyboard nav alone does not claim the keyboard: editor shortcuts keep working (see Captures).
+    IO.ConfigNavCaptureKeyboard = false;
     IO.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures |
                        ImGuiBackendFlags_HasMouseCursors;
     IO.DisplaySize = {640, 480};
+    // Slate's render transform scales the panel, so CyUI's logical DPI stays 1 in this context;
+    // DisplayFramebufferScale (OnPaint) sets font rasterization density.
     cyui::applyDpi(1);
     cyui::loadFonts();
     auto &Platform = ImGui::GetPlatformIO();
@@ -250,6 +323,18 @@ void SCyUIPanel::Detach() {
     ImGui::DestroyContext(State->Context);
     State->Context = nullptr;
 }
+void SCyUIPanel::RunInContext(TFunctionRef<void()> Function) {
+    check(IsInGameThread());
+    if (!State || State->bDetached || !State->Context)
+        return;
+    FContextScope Scope(State->Context);
+    Function();
+}
+void SCyUIPanel::Notify(const char *Text, cyui::Tone Tone, float Seconds) {
+    check(IsInGameThread());
+    if (State && !State->bDetached && State->Context)
+        cyui::notify(State->Context, Text, Tone, Seconds);
+}
 FVector2D SCyUIPanel::ComputeDesiredSize(float) const {
     return FVector2D(640, 480);
 }
@@ -275,8 +360,8 @@ int32 SCyUIPanel::OnPaint(const FPaintArgs &, const FGeometry &Geometry, const F
     const float Scale = FMath::Max(.5f, Geometry.GetAccumulatedLayoutTransform().GetScale());
     IO.DisplayFramebufferScale = {Scale, Scale};
     IO.DeltaTime = FMath::Clamp(float(FApp::GetDeltaTime()), .001f, .1f);
-    // CyUI editor panels share palette/density; Slate already applies desktop DPI.
-    cyui::applyDpi(1);
+    // Theme, density and DPI belong to this panel's context and are applied when they change
+    // (Construct, or the tool's own theme calls); nothing is re-applied per paint.
     ImGui::NewFrame();
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(IO.DisplaySize);
@@ -292,6 +377,8 @@ int32 SCyUIPanel::OnPaint(const FPaintArgs &, const FGeometry &Geometry, const F
     if (!Data || !State->UpdateTextures(Data))
         return Layer;
     const float Opacity = Style.GetColorAndOpacityTint().A * (bEnabled ? 1.f : .5f);
+    FSlateRenderer *Renderer = FSlateApplication::Get().GetRenderer();
+    FCyUIEditorModule *Module = nullptr; // Looked up once per paint, only for registered textures.
     for (const ImDrawList *List : Data->CmdLists)
         for (const ImDrawCmd &Command : List->CmdBuffer) {
             if (Command.UserCallback) {
@@ -302,10 +389,13 @@ int32 SCyUIPanel::OnPaint(const FPaintArgs &, const FGeometry &Geometry, const F
             if (!Command.ElemCount)
                 continue;
             FSlateResourceHandle Resource;
-            if (auto *Brush = State->Atlases.Find(Command.GetTexID()))
-                Resource = FSlateApplication::Get().GetRenderer()->GetResourceHandle(**Brush);
-            else
-                Resource = FCyUIEditorModule::Get().ResolveTexture(Command.GetTexID());
+            if (auto *Atlas = State->Atlases.Find(Command.GetTexID()))
+                Resource = Renderer->GetResourceHandle((*Atlas)->Brush);
+            else {
+                if (!Module)
+                    Module = &FCyUIEditorModule::Get();
+                Resource = Module->ResolveTexture(Command.GetTexID());
+            }
             if (!Resource.IsValid())
                 continue;
             const auto Clip = Command.ClipRect;
@@ -386,8 +476,8 @@ FReply SCyUIPanel::OnMouseWheel(const FGeometry &Geometry, const FPointerEvent &
         return FReply::Unhandled();
     FContextScope Scope(State->Context);
     MousePosition(Geometry, Event);
-    ImGui::GetIO().AddMouseWheelEvent(Event.IsShiftDown() ? Event.GetWheelDelta() : 0,
-                                      Event.IsShiftDown() ? 0 : Event.GetWheelDelta());
+    // Vertical only: ImGui itself turns Shift+wheel into horizontal scrolling.
+    ImGui::GetIO().AddMouseWheelEvent(0, Event.GetWheelDelta());
     return FReply::Handled();
 }
 void SCyUIPanel::OnMouseLeave(const FPointerEvent &Event) {
@@ -412,9 +502,15 @@ FReply SCyUIPanel::OnKeyDown(const FGeometry &, const FKeyEvent &Event) {
     FContextScope Scope(State->Context);
     Modifiers(Event);
     const auto Key = KeyCode(Event.GetKey());
-    if (Key != ImGuiKey_None && !Event.IsRepeat())
-        ImGui::GetIO().AddKeyEvent(Key, true);
-    return Key != ImGuiKey_None ? FReply::Handled() : FReply::Unhandled();
+    if (Key == ImGuiKey_None)
+        return FReply::Unhandled();
+    if (State->KeysToImGui.Contains(Key))
+        return FReply::Handled(); // Repeat of a key ImGui owns; ImGui repeats by itself.
+    if (Event.IsRepeat() || !Captures(Key, Event))
+        return FReply::Unhandled();
+    State->KeysToImGui.Add(Key);
+    ImGui::GetIO().AddKeyEvent(Key, true);
+    return FReply::Handled();
 }
 FReply SCyUIPanel::OnKeyUp(const FGeometry &, const FKeyEvent &Event) {
     if (!State || State->bDetached)
@@ -422,15 +518,19 @@ FReply SCyUIPanel::OnKeyUp(const FGeometry &, const FKeyEvent &Event) {
     FContextScope Scope(State->Context);
     Modifiers(Event);
     const auto Key = KeyCode(Event.GetKey());
-    if (Key != ImGuiKey_None)
-        ImGui::GetIO().AddKeyEvent(Key, false);
-    return Key != ImGuiKey_None ? FReply::Handled() : FReply::Unhandled();
+    if (Key == ImGuiKey_None || !State->KeysToImGui.Remove(Key))
+        return FReply::Unhandled();
+    ImGui::GetIO().AddKeyEvent(Key, false);
+    return FReply::Handled();
 }
 FReply SCyUIPanel::OnKeyChar(const FGeometry &, const FCharacterEvent &Event) {
     if (!State || State->bDetached)
         return FReply::Unhandled();
     FContextScope Scope(State->Context);
     Modifiers(Event);
+    // Characters, like keys, go to one side: ImGui only while it takes keyboard input.
+    if (!WantsKeyboard())
+        return FReply::Unhandled();
     // Slate supplies UTF-16 units on Windows, Unicode scalars on UTF-32 platforms.
     if constexpr (sizeof(TCHAR) == 2)
         ImGui::GetIO().AddInputCharacterUTF16(ImWchar16(Event.GetCharacter()));
@@ -449,7 +549,8 @@ void SCyUIPanel::OnFocusLost(const FFocusEvent &Event) {
     SLeafWidget::OnFocusLost(Event);
     if (State && !State->bDetached) {
         FContextScope Scope(State->Context);
-        ImGui::GetIO().AddFocusEvent(false);
+        ImGui::GetIO().AddFocusEvent(false); // Releases every key ImGui holds.
+        State->KeysToImGui.Empty();
     }
 }
 FCursorReply SCyUIPanel::OnCursorQuery(const FGeometry &, const FPointerEvent &) const {

@@ -16,6 +16,8 @@ struct Gizmo3DOptions {
     const float *snap = nullptr;
 };
 // Host supplies its ImGuizmo target. Matrices are column-major, matching Viewport.
+// ImGuizmo's state is process-wide: use gizmo3D in one ImGui context at a time (finish a
+// drag in one context before drawing gizmos in another). Ids are scoped per context.
 CYUI_API Edit<std::array<float, 16>> gizmo3D(const char *id, Gizmo3DState &, const std::array<float, 16> &matrix,
                                     const std::array<float, 16> &view,
                                     const std::array<float, 16> &projection, const Rect &,

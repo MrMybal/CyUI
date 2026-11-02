@@ -57,7 +57,9 @@ ItemId commandPalette(const char *id, bool &open, CommandState &s, ArrayView<Com
         if (ImGui::IsWindowAppearing())
             ImGui::SetKeyboardFocusHere();
         ImGui::SetNextItemWidth(-1);
-        if (detail::inputText("##query", s.query))
+        // CallbackHistory makes the field own Up/Down, so keyboard navigation does not move the
+        // focus out of it; the list selection below reads them instead.
+        if (detail::inputText("##query", s.query, ImGuiInputTextFlags_CallbackHistory))
             s.selected = 0;
         const auto rows = rankCommands(commands, s.query);
         s.selected = std::clamp(s.selected, 0, std::max(0, int(rows.size()) - 1));
@@ -87,7 +89,13 @@ ItemId commandPalette(const char *id, bool &open, CommandState &s, ArrayView<Com
                 ScopedDisabled disabled(!c.enabled);
                 const auto p = ImGui::GetCursorScreenPos();
                 const float width = ImGui::GetContentRegionAvail().x;
-                if (ImGui::Selectable("##command", row == s.selected, 0, {0, height}) && c.enabled) {
+                bool pressed = false;
+                {
+                    // Rows are exactly `height` apart, matching the clipper and the scroll target.
+                    ScopedVar tight(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0));
+                    pressed = ImGui::Selectable("##command", row == s.selected, 0, {0, height});
+                }
+                if (pressed && c.enabled) {
                     request = c.id;
                     open = false;
                 }

@@ -86,7 +86,9 @@ def curve_editor(identifier, state, points, size=(0, 280), snap_step=0., revisio
             take_wheel()
         if f.hovered and i.is_mouse_dragging(2):
             delta = -io.mouse_delta.x/f.size[0]*state.view.x.view.span
-            state.view.x.view = Range(state.view.x.view.minimum+delta, state.view.x.view.maximum+delta)
+            moved = Range(state.view.x.view.minimum+delta, state.view.x.view.maximum+delta)
+            if moved.valid:
+                state.view.x.view = moved
         shown = state.preview if state.active else points
         hit, handle, distance = 0, 0, c.dp(8)
         for point in shown:
@@ -124,6 +126,11 @@ def curve_editor(identifier, state, points, size=(0, 280), snap_step=0., revisio
         if state.active:
             if i.is_mouse_down(0):
                 state.preview = deepcopy(state.before)
+                # Only the grabbed key snaps; the other selected keys keep their spacing.
+                grabbed = next((x for x in state.before if x.id == state.active), None)
+                shift = mouse[0]-state.grab[0]
+                if grabbed and not io.key_alt:
+                    shift = (snap_time(grabbed.time+shift) if snap_time else snap(grabbed.time+shift, snap_step))-grabbed.time
                 for point in state.preview:
                     if point.id not in state.selection:
                         continue
@@ -136,9 +143,7 @@ def curve_editor(identifier, state, points, size=(0, 280), snap_step=0., revisio
                         else:
                             point.outgoing = tangent
                     elif not state.handle:
-                        point.time += mouse[0]-state.grab[0]
-                        if not io.key_alt:
-                            point.time = snap_time(point.time) if snap_time else snap(point.time, snap_step)
+                        point.time += shift
                         point.value += mouse[1]-state.grab[1]
                 state.preview.sort(key=lambda x: x.time)
                 if edit.phase != 'begin' and (io.mouse_delta.x or io.mouse_delta.y):

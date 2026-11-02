@@ -52,13 +52,31 @@ def arrange_nodes(nodes, links, spacing=(240, 130)):
         if a is not None and b is not None and a != b:
             successors.setdefault(a, []).append(b)
             indegree[b] += 1
-    queue = [n.id for n in nodes if not indegree[n.id]]
-    for a in queue:
-        for b in successors.get(a, []):
-            rank[b] = max(rank.get(b, 0), rank.get(a, 0)+1)
-            indegree[b] -= 1
-            if not indegree[b]:
-                queue.append(b)
+    queue, placed, cursor = [], set(), 0
+    def place(node):
+        if node not in placed:
+            placed.add(node)
+            queue.append(node)
+    def drain():
+        nonlocal cursor
+        while cursor < len(queue):
+            a = queue[cursor]; cursor += 1
+            for b in successors.get(a, []):
+                if b in placed:
+                    continue  # a back edge into a broken cycle
+                rank[b] = max(rank.get(b, 0), rank.get(a, 0)+1)
+                indegree[b] -= 1
+                if not indegree[b]:
+                    place(b)
+    for n in nodes:
+        if not indegree[n.id]:
+            place(n.id)
+    drain()
+    # Nodes left over sit in or after a cycle: place the first, ignoring its remaining inputs.
+    for n in nodes:
+        if n.id not in placed:
+            place(n.id)
+            drain()
     rows, result = {}, {}
     for node in nodes:
         col = rank.get(node.id, 0)

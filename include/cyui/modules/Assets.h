@@ -17,6 +17,7 @@ struct AssetState {
     bool grid = true;
 };
 enum class AssetAction { none, open, context, favorite, rename, remove };
+// Folders use parent 0 for the root, so give items nonzero IDs.
 struct AssetResult {
     ItemId id = 0;
     AssetAction action = AssetAction::none;

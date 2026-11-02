@@ -17,7 +17,36 @@ class Axis:
         return (value - self.view.minimum) / self.view.span
 
     def value(self, fraction):
-        return self.view.minimum * (self.view.maximum / self.view.minimum) ** fraction if self.logarithmic and self.view.minimum > 0 else self.view.minimum + fraction * self.view.span
+        try:
+            return self.view.minimum * (self.view.maximum / self.view.minimum) ** fraction if self.logarithmic and self.view.minimum > 0 else self.view.minimum + fraction * self.view.span
+        except (OverflowError, ZeroDivisionError):
+            return nan
+
+
+def _navigate(axis, shift, anchor, factor):
+    """Pan by shift (a fraction of the view) and zoom by factor around anchor, like C++.
+
+    A log axis pans and zooms in log space only while its range is positive; otherwise it
+    moves like a linear one. A result that is not a finite, non-empty range is rejected.
+    """
+    view = axis.view
+    try:
+        if axis.logarithmic and view.minimum > 0 and view.maximum > 0:
+            low, high = log(view.minimum), log(view.maximum)
+            delta = shift * (high - low)
+            moved = Range(low + delta, high + delta)
+            if anchor > 0 and isfinite(anchor):
+                moved = zoom_range(moved, log(anchor), factor)
+            if not (abs(moved.minimum) <= 700 and abs(moved.maximum) <= 700):
+                return
+            result = Range(exp(moved.minimum), exp(moved.maximum))
+        else:
+            delta = shift * view.span
+            result = zoom_range(Range(view.minimum + delta, view.maximum + delta), anchor, factor)
+    except (OverflowError, ValueError, ZeroDivisionError):
+        return
+    if result.valid and (not axis.logarithmic or view.minimum <= 0 or result.minimum > 0):
+        axis.view = result
 
 
 @dataclass
@@ -77,19 +106,11 @@ def plot(identifier, state, series, size=(0, 240), navigation=True, max_points=6
             if not i.is_mouse_down(2):
                 state.dragging = False
             if state.dragging:
-                for axis, delta in ((state.x, -io.mouse_delta.x / frame.size[0]), (state.y, io.mouse_delta.y / frame.size[1])):
-                    if axis.logarithmic:
-                        factor = exp(delta * log(axis.view.maximum / axis.view.minimum))
-                        axis.view = Range(axis.view.minimum * factor, axis.view.maximum * factor)
-                    else:
-                        axis.view = Range(axis.view.minimum + delta * axis.view.span, axis.view.maximum + delta * axis.view.span)
+                _navigate(state.x, -io.mouse_delta.x / frame.size[0], mouse[0], 1)
+                _navigate(state.y, io.mouse_delta.y / frame.size[1], mouse[1], 1)
             if frame.hovered and io.mouse_wheel and not wheel_taken():
                 for axis, anchor in ((state.x, mouse[0]), (state.y, mouse[1])) if io.key_ctrl else ((state.x, mouse[0]),):
-                    if axis.logarithmic:
-                        view = zoom_range(Range(log(axis.view.minimum), log(axis.view.maximum)), log(anchor), exp(-io.mouse_wheel * .15))
-                        axis.view = Range(exp(view.minimum), exp(view.maximum))
-                    else:
-                        axis.view = zoom_range(axis.view, anchor, exp(-io.mouse_wheel * .15))
+                    _navigate(axis, 0, anchor, exp(-io.mouse_wheel * .15))
                 take_wheel()
         for n in range(1, 4):
             x, y = frame.top[0] + frame.size[0] * n / 4, frame.top[1] + frame.size[1] * n / 4

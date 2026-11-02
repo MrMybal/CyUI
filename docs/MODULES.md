@@ -45,12 +45,17 @@ Optional external adapters:
 Neither adapter is downloaded or enabled by `CYUI_MODULES=All`. The Web module
 is usable with a host backend; the supplied browser implementation is CEF.
 See [WEB.md](WEB.md) for platform support, process lifecycle and deployment.
+WebCEF hands the host a texture `release` callback, reports `external` requests
+with `userGesture`/`mainFrame`/`sourceOrigin` (schemes limited by
+`WebPolicy::externalSchemes`) and counts discarded events in `dropped` events.
+The supplied bridge and helper run CEF unsandboxed on Windows (see WEB.md).
 
 The optional [Unreal Editor module](UNREAL.md) packages selected CyUI modules for
 embedding in an existing plugin's Source/CyUI folder or sharing through one provider
 plugin. It provides a Slate renderer/input backend without menus or demo windows.
 Prepare it separately with `tools/package_unreal.py --layout module` (default);
-it is not a CMake target or a dependency of Core.
+it is not a CMake target or a dependency of Core. A redistributed plugin embeds it
+under a unique name with `--module-name`, or depends on the shared provider.
 
 ## Select only what an application needs
 
@@ -88,7 +93,13 @@ its include directory and C++20. `build_demo.bat` is the complete Windows demo b
 
 ## Shared data and edit contract
 
-- Give every object a stable, nonzero uint64 ID. Keep one state object per view.
+- Give every object a stable, nonzero uint64 ID: results that return a bare ID
+  (command palette, log/diagnostic rows, plot series, annotations) use 0 for none.
+  Gestures track their targets with flags, so a 0 ID still drags and selects. Keep
+  one state object per view.
+- Wheel zoom and pan keep ranges usable: a step that would overflow a log axis or
+  shrink a span below what its magnitude resolves (|value| x 1e-12) is ignored.
+  Selection ranges are reported ordered (min <= max).
 - ArrayView and callbacks borrow data for the call; keep it alive while drawing.
 - Curve points are finite and sorted by time; timeline durations are positive.
   Units, snapping policy, graph types and interpolation belong to the host.
@@ -110,7 +121,8 @@ accept at most 65,536 points per series by default and report oversized IDs in
 `skippedSeries`; call reducePlot or query a host index before drawing. Heatmaps
 bound the displayed cells to 256 per axis. Diff uses patience anchors and bounded
 LCS (4 million cells by default), exposing `approximate()` when an unmatched
-region is displayed as a full replacement. Both source sides are retained.
+region is displayed as a full replacement. Both source sides are retained; CRLF and
+LF lines compare equal and a notice row reports differing line endings.
 Source/Markdown inputs are limited to 32 MiB; large files need host paging.
 Logs default to 10,000 rows / 8 MiB. Waveforms consume prepared min/max envelopes.
 

@@ -28,7 +28,9 @@ struct KnobStyle {
 // (under it) without dragging lets it be typed.
 CYUI_API bool knob(const char* id, float* value, float minimum, float maximum, float defaultValue, const KnobStyle& style = {});
 
-// A vertical fader in dB with its scale. Returns true while it changes.
+// A vertical fader in dB with its scale; minimumDb sits at the bottom, maximumDb at the top. A
+// size of 0 or less follows ImGui (default / relative to the available space). Returns true while
+// it changes.
 CYUI_API bool fader(const char* id, float* gainDb, float minimumDb, float maximumDb, ImVec2 size, ImU32 colour = 0);
 // A level meter: peak and RMS of one or two channels, linear gain (1 = 0 dB).
 CYUI_API void meter(const char* id, ImVec2 size, float peakLeft, float peakRight, float rmsLeft, float rmsRight,

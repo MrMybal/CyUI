@@ -3,11 +3,22 @@
 // CyUI - Widgets: the controls of CyDAW 2 / Shaderixel / CyEngineHub, made
 // generic. Each one draws with cyui::palette() and cyui::metrics(), so it
 // follows the theme. They are ordinary ImGui items: SameLine, PushID,
-// IsItemHovered... all work after them.
+// IsItemHovered... all work after them. A control that changes a value marks
+// it edited: IsItemEdited() is true on that frame. Clicks and drags also give
+// IsItemDeactivatedAfterEdit() when released (one undo step per gesture);
+// wheel nudges and typed values are one-shot edits that only set
+// IsItemEdited(). Inside ScopedDisabled they are greyed out and inert.
 //
-// Shared behaviour of value controls (dragValue and optional audio controls):
-//   drag to change, Ctrl = fine, Shift = fast, mouse wheel nudges,
-//   double click restores the default, the value shows while hovered.
+// Shared behaviour of value controls (dragValue, sliderBar, audio knobs and
+// faders): drag to change, Ctrl = fine, Shift = fast (valueSpeed()), the mouse
+// wheel nudges (the panel under the control does not scroll; a dragValue only
+// once it has the focus). dragValue and sliderBar: a double click types the
+// value. Knobs: a double click restores the default, a click on the value
+// types it.
+//
+// Sizes: `size` and `width` parameters are screen pixels (wrap design values
+// in dp(); 0 = automatic, < 0 = fill minus that much where noted). Heights,
+// spacings and radii documented "in dp" are design units scaled inside.
 
 #include "cyui/Theme.h"
 
@@ -43,6 +54,7 @@ private:
 };
 
 // A font and/or a size factor of the base size (1 = normal, 0.85 = small).
+// A null font (uiFont() before loadFonts) keeps the current font.
 class ScopedFont final {
 public:
     explicit ScopedFont(ImFont* font, float sizeFactor = 1.0f) { ImGui::PushFont(font, ImGui::GetStyle().FontSizeBase * sizeFactor); }
@@ -95,7 +107,8 @@ CYUI_API void kbd(const char* keys);
 CYUI_API void helpMarker(const char* text);
 // A delayed tooltip for the last item (nothing when text is null/empty).
 CYUI_API void tooltip(const char* text);
-// Text clipped to `maxWidth` with an ellipsis, drawn at `position`.
+// Text clipped to `maxWidth` with an ellipsis, drawn at `position`. Both draw
+// in the current font, fading with ImGui's style alpha (disabled blocks).
 CYUI_API void clippedText(ImDrawList* list, ImVec2 position, float maxWidth, ImU32 colour, const char* text);
 // Text centred in a rectangle.
 CYUI_API void centredText(ImDrawList* list, ImVec2 min, ImVec2 max, ImU32 colour, const char* text);
@@ -119,6 +132,7 @@ CYUI_API bool ghostButton(const char* label, ImVec2 size = ImVec2(0.0f, 0.0f));
 CYUI_API bool iconTextButton(const char* icon, const char* label, Variant variant = Variant::secondary,
                     ImVec2 size = ImVec2(0.0f, 0.0f));
 // A flat square icon button, tinted when active (a tool, a mode, play...).
+// When the current font lacks the glyph, the tooltip's first letter stands in.
 CYUI_API bool iconButton(const char* icon, const char* tooltipText = nullptr, bool active = false, ImU32 activeColour = 0,
                 ImVec2 size = ImVec2(0.0f, 0.0f));
 // A compact rounded toggle that fills with `onColour` when on (M, S, R, a word).
@@ -135,9 +149,15 @@ CYUI_API bool linkText(const char* label);
 // ---- Value controls ------------------------------------------------------------
 
 // A labelled drag field for numbers: dragValue("Tempo", &bpm, 0.1f, 20, 300, "%.2f BPM").
+// `speed` per pixel dragged (x valueSpeed()); once the field has the focus
+// (clicked, navigated to), a wheel notch nudges by 10 x speed, otherwise the
+// wheel scrolls the panel; a double click types the value.
+// minimum >= maximum: unbounded.
 CYUI_API bool dragValue(const char* id, float* value, float speed, float minimum, float maximum, const char* format = "%.2f",
                float width = 0.0f);
-// A slider drawn as a filled bar with the value in it (inspectors).
+// A slider drawn as a filled bar with the value in it (inspectors). A click
+// or drag sets the value, the wheel nudges by 1 % of the range, a double click
+// types it. width: 0 = item width, < 0 = fill minus that much.
 CYUI_API bool sliderBar(const char* id, float* value, float minimum, float maximum, const char* format = "%.2f",
                float width = 0.0f, ImU32 colour = 0);
 
@@ -147,8 +167,17 @@ CYUI_API bool valueEntry(ImGuiID id, ImVec2 min, ImVec2 max, double& value, doub
                 double scale = 1.0);
 [[nodiscard]] CYUI_API bool valueEntryOpen();
 
+// Marks item `id` edited after a hand-made value change (IsItemEdited, and
+// IsItemDeactivatedAfterEdit when it is or just was the active item). Safe to
+// call when another item is active (it then does nothing).
+CYUI_API void markEdited(ImGuiID id);
+// The wheel for the last item: claims it on every frame the item is hovered,
+// so the window under it does not scroll too, and returns the wheel delta the
+// item may use (0 when not hovered, or when a view or window took it).
+[[nodiscard]] CYUI_API float itemWheel();
 // The wheel this frame went to a control under the pointer: a view that
-// scrolls with the wheel should leave it alone when wheelTaken().
+// scrolls with the wheel should leave it alone when wheelTaken(). takeWheel()
+// claims it after the fact (prefer itemWheel(), which claims it in time).
 CYUI_API void takeWheel();
 [[nodiscard]] CYUI_API bool wheelTaken();
 // Ctrl: 0.15 (fine), Shift: 4 (fast), else 1.
@@ -167,7 +196,7 @@ CYUI_API bool combo(const char* id, int* current, const char* const items[], int
 
 // A card: rounded raised ground (bg2), a line, padding, an optional title.
 // Always call endCard() (even when beginCard returns false).
-// height: 0 = fit content, >0 = fixed, <0 = fill minus that much.
+// height in dp: 0 = fit content, >0 = fixed, <0 = fill minus that much.
 CYUI_API bool beginCard(const char* id, const char* title = nullptr, float height = 0.0f, Tone tone = Tone::neutral);
 CYUI_API void endCard();
 
@@ -184,13 +213,14 @@ CYUI_API void endSection();
 //   }
 // property() writes the label in the first column and readies the second
 // (full width) for the control.
+// labelWidth in dp (0: 38 % of the row).
 CYUI_API bool beginProperties(const char* id, float labelWidth = 0.0f);
 CYUI_API void property(const char* label, const char* help = nullptr);
 CYUI_API void endProperties();
 
 // A thin vertical bar between toolbar groups (on the same line).
 CYUI_API void toolbarSeparator();
-// A horizontal line with optional spacing, in the theme's line colour.
+// A horizontal line with optional spacing (dp), in the theme's line colour.
 CYUI_API void divider(float spacing = 4.0f);
 // Vertical space in dp.
 CYUI_API void space(float height = 8.0f);
@@ -204,7 +234,7 @@ CYUI_API void statusDot(ImU32 colour, const char* tooltipText = nullptr);
 // A thin progress bar; fraction < 0 draws an indeterminate one.
 CYUI_API void progressBar(float fraction, ImVec2 size = ImVec2(-1.0f, 0.0f), const char* overlay = nullptr,
                  Tone tone = Tone::accent);
-// A spinning arc (work in progress).
+// A spinning arc (work in progress); radius in dp.
 CYUI_API void spinner(const char* id, float radius = 7.0f, ImU32 colour = 0);
 // A centred title and message filling the rest of a panel ("No layers yet").
 CYUI_API void emptyState(const char* title, const char* message, const char* icon = nullptr);
@@ -213,9 +243,13 @@ CYUI_API void callout(Tone tone, const char* text);
 // A coloured square (track colour, swatch). True when clicked.
 CYUI_API bool colourChip(const char* id, ImU32 colour, ImVec2 size);
 
-// Toast notifications, bottom-right of the main viewport. notify() from
-// anywhere; renderNotifications() once per frame, after everything else.
+// Toast notifications, bottom-right of the main viewport, at most 6. notify()
+// shows in the current ImGui context. With none current, it goes to the one
+// context CyUI knows (it asserts and drops when there are several or none):
+// pass a context to post to a given panel, from any thread.
+// renderNotifications() once per frame, after everything else.
 CYUI_API void notify(const char* text, Tone tone = Tone::neutral, float seconds = 4.0f);
+CYUI_API void notify(ImGuiContext* context, const char* text, Tone tone = Tone::neutral, float seconds = 4.0f);
 CYUI_API void renderNotifications();
 
 }  // namespace cyui

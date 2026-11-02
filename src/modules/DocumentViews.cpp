@@ -27,9 +27,40 @@ CodeLanguage languageOf(const std::string &name) {
            : name == "ts" || name == "typescript" ? CodeLanguage::typescript
                                                   : CodeLanguage::cpp;
 }
+// Delimited runs need a non-space just inside each delimiter. Any other token ("**kwargs", "*ptr",
+// "a * b") falls through to the last alternative and is shown verbatim.
+std::vector<DocumentInline> parseInline(const std::string &text) {
+    static const std::regex tokens(R"(\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*\s](?:[^*]*[^*\s])?)\*\*|)"
+                                   R"(\*([^*\s](?:[^*]*[^*\s])?)\*|\S+\s*)");
+    std::vector<DocumentInline> out;
+    std::size_t previousEnd = 0;
+    for (std::sregex_iterator it(text.begin(), text.end(), tokens), end; it != end; ++it) {
+        const auto &m = *it;
+        DocumentInline run;
+        run.spaced = std::size_t(m.position()) > previousEnd;
+        previousEnd = std::size_t(m.position() + m.length());
+        if (m[1].matched) {
+            run.kind = DocumentInlineKind::link;
+            run.text = m[1];
+            run.target = m[2];
+        } else if (m[3].matched) {
+            run.kind = DocumentInlineKind::code;
+            run.text = m[3];
+        } else if (m[4].matched) {
+            run.kind = DocumentInlineKind::strong;
+            run.text = m[4];
+        } else if (m[5].matched) {
+            run.kind = DocumentInlineKind::emphasis;
+            run.text = m[5];
+        } else
+            run.text = m.str();
+        out.push_back(std::move(run));
+    }
+    return out;
+}
 } // namespace
 bool Document::setMarkdown(const std::string &text) {
-    if (text == text_ && !blocks_.empty())
+    if (text == text_)
         return false;
     if (text.size() > 32 * 1024 * 1024)
         throw std::length_error("Document exceeds 32 MiB");
@@ -43,8 +74,8 @@ bool Document::setMarkdown(const std::string &text) {
             line.pop_back();
         lines.push_back(line);
     }
-    const std::regex list(R"(^\s*(?:[-*+] |\d+[.)] )(.*)$)"), headingPattern(R"(^(#{1,6})\s+(.*)$)"),
-        separator(R"(^[\s|:\-]+$)");
+    static const std::regex list(R"(^\s*(?:[-*+] |\d+[.)] )(.*)$)"),
+        headingPattern(R"(^(#{1,6})\s+(.*)$)"), separator(R"(^[\s|:\-]+$)");
     for (std::size_t at = 0; at < lines.size();) {
         line = lines[at++];
         DocumentBlock block;
@@ -82,29 +113,29 @@ bool Document::setMarkdown(const std::string &text) {
             block.kind = DocumentBlockKind::list;
             block.text = match[1];
         }
+        if (block.kind == DocumentBlockKind::paragraph || block.kind == DocumentBlockKind::list)
+            block.inlines = parseInline(block.text);
+        for (const auto &row : block.rows) {
+            block.cells.emplace_back();
+            for (const auto &cell : row)
+                block.cells.back().push_back(parseInline(cell));
+        }
         blocks_.push_back(std::move(block));
     }
     return true;
 }
 namespace {
-void inlineText(const std::string &text, DocumentResult &result) {
-    static const std::regex tokens(R"(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|[^\s]+\s*)"),
-        link(R"(^\[([^\]]+)\]\(([^)]+)\)$)");
+void inlineText(const std::vector<DocumentInline> &runs, DocumentResult &result) {
     const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
     bool first = true;
-    std::size_t previousEnd = 0;
-    for (std::sregex_iterator it(text.begin(), text.end(), tokens), end; it != end; ++it) {
-        ScopedID tokenId{int(it->position())};
-        const float gap = std::size_t(it->position()) > previousEnd ? ImGui::CalcTextSize(" ").x : 0;
-        previousEnd = std::size_t(it->position() + it->length());
-        const std::string token = it->str();
-        std::smatch match;
-        const bool linked = std::regex_match(token, match, link), mono = token.front() == '`',
-                   strong = token.rfind("**", 0) == 0, emphasis = !strong && token.front() == '*';
-        const auto label = linked             ? match[1].str()
-                           : mono || emphasis ? token.substr(1, token.size() - 2)
-                           : strong           ? token.substr(2, token.size() - 4)
-                                              : token;
+    int index = 0;
+    for (const auto &run : runs) {
+        ScopedID tokenId{index++};
+        const float gap = run.spaced ? ImGui::CalcTextSize(" ").x : 0;
+        const bool linked = run.kind == DocumentInlineKind::link, mono = run.kind == DocumentInlineKind::code,
+                   strong = run.kind == DocumentInlineKind::strong,
+                   emphasis = run.kind == DocumentInlineKind::emphasis;
+        const auto &label = run.text;
         ImFont *font = mono ? monoFont() : strong ? boldFont() : nullptr;
         if (font)
             ImGui::PushFont(font, 0);
@@ -113,7 +144,7 @@ void inlineText(const std::string &text, DocumentResult &result) {
             ImGui::SameLine(0, gap);
         if (linked) {
             if (linkText(label.c_str()))
-                result.link = match[2];
+                result.link = run.target;
         } else if (mono)
             textColoured(palette().accent, "%s", label.c_str());
         else if (emphasis)
@@ -144,7 +175,7 @@ DocumentResult content(DocumentState &s, const Document &doc) {
         case DocumentBlockKind::list:
             ImGui::Bullet();
             ImGui::SameLine();
-            inlineText(b.text, result);
+            inlineText(b.inlines, result);
             break;
         case DocumentBlockKind::code: {
             textFaint("%s", b.language.c_str());
@@ -171,7 +202,7 @@ DocumentResult content(DocumentState &s, const Document &doc) {
                     for (std::size_t col = 0; col < std::min(columns, b.rows[r].size()); ++col) {
                         ScopedID cellId{int(col)};
                         ImGui::TableNextColumn();
-                        inlineText(b.rows[r][col], result);
+                        inlineText(b.cells[r][col], result);
                     }
                 }
                 ImGui::EndTable();
@@ -179,7 +210,7 @@ DocumentResult content(DocumentState &s, const Document &doc) {
             break;
         }
         default:
-            inlineText(b.text, result);
+            inlineText(b.inlines, result);
             break;
         }
         space(3);
@@ -202,12 +233,29 @@ TranscriptResult transcript(const char *id, TranscriptState &s, ArrayView<Transc
     ImGui::BeginChild("##transcript", size);
     const bool bottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - dp(3);
     bool changed = false;
+    const float width = ImGui::GetContentRegionAvail().x, spacing = ImGui::GetStyle().ItemSpacing.y;
+    const ImVec4 layout{width, ImGui::GetFontSize(), ImGui::GetFrameHeight(), spacing};
+    if (layout.x != s.layout.x || layout.y != s.layout.y || layout.z != s.layout.z || layout.w != s.layout.w) {
+        s.heights.clear(); // wrapping, fonts or spacing change every height
+        s.layout = layout;
+    }
     for (std::size_t n = 0; n < messages.count; ++n) {
         const auto &m = messages[n];
         present.insert(m.id);
         auto &doc = s.documents[m.id];
-        changed = doc.setMarkdown(m.content) || changed;
+        const bool edited = doc.setMarkdown(m.content);
+        changed = changed || edited;
         ItemScope key(m.id);
+        // Offscreen messages measured before, with the same role/time, only reserve their height.
+        const std::hash<std::string> hash;
+        const std::size_t signature = hash(m.role) * 31 ^ hash(m.time);
+        const auto known = s.heights.find(m.id);
+        if (!edited && known != s.heights.end() && known->second.signature == signature &&
+            !ImGui::IsRectVisible({std::max(1.f, width), known->second.height})) {
+            ImGui::Dummy({1, std::max(0.f, known->second.height - spacing)});
+            continue;
+        }
+        const float top = ImGui::GetCursorPosY();
         heading(m.role.c_str(), 3);
         ImGui::SameLine();
         textFaint("%s", m.time.c_str());
@@ -219,6 +267,7 @@ TranscriptResult transcript(const char *id, TranscriptState &s, ArrayView<Transc
         if (!r.link.empty())
             result.link = r.link;
         divider();
+        s.heights[m.id] = {ImGui::GetCursorPosY() - top, signature};
     }
     if (s.follow && bottom && (changed || s.count != messages.count))
         ImGui::SetScrollHereY(1);
@@ -227,6 +276,7 @@ TranscriptResult transcript(const char *id, TranscriptState &s, ArrayView<Transc
     for (auto it = s.documents.begin(); it != s.documents.end();)
         if (!present.count(it->first)) {
             s.views.erase(it->first);
+            s.heights.erase(it->first);
             it = s.documents.erase(it);
         } else
             ++it;

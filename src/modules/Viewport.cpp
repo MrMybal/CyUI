@@ -1,4 +1,5 @@
 #include "cyui/modules/Viewport.h"
+#include "ModuleInternal.h"
 
 namespace cyui {
 namespace {
@@ -47,6 +48,7 @@ ViewportResult viewport(const char *id, ViewportState &s, const ImageData &image
     CanvasState canvas;
     CanvasOptions o;
     o.grid = o.navigation = false;
+    o.claimWheel = navigation;
     CanvasScope scope(id, canvas, size, o);
     const auto f = scope.frame();
     auto &io = ImGui::GetIO();
@@ -92,9 +94,8 @@ ViewportResult viewport(const char *id, ViewportState &s, const ImageData &image
                                   add(mul(x, -io.MouseDelta.x * factor), mul(y, io.MouseDelta.y * factor)));
             result.cameraChanged = true;
         }
-        if (f.hovered && io.MouseWheel && !wheelTaken()) {
-            s.camera.distance = std::clamp(s.camera.distance * std::exp(-io.MouseWheel * .15), 1e-5, 1e12);
-            takeWheel();
+        if (f.wheel != 0) {
+            s.camera.distance = std::clamp(s.camera.distance * std::exp(-f.wheel * .15), 1e-5, 1e12);
             result.cameraChanged = true;
         }
     }
@@ -108,8 +109,14 @@ Edit<Transform2D> transformGizmo(const char *id, TransformState &s, const Transf
     Edit<Transform2D> result;
     auto project = [&](Point p) { return o.project ? o.project(p) : ImVec2(float(p.x), float(p.y)); };
     auto unproject = [&](ImVec2 p) { return o.unproject ? o.unproject(p) : Point{p.x, p.y}; };
-    if (s.handle && (s.revision != o.revision || !o.enabled || ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+    const ImGuiID item = ImGui::GetID("##handles");
+    auto release = [&] {
         s.handle = 0;
+        if (ImGui::GetActiveID() == item)
+            ImGui::ClearActiveID();
+    };
+    if (s.handle && (s.revision != o.revision || !o.enabled || ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+        release();
         result.phase = EditPhase::cancel;
     }
     const auto shown = s.handle ? s.preview : value;
@@ -125,7 +132,11 @@ Edit<Transform2D> transformGizmo(const char *id, TransformState &s, const Transf
         d->AddRectFilled({points[i].x - dp(3), points[i].y - dp(3)},
                          {points[i].x + dp(3), points[i].y + dp(3)}, palette().text);
     }
-    const auto center = project(shown.center), rot = corner(0, -shown.size.y * .5 - dp(24));
+    // The rotation handle sits dp(24) beyond the top edge in screen space, whatever the world scale.
+    const auto center = project(shown.center), top = corner(0, -shown.size.y * .5);
+    const float ux = top.x - center.x, uy = top.y - center.y, length = std::hypot(ux, uy);
+    const ImVec2 rot = length > 1e-3f ? ImVec2(top.x + ux / length * dp(24), top.y + uy / length * dp(24))
+                                      : ImVec2(top.x, top.y - dp(24));
     d->AddCircle(center, dp(7), palette().accent, 0, dp(2));
     d->AddCircleFilled(rot, dp(4), palette().info);
     int hit = 0;
@@ -136,7 +147,20 @@ Edit<Transform2D> transformGizmo(const char *id, TransformState &s, const Transf
             hit = i + 2;
     if (std::hypot(rot.x - io.MousePos.x, rot.y - io.MousePos.y) < dp(8))
         hit = 6;
-    if (o.enabled && ImGui::IsWindowHovered() && hit && ImGui::IsMouseClicked(0)) {
+    if (o.enabled || s.handle)
+        markCanvasOverlay();
+    // A real item over the hovered (or dragged) handle, so the click does not reach the canvas or
+    // window underneath.
+    bool hovered = false;
+    if (const int target = s.handle ? s.handle : o.enabled ? hit : 0) {
+        const ImVec2 at = target == 1 ? center : target == 6 ? rot : points[target - 2];
+        const ImRect bb({at.x - dp(10), at.y - dp(10)}, {at.x + dp(10), at.y + dp(10)});
+        if (ImGui::ItemAdd(bb, item, nullptr, ImGuiItemFlags_NoNav))
+            hovered = hit && ImGui::ItemHoverable(bb, item, ImGuiItemFlags_NoNav);
+    }
+    if (o.enabled && !s.handle && hovered && ImGui::IsMouseClicked(0)) {
+        ImGui::SetActiveID(item, ImGui::GetCurrentWindow());
+        ImGui::SetKeyOwner(ImGuiKey_MouseLeft, item);
         s.handle = hit;
         s.grab = unproject(io.MousePos);
         s.before = s.preview = value;
@@ -167,7 +191,7 @@ Edit<Transform2D> transformGizmo(const char *id, TransformState &s, const Transf
                 result = {EditPhase::update, s.preview};
         } else {
             result = {EditPhase::commit, s.preview};
-            s.handle = 0;
+            release();
         }
     }
     return result;

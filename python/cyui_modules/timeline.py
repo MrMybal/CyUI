@@ -34,6 +34,7 @@ class Marker:
 class TimelineState:
     view: Range = field(default_factory=lambda: Range(0, 10))
     selection: Range = field(default_factory=lambda: Range(0, 0))
+    anchor: float = 0
     selected: list = field(default_factory=list)
     vertical_scroll: float = 0
     before: list = field(default_factory=list)
@@ -94,14 +95,15 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
         desired = state.view.span*c.dp(90)/width
         power = 10**floor(log10(max(1e-12, desired)))
         step = (1 if desired/power < 2 else 2 if desired/power < 5 else 5)*power
-        time = floor(state.view.minimum/step)*step
-        for _ in range(2048):
+        first = floor(state.view.minimum/step)
+        # An integer index: t += step stops advancing once step is below the spacing of t.
+        for n in range(1000):
+            time = (first+n)*step
             if time > state.view.maximum:
                 break
             at = x(time)
             d.add_line((at, f.top[1]), (at, f.bottom[1]), p.grid, c.dp(1))
             d.add_text((at+c.dp(3), f.top[1]+c.dp(3)), p.textDim, format_time(time) if format_time else f'{time:.5g}')
-            time += step
         hit, edge = None, 1
         shown = state.preview if state.mode > 0 else clips
         d.push_clip_rect((left, f.top[1]+ruler), f.bottom, True)
@@ -136,7 +138,7 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
                     state.before, state.preview = deepcopy(clips), deepcopy(clips)
                     result['clips'] = Edit('begin', deepcopy(state.preview))
             elif io.mouse_pos.x >= left:
-                state.selection, state.mode = Range(mouse, mouse), -1
+                state.selection, state.anchor, state.mode = Range(mouse, mouse), mouse, -1
                 result['seek'] = mouse
                 if not io.key_ctrl:
                     state.selected.clear()
@@ -145,11 +147,14 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
         if state.mode > 0:
             if i.is_mouse_down(0):
                 state.preview = deepcopy(state.before)
+                # Only the grabbed clip snaps; the other selected clips keep their spacing.
+                grabbed = next((c for c in state.before if c.id == state.active), None)
+                shift = snapped(grabbed.start+mouse-state.grab)-grabbed.start if grabbed else mouse-state.grab
                 for clip in state.preview:
                     if clip.locked or not ((state.mode == 1 and clip.id in state.selected) or clip.id == state.active):
                         continue
                     if state.mode == 1:
-                        clip.start = snapped(clip.start+mouse-state.grab)
+                        clip.start += shift
                         if clip.id == state.active and hovered_lane is not None:
                             clip.lane = hovered_lane
                     elif state.mode == 2:
@@ -163,7 +168,7 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
             else:
                 result['clips'], state.mode = Edit('commit', deepcopy(state.preview)), 0
         if state.mode == -1:
-            state.selection.maximum = mouse
+            state.selection = Range(min(state.anchor, mouse), max(state.anchor, mouse))
             result['range_changed'] = True
             if not i.is_mouse_down(0):
                 state.mode = 0

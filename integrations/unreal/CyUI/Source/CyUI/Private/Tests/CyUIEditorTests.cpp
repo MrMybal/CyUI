@@ -123,22 +123,27 @@ bool FCyUIRenderTest::RunTest(const FString &) {
                       FString(UTF8_TO_TCHAR(Input->Text)), FString(TEXT("\u97f3\u697d")));
             TestTrue(TEXT("Unreal texture resolves through the registry"),
                      FCyUIEditorModule::Get().ResolveTexture(Input->Texture).IsValid());
+            // A toast queued from outside the draw callback lands in this panel's context.
+            Panel->Notify("Automation notification", cyui::Tone::info);
             const auto Folder = FPaths::ProjectSavedDir() / TEXT("CyUIReview");
             IFileManager::Get().MakeDirectory(*Folder, true);
+            // Theme state is per ImGui context: change the panel's own, and restore it afterwards.
+            std::string SavedTheme;
+            cyui::Density SavedDensity = cyui::Density::compact;
+            Panel->RunInContext([&] {
+                SavedTheme = cyui::currentThemeKey();
+                SavedDensity = cyui::density();
+            });
             for (const auto &Theme : cyui::builtInThemes())
                 for (int Density = 0; Density < 2; ++Density) {
-                    // Theme API requires a current context; the panel reapplies the shared palette each
-                    // paint.
-                    auto *Temporary = ImGui::CreateContext();
-                    ImGui::SetCurrentContext(Temporary);
-                    cyui::setTheme(Theme.key.c_str());
-                    cyui::setDensity(Density ? cyui::Density::comfortable : cyui::Density::compact);
-                    ImGui::DestroyContext(Temporary);
-                    ImGui::SetCurrentContext(Before);
-                // Let cached auto-height layouts settle after changing density.
-                for (int Frame = 0; Frame < 2; ++Frame)
-                    FSlateApplication::Get().TakeScreenshot(Panel, Pixels, Size);
-                TestTrue(TEXT("Real Slate screenshot"),
+                    Panel->RunInContext([&] {
+                        cyui::setTheme(Theme.key.c_str());
+                        cyui::setDensity(Density ? cyui::Density::comfortable : cyui::Density::compact);
+                    });
+                    // Let cached auto-height layouts settle after changing density.
+                    for (int Frame = 0; Frame < 2; ++Frame)
+                        FSlateApplication::Get().TakeScreenshot(Panel, Pixels, Size);
+                    TestTrue(TEXT("Real Slate screenshot"),
                              FSlateApplication::Get().TakeScreenshot(Panel, Pixels, Size));
                     if (Pixels.Num() && Size.X > 0 && Size.Y > 0)
                         TestTrue(TEXT("Save theme capture"),
@@ -151,6 +156,10 @@ bool FCyUIRenderTest::RunTest(const FString &) {
                         Colors.Add(Color.DWColor());
                     TestTrue(TEXT("Screenshot contains rendered controls and text"), Colors.Num() > 16);
                 }
+            Panel->RunInContext([&] {
+                cyui::setTheme(SavedTheme.c_str());
+                cyui::setDensity(SavedDensity);
+            });
             TestTrue(TEXT("Paint restores the caller context"), Before == ImGui::GetCurrentContext());
             Input->Close = true;
             FSlateApplication::Get().TakeScreenshot(Panel, Pixels, Size);
