@@ -1,0 +1,10 @@
+{
+  "name": "@cyui/web",
+  "version": "1.1.0",
+  "description": "Optional browser message and theme bridge for CyUI",
+  "type": "module",
+  "license": "MIT",
+  "exports": {".": {"types": "./cyui-web.d.ts", "import": "./cyui-web.js"}},
+  "files": ["cyui-web.js", "cyui-web.d.ts", "cyui-web.css", "LICENSE"],
+  "scripts": {"test": "node --test ../tests/web_bridge.test.mjs"}
+}

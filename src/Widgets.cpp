@@ -439,6 +439,7 @@ bool linkText(const char* label)
 
 namespace {
 int gWheelFrame = -1;
+ImGuiContext* gWheelContext = nullptr;
 ImGuiID gEntryId {};
 char gEntryText[64] {};
 bool gEntryFresh {};
@@ -464,11 +465,13 @@ std::optional<double> typedNumber(std::string text)
 void takeWheel()
 {
     gWheelFrame = ImGui::GetFrameCount();
+    gWheelContext = ImGui::GetCurrentContext();
+    ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);
 }
 
 bool wheelTaken()
 {
-    return gWheelFrame == ImGui::GetFrameCount();
+    return gWheelContext == ImGui::GetCurrentContext() && gWheelFrame == ImGui::GetFrameCount();
 }
 
 float valueSpeed()

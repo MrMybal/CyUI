@@ -23,6 +23,8 @@ imgui.ini
 __pycache__/
 *.py[cod]
 .venv/
+*.egg-info/
+/dist/
 venv/
 
 # Local configuration and credentials

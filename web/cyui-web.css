@@ -1,0 +1,7 @@
+/* Values are supplied by webThemeJson()/theme_message() from the active CyUI palette. */
+:root { color: var(--cyui-text); background: var(--cyui-bg0); font-family: system-ui, sans-serif; }
+body { margin: 0; }
+button, input, textarea, select { color: var(--cyui-text); background: var(--cyui-bg2); border: 1px solid var(--cyui-line); border-radius: calc(4px * var(--cyui-scale, 1)); padding: calc(6px * var(--cyui-scale, 1)); font: inherit; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--cyui-accent); }
+a { color: var(--cyui-accent); }
+::selection { background: var(--cyui-selection); }

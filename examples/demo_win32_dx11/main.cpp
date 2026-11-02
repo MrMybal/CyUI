@@ -19,6 +19,10 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include <filesystem>
+#if defined(CYUI_DEMO_CEF)
+#include <cyui/adapters/WebCEF.h>
+#endif
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -28,6 +32,29 @@ ID3D11Device* gDevice {};
 ID3D11DeviceContext* gContext {};
 IDXGISwapChain* gSwapChain {};
 ID3D11RenderTargetView* gTarget {};
+ID3D11ShaderResourceView* gGalleryTexture {};
+ID3D11Texture2D* gWebTexture {};
+ID3D11ShaderResourceView* gWebView {};
+int gWebWidth=0,gWebHeight=0;
+
+ImTextureID uploadWeb(int width,int height,const void* pixels) {
+    if(width!=gWebWidth||height!=gWebHeight){
+        if(gWebView){gWebView->Release();gWebView=nullptr;}
+        if(gWebTexture){gWebTexture->Release();gWebTexture=nullptr;}
+        D3D11_TEXTURE2D_DESC desc{};desc.Width=UINT(width);desc.Height=UINT(height);desc.MipLevels=1;desc.ArraySize=1;desc.Format=DXGI_FORMAT_B8G8R8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_DEFAULT;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+        if(FAILED(gDevice->CreateTexture2D(&desc,nullptr,&gWebTexture)))return 0;
+        if(FAILED(gDevice->CreateShaderResourceView(gWebTexture,nullptr,&gWebView)))return 0;
+        gWebWidth=width;gWebHeight=height;
+    }
+    gContext->UpdateSubresource(gWebTexture,0,nullptr,pixels,UINT(width*4),0);
+    return ImTextureID(reinterpret_cast<std::uintptr_t>(gWebView));
+}
+void createGalleryTexture() {
+    std::vector<ImU32> pixels(256*256);const auto&p=cyui::palette();
+    for(int y=0;y<256;++y)for(int x=0;x<256;++x){const float k=float(x)/255;const float signal=.5f+.5f*std::sin(float(x*x+y*y)*.0007f);const auto color=cyui::mix(cyui::mix(p.bg0,p.info,k),p.accent,signal*.65f);pixels[std::size_t(y)*256+x]=color;}
+    D3D11_TEXTURE2D_DESC desc{};desc.Width=desc.Height=256;desc.MipLevels=desc.ArraySize=1;desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;desc.SampleDesc.Count=1;desc.Usage=D3D11_USAGE_IMMUTABLE;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;D3D11_SUBRESOURCE_DATA data{};data.pSysMem=pixels.data();data.SysMemPitch=256*4;ID3D11Texture2D* texture=nullptr;
+    if(SUCCEEDED(gDevice->CreateTexture2D(&desc,&data,&texture))){gDevice->CreateShaderResourceView(texture,nullptr,&gGalleryTexture);texture->Release();}
+}
 UINT gResizeWidth {}, gResizeHeight {};
 
 void createTarget()
@@ -74,6 +101,9 @@ bool createDevice(HWND hwnd)
 
 void releaseDevice()
 {
+    if(gGalleryTexture)gGalleryTexture->Release();
+    if(gWebView)gWebView->Release();
+    if(gWebTexture)gWebTexture->Release();
     releaseTarget();
     if (gSwapChain != nullptr)
         gSwapChain->Release();
@@ -171,6 +201,7 @@ LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 struct App {
     int page = 0;
+    cyui::GalleryResources resources;
     int galleryTab = -1;
     bool gallery = true;
     bool layoutChecked = false;
@@ -251,7 +282,7 @@ struct App {
     void sidebar()
     {
         if (cyui::beginSidebar("##sidebar")) {
-            cyui::sidebarHeader("CYUI DEMO", "1.0");
+            cyui::sidebarHeader("CYUI DEMO", "1.1");
             cyui::sidebarGroup("WORKSPACE");
             if (cyui::sidebarItem(cyui::icon::home, "Home", page == 0))
                 page = 0;
@@ -349,7 +380,7 @@ struct App {
         }
         panels();
         if (gallery)
-            cyui::showGallery(&gallery, galleryTab);
+            cyui::showGallery(&gallery, galleryTab,resources);
         if (themeEditor)
             cyui::showThemeEditor(&themeEditor);
         if (imguiDemo)
@@ -362,9 +393,14 @@ struct App {
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
 {
+#if defined(CYUI_DEMO_CEF)
+    CefMainArgs cefArgs(GetModuleHandleW(nullptr));auto cefApp=cyui::webCEFApp();const int cefChild=CefExecuteProcess(cefArgs,cefApp,nullptr);if(cefChild>=0)return cefChild;
+    bool cefStarted=false;
+#endif
     // --capture out.bmp [--theme key] [--comfortable] [--tab n]: renders a few
     // frames, writes the window to a BMP and quits.
-    std::wstring capturePath;
+    std::wstring capturePath,webUrl;
+    bool cefNoSandbox=false;
     std::string themeKey = "mid-grey";
     auto comfortable = false;
     auto tab = -1;
@@ -374,7 +410,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         for (auto i = 1; i < count; ++i) {
             const std::wstring arg = args[i];
             const auto next = [&]() { return i + 1 < count ? std::wstring(args[++i]) : std::wstring(); };
-            if (arg == L"--capture")
+            if(arg==L"--web-url")webUrl=next();
+            else if(arg==L"--cef-no-sandbox")cefNoSandbox=true;
+            else if (arg == L"--capture")
                 capturePath = next();
             else if (arg == L"--theme") {
                 const auto key = next();
@@ -428,11 +466,25 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     if (!capturePath.empty())
         io.IniFilename = nullptr;
 
+    createGalleryTexture();
     App app;
+    app.resources.texture=ImTextureID(reinterpret_cast<std::uintptr_t>(gGalleryTexture));app.resources.width=app.resources.height=256;
+#if defined(CYUI_DEMO_CEF)
+    std::unique_ptr<cyui::WebBackend> web;
+    if(!webUrl.empty()){
+        CefSettings settings;settings.windowless_rendering_enabled=true;settings.no_sandbox=cefNoSandbox;CefString(&settings.root_cache_path)=std::filesystem::absolute("build/cef-demo-profile").string();
+        cefStarted=CefInitialize(cefArgs,settings,cefApp,nullptr);
+        if(cefStarted){const int count=WideCharToMultiByte(CP_UTF8,0,webUrl.data(),int(webUrl.size()),nullptr,0,nullptr,nullptr);std::string url(std::size_t(count),'\0');WideCharToMultiByte(CP_UTF8,0,webUrl.data(),int(webUrl.size()),url.data(),count,nullptr,nullptr);cyui::WebCEFOptions options;options.parent=hwnd;options.url=url;options.policy.origins={cyui::webOrigin(url)};options.upload=uploadWeb;web=cyui::createWebCEF(options);app.resources.web=web.get();if(tab<0)tab=19;}
+    }
+#else
+    (void)webUrl;(void)cefNoSandbox;
+#endif
     app.galleryTab = tab;
+    app.resources.previewCommands = !capturePath.empty() && tab == 16;
     cyui::notify("Welcome to the CyUI demo", cyui::Tone::accent);
     auto done = false;
     auto frames = 0;
+    const auto captureStart=GetTickCount64();
     while (!done) {
         MSG msg;
         while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
@@ -450,10 +502,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             createTarget();
         }
 
+#if defined(CYUI_DEMO_CEF)
+        if(cefStarted)CefDoMessageLoopWork();if(web)web->beginFrame();
+#endif
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         app.frame();
+#if defined(CYUI_DEMO_CEF)
+        if(web)web->endFrame();
+#endif
         ImGui::Render();
 
         const auto ground = cyui::vec(cyui::palette().bg0);
@@ -461,13 +519,21 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         gContext->OMSetRenderTargets(1, &gTarget, nullptr);
         gContext->ClearRenderTargetView(gTarget, clear);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        if (!capturePath.empty() && ++frames == 40) {
+#if defined(CYUI_DEMO_CEF)
+        const bool browserCaptureReady=!web||(web->texture()&&GetTickCount64()-captureStart>=1500);
+#else
+        const bool browserCaptureReady=true;(void)captureStart;
+#endif
+        if (!capturePath.empty() && ++frames >= 40 && browserCaptureReady) {
             captureBackBuffer(capturePath.c_str());
             done = true;
         }
         gSwapChain->Present(1, 0);
     }
 
+#if defined(CYUI_DEMO_CEF)
+    if(web){web->close();const auto start=GetTickCount64();while(!web->closed()&&GetTickCount64()-start<5000){CefDoMessageLoopWork();MsgWaitForMultipleObjects(0,nullptr,FALSE,5,QS_ALLINPUT);}web.reset();}if(cefStarted)CefShutdown();
+#endif
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();

@@ -6,8 +6,9 @@ themes, same two densities, same fonts and icons, same widgets and layout, same 
 docs/AI_GUIDE.md. Names follow Python: primary_button for primaryButton, begin_card for
 beginCard. Value controls return (changed, value) the way imgui_bundle does.
 
-What is not ported: knob, fader, meter, the typed value entry, the gallery and the theme
-editor (audio and editor controls the C++ apps use).
+Optional controls, plots, editors, documents and browser panels live in cyui_modules.
+See docs/MODULES.md; importing this core API does not import those optional modules.
+The typed C++ value-entry popover and theme-editor window remain C++ conveniences.
 
 Start-up, once per application:
 

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cyui"
+version = "1.1.0"
+description = "Themed Dear ImGui widgets and optional CyUI interface modules"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+readme = "README.md"
+
+[project.optional-dependencies]
+ui = ["imgui-bundle>=1.92"]
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+py-modules = ["cyui"]
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["cyui_modules*"]

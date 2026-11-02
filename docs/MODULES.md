@@ -1,53 +1,131 @@
-# CyUI modules
+# CyUI optional modules
 
-CyUI provides a shared interface foundation plus optional libraries. An application
-selects its modules at build time. Its documents, engines and services remain owned
-by the application.
+CyUI 1.1 provides a common Dear ImGui foundation and independently selectable
+interface modules. All CyUI code is MIT licensed. Applications own their models,
+engines, files, services, validation and Undo history.
 
-## Available now
+## Targets and dependencies
 
-| Target | Header | Contents |
+`CyUI::Core` contains themes, fonts, icons, ordinary widgets, layout and
+notifications. Modules link Core automatically. The following targets are implemented:
+
+| CMake target | Public header | Interface | Additional CyUI dependency |
+| --- | --- | --- | --- |
+| `CyUI::Audio` | `modules/Audio.h` | Knobs, faders, peak/RMS meters | Core |
+| `CyUI::Canvas` | `modules/Canvas.h` | Double coordinates, grid, clipping, pan/zoom | Core |
+| `CyUI::Plots` | `modules/Plots.h` | Linear/log axes, lines, steps, points, bars, histograms, heatmaps | Canvas |
+| `CyUI::Curves` | `modules/Curves.h` | Keyframes, Bezier handles, selection, snap, copy/paste | Plots |
+| `CyUI::Nodes` | `modules/Nodes.h` | Cards, pins, links, layout, move/connect/remove requests | Canvas |
+| `CyUI::Timeline` | `modules/Timeline.h` | Lanes, clips, markers, ruler, move/trim, range selection | Canvas |
+| `CyUI::AudioViews` | `modules/AudioViews.h` | Waveforms, spectrum, oscilloscope, stereo scope | Plots |
+| `CyUI::Code` | `modules/Code.h` | Source viewer, lexical colors, semantic overlays, annotations, search | Core |
+| `CyUI::Diff` | `modules/Diff.h` | Unified/split diff, line numbers, hunk navigation, inline ranges | Code |
+| `CyUI::CodeEditor` | `modules/CodeEditor.h` | Native editable source, Undo/Redo, multiple cursors, completion hooks | Code + MIT TextEditor, C++20 |
+| `CyUI::Inspector` | `modules/Inspector.h` | Typed properties, exact int64, validation, draft edits | Core |
+| `CyUI::Assets` | `modules/Assets.h` | Hierarchical folder navigation, grid/list, search, thumbnails, drag/drop | Core |
+| `CyUI::Images` | `modules/Images.h` | Texture viewport, checkerboard, crop, gradient stops | Canvas |
+| `CyUI::Viewport` | `modules/Viewport.h` | Host-rendered scene surface, orbit camera, 2D transform overlay | Images |
+| `CyUI::Commands` | `modules/Commands.h` | Searchable keyboard command palette | Core |
+| `CyUI::Diagnostics` | `modules/Diagnostics.h` | Bounded thread-safe logs, filters, diagnostic navigation | Core + system threads |
+| `CyUI::DocumentViews` | `modules/DocumentViews.h` | Markdown subset, fenced code, links, tables, cached transcripts | Code |
+| `CyUI::Web` | `modules/Web.h` | Browser panel, texture/input contract, origin policy, messages, theme bridge | Core |
+| `CyUI::Gallery` | `Gallery.h` | Examples and theme editor | Enabled modules only |
+
+Header paths are relative to `include/cyui/`. `CyUI::Code::Diff` is an alias for
+`CyUI::Diff`. `CyUI::CyUI` is the compatibility umbrella linking all modules
+selected in this build. A module is a static library, not a dynamically loaded plugin.
+
+Optional external adapters:
+
+| Target | Enablement | Dependency |
 | --- | --- | --- |
-| `CyUI::Core` | `cyui/Core.h` | Theme, DPI, fonts, icons, ordinary widgets, value entry, notifications and application layout |
-| `CyUI::Audio` | `cyui/modules/Audio.h` | Existing knobs, faders and peak/RMS meters; depends only on Core |
-| `CyUI::Gallery` | `cyui/Gallery.h` | Widget gallery and theme editor; Core only, with audio examples when Audio is enabled |
-| `CyUI::CyUI` | `cyui/CyUI.h` | Compatibility umbrella linking the modules enabled in this build |
+| `CyUI::ImGuizmo` | Set `CYUI_IMGUIZMO_TARGET` to an existing host target; select Viewport | Host's MIT ImGuizmo; `adapters/ImGuizmo.h` |
+| `CyUI::WebCEF` | `CYUI_BUILD_WEB_CEF=ON`; select Web | Host CEF SDK/runtime; `adapters/WebCEF.h`, C++20 |
 
-`cyui/Widgets.h` preserves the original combined widget declarations. Core-only
-applications use `cyui/Core.h` or `cyui/CoreWidgets.h`. Existing function names
-and widget behavior are preserved. This is source compatibility; static library
-files are now separate and manually maintained linker inputs must be updated.
+Neither adapter is downloaded or enabled by `CYUI_MODULES=All`. The Web module
+is usable with a host backend; the supplied browser implementation is CEF.
+See [WEB.md](WEB.md) for platform support, process lifecycle and deployment.
 
-Audio and Gallery are enabled by default to preserve existing integrations.
-Linking Core does not link either module. To avoid building them as well:
+## Select only what an application needs
 
 ```cmake
-set(CYUI_IMGUI_TARGET my_imgui_target)
+set(CYUI_IMGUI_TARGET app_imgui)
 set(CYUI_BUILD_DEMO OFF CACHE BOOL "" FORCE)
 set(CYUI_BUILD_AUDIO OFF CACHE BOOL "" FORCE)
 set(CYUI_BUILD_GALLERY OFF CACHE BOOL "" FORCE)
+set(CYUI_MODULES "Code;Diff;Inspector" CACHE STRING "" FORCE)
 add_subdirectory(external/CyUI)
-target_link_libraries(my_app PRIVATE CyUI::Core)
+target_link_libraries(app PRIVATE CyUI::Diff CyUI::Inspector)
 ```
-
-An audio application enables Audio and links `CyUI::Audio`, which also links Core:
 
 ```cpp
 #include <cyui/Core.h>
-#include <cyui/modules/Audio.h>
+#include <cyui/modules/Diff.h>
+#include <cyui/modules/Inspector.h>
 ```
 
-`CYUI_HAS_AUDIO` and `CYUI_HAS_GALLERY` are public compile definitions on their
-respective CMake targets. They describe the modules linked to the consumer. They
-are not runtime plugin discovery. The complete Win32 demo requires both modules.
+Dependencies are selected automatically: Diff enables Code; it does not enable
+CodeEditor, audio, plots or a browser. Link explicit targets to keep public feature
+macros and dependencies restricted to the consumer. `CYUI_HAS_CODE`,
+`CYUI_HAS_DIFF`, etc. are public definitions of their respective targets.
 
-Without CMake, compile `Theme.cpp`, `Widgets.cpp` and `Layout.cpp` for Core, add
-`src/modules/Audio.cpp` for Audio, and `src/Gallery.cpp` for Gallery. Define
-`CYUI_HAS_AUDIO=1` when compiling Gallery to include its audio examples.
+`CYUI_MODULES` accepts a semicolon list, `Core`, an empty list, or `All`.
+The standalone full demo defaults to All. Embedded builds and standalone builds
+with the demo disabled default to no new optional modules. Audio and Gallery
+retain their original ON defaults; disable those explicitly when not used.
+`CyUI::Core` never links them. The old Widgets.h/CyUI.h declarations remain source compatible.
 
-The existing Python port remains `python/cyui.py`. It currently provides the
-general UI foundation, not these C++ audio controls. Python module extraction and
-packaging remain separate work; the CMake split does not add Python features.
+Without CMake, compile the three Core sources and only the selected
+`src/modules/<Name>.cpp` files plus their dependency closure. Define the matching
+`CYUI_HAS_<NAME>` macros for Gallery/CyUI.h. CodeEditor also needs TextEditor.cpp,
+its include directory and C++20. `build_demo.bat` is the complete Windows demo build.
+
+## Shared data and edit contract
+
+- Give every object a stable, nonzero uint64 ID. Keep one state object per view.
+- ArrayView and callbacks borrow data for the call; keep it alive while drawing.
+- Curve points are finite and sorted by time; timeline durations are positive.
+  Units, snapping policy, graph types and interpolation belong to the host.
+- Editors return `Edit<T>` proposals with `begin`, `update`, `commit`, `cancel`.
+  Atomic actions may return commit directly. Preview state never mutates the host.
+  Validate and apply a committed proposal as one Undo transaction. Increment the
+  supplied revision when replacing host data during a gesture to cancel stale edits.
+- Ordinary rendering and model preparation run on the host UI thread. LogBuffer
+  append/clear/snapshot are synchronized and may be called from producer threads.
+- Colors use palette roles; UI geometry uses dp/style. Gradient colors, plot
+  values, textures and scene matrices are application data.
+- No module reads projects, executes Git actions, starts a terminal process,
+  decodes audio/video, computes FFTs or runs a language server. Clipboard actions
+  are local UI requests. Web explicitly creates a browser only when selected.
+
+Prepare documents/envelopes when data changes. Draw visible rows using cached
+models, and supply visible/bounded datasets for graphs and timelines. Plots
+accept at most 65,536 points per series by default and report oversized IDs in
+`skippedSeries`; call reducePlot or query a host index before drawing. Heatmaps
+bound the displayed cells to 256 per axis. Diff uses patience anchors and bounded
+LCS (4 million cells by default), exposing `approximate()` when an unmatched
+region is displayed as a full replacement. Both source sides are retained.
+Source/Markdown inputs are limited to 32 MiB; large files need host paging.
+Logs default to 10,000 rows / 8 MiB. Waveforms consume prepared min/max envelopes.
+
+## Python
+
+```sh
+python -m pip install -e ".[ui]"
+```
+
+`cyui` remains the existing theme/widget API. `cyui_modules` contains optional
+`audio`, `canvas`, `plots`, `curves`, `nodes`, `timeline`, `audioviews`, `code`,
+`diff`, `inspector`, `assets`, `images`, `viewport`, `commands`, `diagnostics`,
+`documents` (`documentviews` alias), `web` and `cef`. Import models without loading
+imgui-bundle; drawing imports it lazily. No NumPy, media decoder or 3D engine is required.
+
+Python uses the same IDs, ranges, palette roles, edit phases, origin policy and
+bounded diff algorithm. Its CodeEditor uses ImGui multiline editing with native
+Undo and a live syntax preview. The richer C++ TextEditor backend has its own API;
+Python does not pretend to expose its multiple cursors/completion hooks.
+`cyui_modules.cef.CEFRuntime` loads the optional C ABI library/helper explicitly;
+CEF binaries are not included in the Python package. See [WEB.md](WEB.md).
 
 ## Application survey, 2026-11-02
 
@@ -81,81 +159,48 @@ CyRevision adds an optional Diff component to the Code family. Code reading,
 editing and comparison should share token roles and line/document views while
 remaining selectable independently.
 
-## Modules to extract next
+## Adoption map
 
-Only Core, Audio controls and Gallery are implemented as targets today. Names in
-this table are proposed boundaries, not available CMake targets or completed ports.
+| Application | Suggested selected modules |
+| --- | --- |
+| CyDAW / AudioStudio | Audio, AudioViews, Curves, Nodes, Timeline, Inspector, Diagnostics |
+| Shaderixel / ShaderixFrame | Nodes, Curves, Timeline, Code, CodeEditor, Images, Viewport, Plots, Commands |
+| CyGameSDK | Nodes, Inspector, Assets, Viewport, optional ImGuizmo adapter |
+| CyCode / CyCodeReader | Code, optional CodeEditor, Diff, Diagnostics, Commands |
+| CyRevision | Code, Diff, Inspector, DocumentViews |
+| CyInsights | Timeline, Plots, Inspector, Diagnostics |
+| CyTools | Choose audio/media/scene/document modules per tool; Python ports are selectable |
+| CyMD / CyAnnota / CyTask / CyAIOrchestrator | Web + optional WebCEF for web panels; DocumentViews for the native Markdown subset |
+| CyImgView | Images, Viewport, Inspector; Web only for an embedded web tool |
 
-| Priority | Proposed module | Shared responsibility | Likely consumers |
-| --- | --- | --- | --- |
-| 1 | Canvas | Per-view pan/zoom, coordinate transforms, clipping, grid, hit tests and selection rectangles | Node, curve, image and timeline views |
-| 1 | Plots | Numeric axes, linear/log mappings, sampled line/step plots, histograms, heatmaps, hover/crosshair | CyDAW, AudioStudio, Shaderixel, ShaderixFrame, CyInsights |
-| 2 | Curves | Keyframe drawing, points/handles, snapping, selection and gesture events; host-supplied interpolation | CyDAW, ShaderixFrame, Shaderixel, AudioStudio |
-| 2 | Nodes | Cards, typed pin visuals, links, selection, move/connect proposals and navigation; host-supplied bodies | CyDAW, Shaderixel, ShaderixFrame, CyGameSDK |
-| 2 | Timeline | Ruler, lanes, intervals/clips, markers, playhead, overview, range selection, move/trim gestures | CyDAW, ShaderixFrame, AudioStudio, Storyboard, Subtitle, CyInsights |
-| 2 | AudioViews | Peak-envelope waveform, scope, spectrum, stereo field and response-curve presentation | CyDAW, AudioLibrary, AudioStudio, ShaderixFrame |
-| 2 | Code | Source view/editor adapter, syntax roles, token overlays, gutters, diagnostics and search | CyCode, Reader, Shaderixel, AudioStudio JSFX editor |
-| 2 | Code / Diff | Optional comparison component: unified/split changed lines, synchronized scrolling, hunk navigation, inline ranges and comments | CyRevision, CyCode, graph/text comparison panels |
-| 3 | Inspector | Typed/schema-driven property forms, validation messages and edit proposals | CyGameSDK, CyRevision, CyTools, graph inspectors |
-| 3 | Assets | Search/filter views, tree/grid/cards, thumbnails, selection and drag/drop descriptors | CyGameSDK, CyDAW, Shaderixel, CyTools libraries |
-| 3 | Images | Texture viewport, checkerboard, fit/zoom, crop/transform overlays and gradient-stop editor | Shaderixel, ShaderixFrame, Storyboard, result viewers |
-| 3 | Viewport | Texture surface, camera interaction and optional gizmo integration | CyGameSDK, Storyboard, MeshStudio, Shaderixel |
-| 3 | Commands / Diagnostics | Searchable command presentation; bounded/filterable log and diagnostic views | Editors and CyTools |
-| 4 | DocumentViews | Transcript, Markdown and code-block presentation, after identifying a shared renderer contract | AIChat, PersonaRP, Storyboard |
+The additional web survey found CyMD's versioned iframe protocol in
+`src/platform/embedded.ts`, CyAnnota's React web build plus Electron desktop
+bridge, CyTask's web app and plugin frontends, and CyAIOrchestrator's web assets
+and optional pywebview host. CyImgView is a native C++ application. Browser UIs
+can be hosted by CEF; Electron IPC and server dependencies need host adapters.
+No source application is changed by this library update, and no application
+GPL/AGPL implementation is copied into these modules.
 
-Audio controls remain separate from AudioViews: a knob or meter does not require
-FFT, waveform decoding or a plotting backend. A timing profiler is a consumer of
-Timeline and Plots; it does not make every timeline depend on trace processing.
-Likewise, a node graph is not a numeric plot and a gradient is document color data,
-not a second hard-coded UI theme.
-
-Canvas and Plots should be extracted first because several later modules need
-their coordinate, interaction and clipping contracts. The Code family can proceed
-independently of that canvas stack; Diff must not require a full editor or a Git
-backend. Optional adapters for TextEditor, Tree-sitter,
-ImGuizmo or platform file dialogs must have their own dependencies and explicit
-enablement; they must not enter Core or download packages during a frame.
-
-## Extraction contract
-
-- Use the host's ImGui target and context. No renderer, event loop, windowing
-  toolkit or platform backend is imposed by a module.
-- Keep stable IDs and interaction state per view/context. Do not share a static
-  selected point, drag operation or camera between unrelated views.
-- Accept lightweight views/callbacks over host data. Avoid JUCE strings, engine
-  types, repository paths, SDK jobs or a mandatory JSON library in public Core APIs.
-- Report begin/update/commit/cancel gestures or edit proposals. The host performs
-  validation and records one Undo transaction per committed gesture. Rendering
-  does not bypass revision checks or mutate a live engine directly.
-- Preserve host interpolation, time units, logarithmic ranges, missing-data
-  semantics and integer counter precision. Do not silently reinterpret them.
-- Draw only visible rows and bounded samples. Waveform providers return min/max
-  envelopes for the visible resolution; trace providers query the visible range.
-  Decoding, FFT, indexing, cache files and worker synchronization stay outside draw.
-- Take UI colors from palette roles and sizes from `dp()`/style. Semantic token
-  roles and data-series colors need explicit theme mappings. Preserve readability
-  in all five themes and both densities.
-- Keep localization strings supplied by the host and keep user content unchanged.
-  Python modules must use the same concepts without adding NumPy, PyAV or a 3D
-  engine to `import cyui`.
-- Track provenance before transferring source. Several surveyed projects declare
-  GPL/AGPL licenses and CyCode's instructions leave its project license to the
-  owner. This change moves only existing CyUI code under its existing MIT license;
-  no application implementation is incorporated by the survey.
-
-For each subsequent module, include a working Gallery example, API documentation,
-isolated build/link coverage, representative interaction checks, and an explicit
-adoption change in each consuming application. Consumers using copied CyUI source
-do not receive updates automatically.
-
-## Checking the available modules
+## Validation
 
 ```sh
-cmake -S . -B build/modules -DCYUI_BUILD_DEMO=OFF -DCYUI_BUILD_TESTS=ON
-cmake --build build/modules --config Release
-ctest --test-dir build/modules -C Release --output-on-failure
+cmake -S . -B build/check -DCYUI_BUILD_DEMO=OFF -DCYUI_MODULES=All -DCYUI_BUILD_TESTS=ON
+cmake --build build/check --config Release
+ctest --test-dir build/check -C Release --output-on-failure
+python -B tests/test_python_modules.py
+node --test tests/web_bridge.test.mjs
+python -B tests/module_matrix.py
 ```
 
-Repeat with Audio/Gallery both disabled, each enabled separately, and both enabled.
-The tests resolve Core, module and compatibility symbols against their selected
-libraries. `build_demo.bat` continues to build the full visual gallery.
+module_matrix.py supports `--generator`, `--make-program`, `--cmake` and an
+optional prebuilt host `--imgui-library` to avoid recompiling ImGui in each variant.
+It builds, links and runs each module separately and checks the dependency closure.
+The feature tests include real ImGui frames and gestures, UTF-8/CRLF/tab round trips,
+revision cancellation, exact int64 properties, bounded concurrent logs and diff
+reconstruction properties. `tests/capture_gallery.py` covers tabs 0–19 across all
+five themes and both densities with the Windows demo.
+
+GitHub Actions is configured for Windows, Linux and macOS native builds. A workflow
+file is not evidence that remote jobs have run. The local build/render validation
+for this revision uses Windows/MSVC; platform-specific CEF packaging still needs
+validation on each target OS. See [WEB.md](WEB.md) and [LICENSING.md](LICENSING.md).

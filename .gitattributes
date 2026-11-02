@@ -10,3 +10,4 @@
 *.bmp binary
 # Keep the bundled dependency byte-for-byte.
 third_party/imgui/** -text !eol
+third_party/texteditor/** -text !eol whitespace=cr-at-eol

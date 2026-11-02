@@ -1,0 +1,30 @@
+name: Build and test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build/check -DCYUI_BUILD_DEMO=OFF -DCYUI_MODULES=All -DCYUI_BUILD_TESTS=ON
+      - run: cmake --build build/check --config Release --parallel 4
+      - run: ctest --test-dir build/check -C Release --output-on-failure
+      - run: cmake -S tests/module_consumer -B build/core -DCYUI_SELECTED_MODULE=Core
+      - run: cmake --build build/core --config Release --parallel 4
+  python-and-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m pip install ".[ui]"
+      - run: python -B tests/test_python_modules.py
+      - run: node --test tests/web_bridge.test.mjs

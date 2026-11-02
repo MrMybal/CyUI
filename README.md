@@ -1,6 +1,11 @@
 # CyUI : l'interface Dear ImGui des logiciels Cy*
 
-CyUI est une library C++17 qui se pose **par-dessus Dear ImGui (1.92 ou plus)**.
+CyUI est une bibliothèque **MIT**, utilisable dans des projets commerciaux.
+Elle vise Windows, Linux et macOS avec le backend Dear ImGui fourni par l'application.
+Les validations locales de cette version ont été effectuées sous Windows ; la
+[matrice de plateformes](docs/WEB.md) précise les vérifications restantes.
+
+CyUI est une library C++17 (C++20 pour CodeEditor et CEF) qui se pose **par-dessus Dear ImGui (1.92 ou plus)**.
 Elle donne à n'importe quel logiciel ImGui le style de **CyDAW 2**, de
 **Shaderixel** et de **CyEngineHub**, au lieu du look ImGui de base.
 
@@ -71,18 +76,47 @@ target_link_libraries(mon_app PRIVATE CyUI::CyUI)
 
 ### Choisir les modules
 
-`CyUI::Core` contient les thèmes, widgets généraux et layouts.
-`CyUI::Audio` ajoute les knobs, faders et vu-mètres. `CyUI::Gallery` contient
-la galerie et l'éditeur de thème. Chaque cible peut être liée séparément.
-`CyUI::CyUI` conserve l'intégration complète existante.
+`CyUI::Core` fournit le socle. Les modules disponibles sont **Audio, Canvas,
+Plots, Curves, Nodes, Timeline, AudioViews, Code, Diff, CodeEditor, Inspector,
+Assets, Images, Viewport, Commands, Diagnostics, DocumentViews et Web**.
+Chaque application lie seulement les cibles utiles ; les dépendances entre modules
+sont résolues automatiquement. La galerie et les adaptateurs ImGuizmo/CEF sont optionnels.
 
-Pour une application sans audio ni galerie, désactive `CYUI_BUILD_AUDIO`,
-`CYUI_BUILD_GALLERY` et `CYUI_BUILD_DEMO`, inclus `<cyui/Core.h>` et lie
-`CyUI::Core`. Les options Audio et Gallery sont activées par défaut.
+```cmake
+set(CYUI_BUILD_DEMO OFF CACHE BOOL "" FORCE)
+set(CYUI_BUILD_AUDIO OFF CACHE BOOL "" FORCE)
+set(CYUI_BUILD_GALLERY OFF CACHE BOOL "" FORCE)
+set(CYUI_MODULES "Code;Diff;Inspector" CACHE STRING "" FORCE)
+add_subdirectory(external/CyUI)
+target_link_libraries(mon_app PRIVATE CyUI::Diff CyUI::Inspector)
+```
 
-Le [guide des modules](docs/MODULES.md) décrit les cibles disponibles et le
-découpage proposé après examen des interfaces des applications Cy* : canvas,
-plots, courbes, nœuds, timelines, code, différences, assets et viewports.
+`CyUI::CyUI` conserve l'API globale et lie les modules sélectionnés. Les contrôles
+Audio et Gallery gardent leurs options ON pour les intégrations existantes ; le
+nouveau sélecteur `CYUI_MODULES` est vide par défaut dans une application hôte.
+Le [guide des modules](docs/MODULES.md) décrit toutes les API, dépendances et
+frontières avec les moteurs et documents propres à chaque application.
+
+### Python et Web
+
+```sh
+python -m pip install -e ".[ui]"
+```
+
+`cyui` conserve le thème et les widgets généraux. `cyui_modules` ajoute les modules
+facultatifs en Python, avec des modèles importables sans moteur audio, vidéo ou 3D.
+Un [exemple de galerie Python](examples/python_modules.py) montre les interactions.
+
+Le module **Web** peut afficher une interface HTML/JavaScript issue de TypeScript,
+avec **CEF** comme moteur commun et un rendu dans une texture ImGui. CEF reste
+une dépendance explicite, distribuée séparément pour chaque OS/architecture.
+Le pont JavaScript/TypeScript et l'intégration iframe CyMD sont fournis dans `web/`.
+Le [guide Web](docs/WEB.md) précise les exemples C++/Python, les échanges de messages,
+les services nécessaires et le packaging Linux/macOS à valider.
+
+Le code CyUI reste MIT. Les dépendances conservent leurs propres licences et
+notices ; voir [licences](docs/LICENSING.md) et [notices tierces](THIRD_PARTY_NOTICES.md).
+Les applications examinées ne sont pas incluses ni modifiées.
 
 ## Pour les IA
 
@@ -114,11 +148,14 @@ La démo utilise une copie de Dear ImGui 1.93 WIP (docking) placée dans
 ## Arborescence
 
 ```
-include/cyui/   Core.h, CoreWidgets.h, modules/Audio.h, CyUI.h (compatibilité)
-src/            Theme.cpp, Widgets.cpp, Layout.cpp, Gallery.cpp, modules/Audio.cpp
-examples/       demo_win32_dx11/main.cpp
-docs/           AI_GUIDE.md, MODULES.md, screenshots/
-third_party/    imgui (pour la démo seulement)
+include/cyui/   Core.h, Interaction.h, modules/, adapters/, CyUI.h
+src/            Theme.cpp, Widgets.cpp, Layout.cpp, Gallery.cpp, modules/, adapters/
+python/         cyui.py, cyui_modules/
+web/            pont JavaScript/TypeScript et variables CSS
+examples/       demo_win32_dx11/, cef_helper/, web/, python_modules.py
+tests/          modèles, gestes, modules isolés, navigateur, captures
+docs/           AI_GUIDE.md, MODULES.md, WEB.md, LICENSING.md, screenshots/
+third_party/    imgui, texteditor (avec leurs licences)
 ```
 
 ## Développement

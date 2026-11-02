@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>CyUI Web bridge</title>
+<link rel="stylesheet" href="../../web/cyui-web.css">
+<body><main style="padding:24px"><h2>CyUI Web panel</h2><p>HTML and compiled TypeScript can share the native application theme.</p>
+<label>Message <input id="message" value="Hello from the web panel"></label> <button id="send">Send to host</button><pre id="status">Connecting…</pre></main>
+<script type="module">
+import {createCyUIBridge} from '../../web/cyui-web.js';
+const bridge = createCyUIBridge();
+window.addEventListener('pointerdown', event => bridge.send('test.pointer.any', {x: event.clientX, y: event.clientY, target: event.target.tagName}));
+bridge.on('host.reply', value => { if(value.focusInput) document.querySelector('#message').focus(); document.querySelector('#status').textContent = JSON.stringify(value, null, 2); bridge.send('test.reply', {received: true}); });
+document.querySelector('#send').onclick = () => bridge.send('chat.message', {text: document.querySelector('#message').value});
+const input = document.querySelector('#message');
+input.addEventListener('focus', () => bridge.send('test.focus', {focused: true}));
+input.addEventListener('pointerdown', () => bridge.send('test.pointer', {pressed: true}));
+input.addEventListener('input', () => bridge.send('test.input', {text: input.value}));
+const rect = input.getBoundingClientRect();
+bridge.send('page.ready', {title: document.title, input: {x: rect.x + rect.width/2, y: rect.y + rect.height/2}});
+</script></body></html>
