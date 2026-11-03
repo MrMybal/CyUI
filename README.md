@@ -61,6 +61,10 @@ The host owns validation and Undo transactions.
 `Code` provides syntax-colored source views and annotations. `CodeEditor` adds
 native editing with Undo/Redo and advanced editor hooks. `Diff` presents unified
 or side-by-side comparisons; repository access stays in the host application.
+The native Diff viewer uses one scrolling canvas for both columns, keeping rows
+aligned during wheel, trackpad and scrollbar movement. Long lines share a
+horizontal text offset while their line-number gutters stay visible. See
+[native Diff behavior and validation](docs/DIFF.md).
 
 ![Code and CodeEditor: annotated source and an editable C++ document](docs/screenshots/code-editor.png)
 

@@ -645,9 +645,13 @@ presentation heuristic; supply semantic parser/LSP results as overlays when need
   comparison; `setUnified(text, language)` reads a unified patch. `rows`, `pairs`,
   `hunks`, `columns`, `revision`, `approximate` expose prepared presentation data.
 - `diffViewer(id, DiffState&, document, size)` offers unified/side-by-side modes,
-  synchronized vertical scrolling, hunk/search navigation, inline changed ranges
+  one shared vertical canvas for both columns, a shared horizontal text offset
+  with fixed line-number gutters, hunk/search navigation, inline changed ranges
   and old/new line navigation results. Final-newline-only changes are represented;
   CRLF and LF lines compare equal, with a notice row when line endings differ.
+  `DiffState::scroll` reports the current vertical offset; assigning it requests
+  a scroll. Hosts should call this viewer directly, without mirroring child-window
+  offsets. See [DIFF.md](DIFF.md) for details and native regression coverage.
 - `expandTabs(text, tabSize)` widens tabs to the next stop as displayed;
   `displayOffset(raw, byteOffset, tabSize)` maps a raw byte offset to that display text.
 

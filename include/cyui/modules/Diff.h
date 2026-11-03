@@ -47,6 +47,7 @@ class CYUI_API DiffDocument {
 };
 struct DiffState {
     bool split = true;
+    // Shared vertical offset, reported after input; assigning it requests a scroll.
     float scroll = 0;
     int selected = -1, focus = -1, hunk = -1;
     std::string query;
@@ -54,5 +55,7 @@ struct DiffState {
 struct DiffResult {
     int row = -1, oldLine = 0, newLine = 0;
 };
+// Split columns share one vertical canvas and one horizontal text offset.
+// Line-number gutters stay visible when horizontally scrolling long source lines.
 CYUI_API DiffResult diffViewer(const char *id, DiffState &, const DiffDocument &, ImVec2 size = {});
 } // namespace cyui
