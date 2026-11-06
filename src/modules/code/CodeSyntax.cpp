@@ -236,6 +236,9 @@ std::vector<CodeToken> highlightCode(std::string_view text,CodeLanguage language
     if (dynamic && dynamic->definition.rules) return ruleTokens(text,*dynamic->definition.rules);
     if (language==CodeLanguage::log || (dynamic && dynamic->definition.base==CodeLanguage::log)) return logTokens(text);
     const auto *p=dynamic ? &dynamic->profile : builtin(language);
+    if (language==CodeLanguage::verse || (dynamic && dynamic->definition.base==CodeLanguage::verse)) {
+        auto tokens=detail::verseTokens(text,*p);validate(text,tokens);return tokens;
+    }
     if (!p || !p->module || language==CodeLanguage::plain || language==CodeLanguage::nfo) return text.empty() ? std::vector<CodeToken>{} : std::vector<CodeToken>{{0,text.size(),TokenRole::text}};
     auto styles=detail::lexSource(text,*p);
     std::unordered_set<std::string> functions(p->functions.begin(),p->functions.end());

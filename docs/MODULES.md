@@ -29,7 +29,7 @@ without adding a dependency. See [FILTERING.md](FILTERING.md).
 | `CyUI::Nodes` | `modules/Nodes.h` | Cards, pins, links, layout, move/connect/remove requests | Canvas |
 | `CyUI::Timeline` | `modules/Timeline.h` | Lanes, clips, markers, ruler, move/trim, range selection | Canvas |
 | `CyUI::AudioViews` | `modules/AudioViews.h` | Waveforms, spectrum, oscilloscope, stereo scope | Plots |
-| `CyUI::Code` | `modules/Code.h` | Source viewer, 101 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
+| `CyUI::Code` | `modules/Code.h` | Source viewer, 102 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
 | `CyUI::Diff` | `modules/Diff.h` | Unified/split diff, line numbers, hunk navigation, inline ranges | Code |
 | `CyUI::CodeEditor` | `modules/CodeEditor.h` | Native editable source, Undo/Redo, multiple cursors, completion hooks | Code + MIT TextEditor, C++20 |
 | `CyUI::Inspector` | `modules/Inspector.h` | Typed properties, exact int64, validation, draft edits | Core |

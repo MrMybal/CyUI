@@ -21,7 +21,7 @@ static void catalogue() {
     const std::pair<CodeLanguage,const char*> fixtures[]={
 #include "CodeLanguageSamples.inc"
     };
-    const auto items=codeLanguages();check(items.size()==101,"Expected 101 built-in syntax modes");
+    const auto items=codeLanguages();check(items.size()==102,"Expected 102 built-in syntax modes");
     check(std::size(fixtures)==items.size(),"Each built-in mode needs an independent fixture");
     std::set<std::string> ids;std::set<CodeLanguage> values;
     for (const auto &item : items) {
@@ -69,7 +69,7 @@ static void catalogue() {
     const auto start=std::chrono::steady_clock::now();highlightCode(large,CodeLanguage::hlsl);
     const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     check(elapsed<5000,"Shader lexer exceeded five seconds for 10,000 lines");
-    std::cout<<"101 syntax fixtures; HLSL 10,000 lines: "<<elapsed<<" ms\n";
+    std::cout<<"102 syntax fixtures; HLSL 10,000 lines: "<<elapsed<<" ms\n";
 }
 static void extensions() {
     CodeLanguageDefinition definition;definition.id="test/cyconfig";definition.name="CyConfig";definition.extensions={"cycfg"};
@@ -147,8 +147,42 @@ static void logs() {
     editor.native().Undo();editor.refreshSyntax();check(editor.text()==before && editor.native().GetSharedSyntaxColor({0,0})==TextEditor::Color::sharedError,"Log Undo lost bytes or severity");
 #endif
 }
+static void verse() {
+    check(codeLanguageFromName("Verse")==CodeLanguage::verse &&
+          codeLanguageForPath("Content/Devices/MyDevice.VERSE")==CodeLanguage::verse &&
+          codeLanguageForPath("Verse.digest.verse")==CodeLanguage::verse,"Verse identity/associations");
+    const std::string text="using { /Verse.org/Simulation }\r\n"
+        "<# outer <# nested #> still comment #>\r\n"
+        "counter := class:\r\n    @editable\r\n    var Score:int = 42\r\n"
+        "    OnBegin<override>()<suspends>:void = Print(\"Score {Score + 1}\")\r\n";
+    check(role(text,CodeLanguage::verse,"using")==TokenRole::keyword,"Verse keyword");
+    check(role(text,CodeLanguage::verse,"nested")==TokenRole::comment &&
+          role(text,CodeLanguage::verse,"still")==TokenRole::comment,"Nested Verse comment");
+    check(role(text,CodeLanguage::verse,"@editable")==TokenRole::preprocessor,"Verse attribute");
+    check(role(text,CodeLanguage::verse,"int")==TokenRole::type,"Verse primitive type");
+    check(role(text,CodeLanguage::verse,"OnBegin")==TokenRole::function,"Verse modified function");
+    const auto source=text+"# UTF-8: café 🛠\n";
+    CodeDocument document;document.setText(source,CodeLanguage::verse,5);
+    check(document.text()==source,"Verse syntax changed UTF-8/CRLF bytes");
+    CodeLanguageDefinition plugin;plugin.id="test/verse";plugin.name="Verse dialect";
+    plugin.base=CodeLanguage::verse;plugin.extensions={"verse"};plugin.wordLists={"custom"};
+    const auto derived=registerCodeLanguage(plugin);
+    check(codeLanguageForPath("MyDevice.verse")==derived,"Verse plugin association");
+    check(role("custom Counter:int",derived,"custom")==TokenRole::keyword &&
+          role("custom Counter:int",derived,"int")==TokenRole::type,"Inherited Verse word families");
+    check(role("<# a <# b #> c #>",derived,"c")==TokenRole::comment,"Plugin inherited native Verse scanner");
+    unregisterCodeLanguage(plugin.id);
+    check(codeLanguageForPath("MyDevice.verse")==CodeLanguage::verse,"Verse association restoration");
+#ifdef CYUI_HAS_CODEEDITOR
+    CodeEditor editor;editor.setLanguageForPath("device.verse");editor.setText(source);editor.refreshSyntax();
+    check(editor.native().GetSharedSyntaxColor({0,0})==TextEditor::Color::keyword,"Verse editor shared keyword");
+    editor.native().SelectAll();editor.native().ReplaceTextInCurrentCursor("var Value:int = 7");editor.refreshSyntax();
+    editor.native().Undo();editor.refreshSyntax();check(editor.text()==source,"Verse Undo lost source bytes");
+    editor.native().Redo();editor.refreshSyntax();check(editor.text()=="var Value:int = 7","Verse Redo failed");
+#endif
+}
 int main() {
     ImGui::CreateContext();
-    try { catalogue();extensions();logs();ImGui::DestroyContext();std::cout<<"Shared catalogue, shader types/intrinsics, plugin registration/rules/callbacks/removal and editor revisions passed\n";return 0; }
+    try { catalogue();extensions();logs();verse();ImGui::DestroyContext();std::cout<<"Shared catalogue, shader types/intrinsics, plugin registration/rules/callbacks/removal and editor revisions passed\n";return 0; }
     catch (const std::exception &error) { std::cerr<<error.what()<<'\n';ImGui::DestroyContext();return 1; }
 }

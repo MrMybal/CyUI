@@ -822,7 +822,7 @@ automation tests, platform validation and current input/backend limitations.
 
 ## Shared C++ syntax catalogue and plugin engines
 
-`CyUI::Code` owns 101 built-in syntax modes, including HLSL and GLSL. CodeEditor,
+`CyUI::Code` owns 102 built-in syntax modes, including HLSL, GLSL and Verse. CodeEditor,
 CodeDocument and Diff share it. Read [CODE.md](CODE.md) before implementing a host
 syntax extension. Use `codeLanguages()` for menus and `codeLanguageForPath()` for
 associations; avoid maintaining a second list in the application.

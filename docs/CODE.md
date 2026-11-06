@@ -8,7 +8,7 @@ to build the committed catalogue. Exactly one compatible ImGui instance is used.
 
 ## Built-in modes
 
-`codeLanguages()` returns 101 owned metadata snapshots. The canonical list,
+`codeLanguages()` returns 102 owned metadata snapshots. The canonical list,
 file associations and original shader profiles are in `data/code-languages.json`.
 It covers the Notepad++ syntax-mode list used by the host migration, plus HLSL,
 GLSL, Markdown, TSX and an Unreal C++ profile. Each mode has its own fixture.
@@ -95,7 +95,7 @@ three licenses and THIRD_PARTY_NOTICES.md when redistributing Code.
 
 To regenerate, obtain the three locked trees, verify checksums, then run
 `python tools/generate_code_languages.py --help` and supply their roots. Review
-the generated diff and run the `cyui_code_languages` CTest. It tests all 101
+the generated diff and run the `cyui_code_languages` CTest. It tests all 102
 fixtures, associations, shaders, custom rules, inherited engines, custom callback
 validation, registry updates/removal and native editor revision/Undo behavior.
 
@@ -122,3 +122,25 @@ Stack-trace continuation lines without a level remain normal; inferred multiline
 events and stripping escape sequences belong to a dedicated log-viewing host.
 Plugins can inherit `base = CodeLanguage::log` for other extensions, or supply a
 callback for a logger with different level names or classification rules.
+
+## Verse
+
+`CodeLanguage::verse` / `verse` selects the original native Verse scanner;
+`.verse` matching is case-insensitive, including `*.digest.verse`. No UEFN SDK,
+new Lexilla engine or language server is linked. CodeEditor and CodeDocument use
+the same tokens. Keywords, built-in types, effect/access specifiers, attributes,
+call names, decimal/hexadecimal/exponent numbers, strings and characters have
+semantic palette roles. `#` comments, nested `<# ... #>` comments and `<#>`
+indented comments preserve their state across lines. Double-quoted interpolation
+colors expressions, including nested braces, strings and comments; escaped braces
+stay string text. Unterminated comments/strings remain colored through EOF.
+Interpolation/string nesting is bounded to 63 frames; a deeper remainder is
+displayed as string text. Syntax preparation never edits source or Undo history.
+
+Plugins can inherit `base = CodeLanguage::verse`; word sets 0/1/2 replace keyword,
+type and function families. Empty entries inherit defaults. Rules/callbacks still
+take precedence; associations still restore after plugin removal.
+This is lexical support, not Verse compilation, UEFN completion or semantic analysis.
+
+References: [Book of Verse](https://verselang.github.io/book/00_overview/) and
+[Epic's Verse reference](https://dev.epicgames.com/documentation/en-us/fortnite/verse-language-reference).

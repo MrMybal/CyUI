@@ -99,4 +99,5 @@
 {CodeLanguage::yaml,"# note\nvalue: 42\nname: \"text\"\n"},
 {CodeLanguage::tsx,"// note\nconst view = <Widget title=\"text\" />;\n"},
 {CodeLanguage::unreal,"// note\nUCLASS(BlueprintType) class UWidget : public UObject {};\n"},
+{CodeLanguage::verse,"using { /Verse.org/Simulation }\n# note\nexample := class:\n    @editable\n    var Score:int = 42\n    OnBegin<override>()<suspends>:void = Print(\"Score {Score}\")\n"},
 {CodeLanguage::log,"[2026-11-02] LogTemp: Error: test failure\n[WARN] test warning\nNormal message\n"},
