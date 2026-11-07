@@ -74,6 +74,7 @@ def main():
         raise RuntimeError('Export must remain inside the generation cache')
     if output.exists():
         shutil.rmtree(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
     settings = json.loads((HERE / 'cydoc.config.json').read_text('utf-8'))
     settings['out'] = '../Documentation'
     # Keep the original project-relative paths in API/source links while making

@@ -72,6 +72,7 @@ static void catalogue() {
     std::cout<<"102 syntax fixtures; HLSL 10,000 lines: "<<elapsed<<" ms\n";
 }
 static void extensions() {
+    const auto builtinCount=codeLanguages().size();
     CodeLanguageDefinition definition;definition.id="test/cyconfig";definition.name="CyConfig";definition.extensions={"cycfg"};
     CodeSyntaxRules rules;rules.keywords={"option"};rules.types={"number"};rules.lineComment="#";
     rules.blockCommentStart="/*";rules.blockCommentEnd="*/";definition.rules=rules;
@@ -100,7 +101,7 @@ static void extensions() {
     callback.id="cpp";rejected=false;try { registerCodeLanguage(callback); } catch (const std::invalid_argument&) { rejected=true; }
     check(rejected,"A plugin replaced a built-in language");
     check(unregisterCodeLanguage("test/custom") && unregisterCodeLanguage("test/cyconfig"),"Plugin removal");
-    check(codeLanguageForPath("settings.cycfg")==CodeLanguage::plain && codeLanguages().size()==101,"Plugin removal did not restore catalogue");
+    check(codeLanguageForPath("settings.cycfg")==CodeLanguage::plain && codeLanguages().size()==builtinCount,"Plugin removal did not restore catalogue");
     check(cached.setText(text,language,9),"Removing a plugin left stale cached syntax");
 #ifdef CYUI_HAS_CODEEDITOR
     CodeEditor editor;editor.setLanguage(CodeLanguage::hlsl);editor.setText("float4 Main() { return float4(1,2,3,4); }");editor.refreshSyntax();
