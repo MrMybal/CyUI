@@ -1,0 +1,16 @@
+{
+  "name": "cyui-documentation",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "python build.py",
+    "check": "python build.py --check"
+  },
+  "dependencies": {
+    "cydoc": "file:vendor/cydoc-0.1.0.tgz",
+    "esbuild": "0.25.12"
+  }
+}

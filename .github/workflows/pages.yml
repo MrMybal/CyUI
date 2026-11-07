@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'site/**'
+      - '.CyDocBuild/**'
+      - 'Documentation/**'
+      - 'include/cyui/**'
       - 'tools/build_showcase.py'
       - 'tests/test_showcase.py'
       - '.github/workflows/pages.yml'
@@ -26,6 +29,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate the complete offline manual and translations
+        run: |
+          npm ci --prefix .CyDocBuild --omit=optional
+          python .CyDocBuild/build.py --check
+          python -B tests/test_documentation.py
       - name: Validate generated pages, resources and navigation
         run: python -B tests/test_showcase.py
       - name: Configure GitHub Pages

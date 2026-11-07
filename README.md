@@ -287,7 +287,15 @@ and the repository's native, Python, Web and Unreal tests.
 
 ## Documentation and license
 
-- [Static showcase and bilingual HTML integration guide](site/README.md)
+Open [Documentation/Documentation.html](Documentation/Documentation.html) directly
+from disk for the complete English/French CyDoc manual, API recipes, screenshots,
+search and in-window image enlargement. Keep its entire folder together. The
+Windows demo opens it through **Help → Documentation** or **F1**; the Python gallery
+also provides contextual help. Reading needs no server, CDN or Internet connection.
+
+Documentation authors: [regeneration and distribution](.CyDocBuild/README.md).
+
+- [Static showcase and bundled CyDoc reader](site/README.md)
 - [Integration, style rules, API and migration recipes](docs/AI_GUIDE.md)
 - [Module boundaries and dependency selection](docs/MODULES.md)
 - [Web / CEF](docs/WEB.md) and [Unreal Editor](docs/UNREAL.md)

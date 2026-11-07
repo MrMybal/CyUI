@@ -29,6 +29,7 @@ from cyui_modules.web import web_panel, theme_message
 
 class ModuleGallery:
     def __init__(self, image=None, web=None):
+        self.active_page = 'Canvas'
         self.initialized = False
         self.image, self.web = image or ImageData(0, 256, 256), web
         self.canvas = CanvasState()
@@ -153,13 +154,38 @@ class ModuleGallery:
         languages = c.available_locales()
         changed, selected = i.combo(c.tr_label('Language'), [code for code, _ in languages].index(c.locale()), [name for _, name in languages])
         if changed: c.set_locale(languages[selected][0])
+        i.same_line()
+        help_requested = c.button(c.tr_label('Documentation'))
+        help_requested = (i.is_window_focused(i.FocusedFlags_.root_and_child_windows)
+                          and i.is_key_pressed(i.Key.f1, False)) or help_requested
         if i.begin_tab_bar('##modules', i.TabBarFlags_.fitting_policy_scroll):
             for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
                 shown, _ = i.begin_tab_item(c.tr_label(name))
                 if shown:
+                    self.active_page = name
                     self.draw_page(name)
                     i.end_tab_item()
             i.end_tab_bar()
+        if help_requested:
+            from cyui_modules.help import open_documentation
+            pages = {'Code': ('code', ''), 'Diff': ('diff', ''), 'Filtering': ('filtering', ''),
+                     'Web': ('web', ''), 'Canvas': ('module-recipes', 'canvas-and-numeric-plots'),
+                     'Plots': ('module-recipes', 'canvas-and-numeric-plots'),
+                     'Curves': ('module-recipes', 'curves-graphs-and-timeline'),
+                     'Nodes': ('module-recipes', 'curves-graphs-and-timeline'),
+                     'Timeline': ('module-recipes', 'curves-graphs-and-timeline'),
+                     'Audio': ('module-recipes', 'audio-controls-and-prepared-signal-views'),
+                     'Audio views': ('module-recipes', 'audio-controls-and-prepared-signal-views'),
+                     'Inspector': ('module-recipes', 'inspector-and-assets'),
+                     'Assets': ('module-recipes', 'inspector-and-assets'),
+                     'Images': ('module-recipes', 'images-viewport-and-optional-3d-gizmo'),
+                     'Viewport': ('module-recipes', 'images-viewport-and-optional-3d-gizmo')}
+            page, section = pages.get(self.active_page, ('module-recipes', 'commands-logs-and-documents'))
+            try:
+                if not open_documentation(page, section, locale=c.locale()):
+                    c.notify(c.tr('Unable to open local documentation. Keep the Documentation folder beside the demo.'), tone='error')
+            except (OSError, ValueError):
+                c.notify(c.tr('Unable to open local documentation. Keep the Documentation folder beside the demo.'), tone='error')
         i.end()
         c.render_notifications()
 

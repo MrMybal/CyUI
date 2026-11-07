@@ -2,9 +2,10 @@
 
 This directory is a self-contained website for GitHub Pages. English is the
 default (`index.html`); the complete French pages are under `fr/`. Both languages
-include a practical HTML integration guide (`guide.html` / `fr/guide.html`).
-There was no CyDoc reader in this repository to replace. Advanced API references
-remain in the existing English source documentation and are identified as such.
+include the genuine CyDoc reader under `Documentation/`. The former `guide.html`
+URLs redirect their existing chapters to this reader in the selected language.
+The complete English/French manual opens locally through file:// without a server.
+See [the documentation workspace](../.CyDocBuild/README.md) to regenerate it.
 
 ## Preview locally
 
@@ -18,13 +19,13 @@ Then visit `http://127.0.0.1:8000/`. The HTML, styles, scripts, guide and screen
 work offline; GitHub source references and release downloads require a connection
 and access to the repository. The site makes no external font, script or analytics
 requests. JavaScript adds image enlargement, theme previews, the mobile menu and
-module filtering; content and guide links also remain accessible without it.
+module filtering; showcase content remains accessible without it. The CyDoc reader needs JavaScript.
 
 ## Update the pages
 
 Edit `tools/build_showcase.py` for bilingual content and document structure.
 Edit `site/assets/site.css` and `site/assets/site.js` for presentation and behavior.
-Then regenerate the four HTML pages:
+Then regenerate the two showcase pages and two compatibility redirects:
 
 ```sh
 python tools/build_showcase.py
@@ -57,7 +58,7 @@ ratio and is bounded by the available first-screen height on desktop.
 ## GitHub Pages readiness
 
 Publish **the contents of `site/`** as the Pages artifact when deployment is
-requested. Keep `fr/`, `assets/` and `.nojekyll` together. All resource/navigation
+requested. Keep `fr/`, `assets/`, `Documentation/` and `.nojekyll` together. All resource/navigation
 paths are relative, so the site works at an origin root or a project subpath
 such as `/CyUI/`. There are no SPA rewrites or server-side requirements.
 

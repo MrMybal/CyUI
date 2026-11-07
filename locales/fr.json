@@ -403,6 +403,11 @@
     "error": "erreur",
     "info": "information",
     "sRGB": "sRGB",
-    "warning": "avertissement"
+    "warning": "avertissement",
+    "Documentation": "Documentation",
+    "Module reference": "Référence des modules",
+    "Quick filters": "Filtres rapides",
+    "Localization guide": "Guide de localisation",
+    "Unable to open local documentation. Keep the Documentation folder beside the demo.": "Impossible d’ouvrir la documentation locale. Conservez le dossier Documentation à côté de la démo."
   }
 }

@@ -3,6 +3,7 @@
 // Win32 + Direct3D 11, from Dear ImGui's own example.
 
 #include <cyui/CyUI.h>
+#include "Help.h"
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
@@ -292,6 +293,11 @@ LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 // ---- The application's interface ---------------------------------------------
 
 struct App {
+    void help(const char* pageId = "overview", const char* section = "")
+    {
+        if (!demo_help::open(cyui::locale(), pageId, section))
+            cyui::notify(cyui::tr("Unable to open local documentation. Keep the Documentation folder beside the demo.").c_str(), cyui::Tone::error);
+    }
     int page = 0;
     cyui::GalleryResources resources;
     int galleryTab = -1;
@@ -327,6 +333,13 @@ struct App {
                         cyui::setTheme(theme.key.c_str());
                 ImGui::EndMenu();
             }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu(trLabel("Help").c_str())) {
+            if (ImGui::MenuItem(trLabel("Documentation").c_str(), "F1")) help();
+            if (ImGui::MenuItem(trLabel("Module reference").c_str())) help("modules");
+            if (ImGui::MenuItem(trLabel("Quick filters").c_str())) help("filtering");
+            if (ImGui::MenuItem(trLabel("Localization guide").c_str())) help("localization");
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -572,6 +585,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     createGalleryTexture();
     createImagePreviews();
     App app;
+    app.resources.openDocumentation = [&](const char* pageId, const char* section) { app.help(pageId, section); };
     app.resources.texture=ImTextureID(reinterpret_cast<std::uintptr_t>(gGalleryTexture));app.resources.width=app.resources.height=256;
     for (std::size_t i = 0; i < gImagePreviews.size(); ++i)
         app.resources.imagePreviews[i] = ImTextureID(reinterpret_cast<std::uintptr_t>(gImagePreviews[i]));
@@ -628,6 +642,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+        if (ImGui::IsKeyPressed(ImGuiKey_F1, ImGuiInputFlags_None, ImGuiKeyOwner_NoOwner)) app.help();
         if (galleryOnly) {
             const auto* viewport = ImGui::GetMainViewport();
             ImGui::SetNextWindowPos(viewport->WorkPos);

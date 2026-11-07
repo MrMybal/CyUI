@@ -44,3 +44,12 @@ comes from the pinned SciTE properties and original CyUI shader profiles, with
 notices retained. No Notepad++ source, GPL configuration or plugin binary is bundled.
 The built-in list describes syntax modes; it does not imply a compiler, language
 server, debugger or compatibility with the Notepad++ plugin ABI.
+
+## CyDoc documentation reader
+
+The offline documentation uses CyDoc 0.1.0 (MIT), built from revision
+`e038c474577e1f305df3eba421f2b9c03b0f1d8d` of
+[MrMybal/CyDoc](https://github.com/MrMybal/CyDoc). Its MIT permission and copyright
+notice is distributed in `Documentation/DocData/CyDoc-LICENSE.txt`.
+The selected image and gallery modules add no Three.js runtime. Markdown parsing,
+highlighting and bundling dependencies are generation tools, not reader dependencies.

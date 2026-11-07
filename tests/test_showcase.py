@@ -69,14 +69,21 @@ class Showcase(unittest.TestCase):
                     target = ((SITE / name).parent / unquote(url.path)).resolve() if url.path else (SITE / name).resolve()
                     self.assertTrue(target.is_relative_to(SITE.resolve()))
                     self.assertTrue(target.is_file(), target)
-                    if url.fragment and target.suffix == ".html":
+                    if url.fragment.startswith("/") and target.name == "Documentation.html":
+                        manifest = json.loads((target.parent / "DocData/manifest.json").read_text(encoding="utf-8"))
+                        locale, page_id, *anchor = unquote(url.fragment).strip("/").split("/")
+                        page = next(p for p in manifest["pages"] if p["locale"] == locale and p["id"] == page_id)
+                        if anchor:
+                            self.assertIn(anchor[0], [h["id"] for h in page["headings"]])
+                    elif url.fragment and target.suffix == ".html":
                         self.assertIn(unquote(url.fragment), Document(target).ids)
 
     def test_language_pages_are_complete_static_documents(self):
         for name, document in self.documents.items():
             self.assertEqual(document.language, "fr" if name.startswith("fr/") else "en")
             self.assertIn("main", document.ids)
-            self.assertIn("image-dialog", document.ids)
+            if name.endswith("index.html"):
+                self.assertIn("image-dialog", document.ids)
             self.assertEqual(document.tags.count("h1"), 1)
             for image in document.images:
                 self.assertIn("alt", image)

@@ -52,6 +52,9 @@ jobs:
         with:
           node-version: '22'
       - run: python -m pip install .
+      - run: npm ci --prefix .CyDocBuild --omit=optional
+      - run: python .CyDocBuild/build.py --check
+      - run: python -B tests/test_documentation.py
       - run: python -B tests/test_showcase.py
       - run: python -B tools/generate_locales.py --check
       - run: python -B tests/test_python_modules.py

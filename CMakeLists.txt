@@ -300,7 +300,21 @@ if(CYUI_BUILD_DEMO AND WIN32)
         endif()
     endif()
     target_include_directories(cyui_demo PRIVATE ${CYUI_IMGUI_DIR}/backends)
-    target_link_libraries(cyui_demo PRIVATE CyUI::CyUI d3d11 dxgi d3dcompiler dwmapi shell32)
+    target_link_libraries(cyui_demo PRIVATE CyUI::CyUI d3d11 dxgi d3dcompiler dwmapi shell32 shlwapi)
+    option(CYUI_REGENERATE_DOCUMENTATION "Regenerate the manual with the locally installed CyDoc toolchain" OFF)
+    if(CYUI_REGENERATE_DOCUMENTATION)
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        add_custom_target(cyui_regenerate_documentation
+            COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/.CyDocBuild/build.py"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+        add_dependencies(cyui_demo cyui_regenerate_documentation)
+    endif()
+    add_custom_command(TARGET cyui_demo POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Documentation" "$<TARGET_FILE_DIR:cyui_demo>/Documentation")
+    add_custom_target(cyui_demo_documentation ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/Documentation" "$<TARGET_FILE_DIR:cyui_demo>/Documentation"
+        DEPENDS cyui_demo
+        COMMENT "Stage the complete offline CyDoc manual beside the demo")
     if(MSVC)
         target_compile_options(cyui_demo PRIVATE /utf-8)
     endif()
@@ -308,6 +322,15 @@ endif()
 
 if(CYUI_BUILD_TESTS)
     enable_testing()
+    if(WIN32)
+        add_executable(cyui_test_help tests/help_win32.cpp)
+        target_compile_features(cyui_test_help PRIVATE cxx_std_17)
+        target_link_libraries(cyui_test_help PRIVATE shlwapi shell32)
+        if(MSVC)
+            target_compile_options(cyui_test_help PRIVATE /utf-8)
+        endif()
+        add_test(NAME cyui_test_help COMMAND cyui_test_help)
+    endif()
     add_executable(cyui_test_features tests/features.cpp)
     target_link_libraries(cyui_test_features PRIVATE CyUI::CyUI)
     cyui_configure_target(cyui_test_features)

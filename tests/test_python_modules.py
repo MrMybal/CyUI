@@ -384,6 +384,22 @@ class Frames(unittest.TestCase):
         for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
             self.frame(lambda: gallery.draw_page(name))
 
+    def test_example_gallery_f1_opens_local_contextual_help(self):
+        import importlib.util
+        from unittest.mock import patch
+        from cyui_modules.locale import locale_scope
+        path = Path(__file__).resolve().parents[1]/'examples/python_modules.py'
+        spec = importlib.util.spec_from_file_location('cyui_help_example', path)
+        example = importlib.util.module_from_spec(spec); spec.loader.exec_module(example)
+        gallery = example.ModuleGallery()
+        with locale_scope('fr'), patch('cyui_modules.help.open_documentation', return_value=True) as opened:
+            self.frame(gallery.draw)
+            i.get_io().add_key_event(i.Key.f1, True)
+            self.frame(gallery.draw)
+            opened.assert_called_once_with('module-recipes', 'canvas-and-numeric-plots', locale='fr')
+            i.get_io().add_key_event(i.Key.f1, False)
+            self.frame(gallery.draw)
+
     def test_filter_text_entry_and_section_preferences(self):
         state = TextFilter()
         draw = lambda: c.filter_box('filter', state)

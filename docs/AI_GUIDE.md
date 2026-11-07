@@ -1,5 +1,11 @@
 # CyUI — guide for AI agents
 
+Human documentation is maintained in `.CyDocBuild/manual/en/` and `manual/fr/`
+and exported to `Documentation/Documentation.html`. This file remains the agent
+integration contract; it is not a page in the human reader. See
+`../.CyDocBuild/README.md` for regeneration. Ship the complete generated reader
+for local help; never point user-facing help at this file or Markdown sources.
+
 You are restyling, or building, a Dear ImGui desktop interface. Use **CyUI**
 (for example, in `external/CyUI`). Read this whole file first. The code of
 every example is in `src/Gallery.cpp`.
@@ -415,6 +421,12 @@ theme's style.
   Viewport), `web` (a live Web backend) and `previewCommands`.
 - `showThemeEditor(&open)`: live palette editing and `.cytheme`
   save and load.
+
+`GalleryResources::openDocumentation(page, section)` is an optional host callback
+for contextual help. The Filtering example's Help action requests
+`filtering/searchable-menus`. Keep the callback owner alive during drawing.
+Gallery and Core never open a browser themselves. The standalone demo resolves
+the complete local `Documentation/Documentation.html` tree beside its executable.
 
 ---
 

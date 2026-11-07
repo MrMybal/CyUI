@@ -403,6 +403,11 @@
     "error": "error",
     "info": "info",
     "sRGB": "sRGB",
-    "warning": "warning"
+    "warning": "warning",
+    "Documentation": "Documentation",
+    "Module reference": "Module reference",
+    "Quick filters": "Quick filters",
+    "Localization guide": "Localization guide",
+    "Unable to open local documentation. Keep the Documentation folder beside the demo.": "Unable to open local documentation. Keep the Documentation folder beside the demo."
   }
 }

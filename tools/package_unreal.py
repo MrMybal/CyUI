@@ -139,6 +139,7 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     notices = output/'THIRD_PARTY_NOTICES.md'
     notices.write_text(notices.read_text(encoding='utf8').replace('(third_party/', '(ThirdParty/CyUI/third_party/'), encoding='utf8')
     (output/'.gitattributes').write_text('ThirdParty/CyUI/third_party/** -text !eol\n', encoding='utf8')
+    shutil.copytree(ROOT/'Documentation', library/'Documentation')
     shutil.copytree(ROOT/'docs', library/'docs', ignore=shutil.ignore_patterns('screenshots'))
     (output/'Config').mkdir(exist_ok=True)
     (output/'Config/FilterPlugin.ini').write_text('[FilterPlugin]\n/ThirdParty/...\n/LICENSE\n/THIRD_PARTY_NOTICES.md\n', encoding='utf8')

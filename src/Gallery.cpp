@@ -432,8 +432,13 @@ void layoutPage()
 #endif
 }
 
-void filteringPage()
+void filteringPage(const GalleryResources& resources)
 {
+    const auto dispatch = [&](ItemId action) {
+        if (action == 22 && resources.openDocumentation)
+            resources.openDocumentation("filtering", "searchable-menus");
+        else if (action) notify(tr("Menu action requested").c_str(), Tone::info);
+    };
     sectionTitle(tr("Searchable menus and panels").c_str());
     textDim("%s", tr("Try a property, section or menu action. Words can match English or the selected language.").c_str());
     static TextFilter panelFilter = [] { TextFilter value; value.query = "surface"; return value; }();
@@ -481,11 +486,11 @@ void filteringPage()
         ImGui::TableNextColumn();
         if (beginCard("##filterMenu", tr("Menu filter").c_str(), 420)) {
             const auto action = filterMenu("##actions", menuFilter, actions, {300, false, false});
-            if (action) notify(tr("Menu action requested").c_str(), Tone::info);
+            dispatch(action);
             space();
             if (button(trLabel("Open searchable menu").c_str())) ImGui::OpenPopup("##searchableMenu");
             if (ImGui::BeginPopup("##searchableMenu")) {
-                if (filterMenu("##popup", popupFilter, actions)) notify(tr("Menu action requested").c_str(), Tone::info);
+                dispatch(filterMenu("##popup", popupFilter, actions));
                 ImGui::EndPopup();
             }
         }
@@ -1103,7 +1108,7 @@ void showGallery(bool* open, const int selectTab,const GalleryResources& resourc
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem(trLabel("Filtering").c_str(), nullptr, selected == 21 ? ImGuiTabItemFlags_SetSelected : 0)) {
-            filteringPage();
+            filteringPage(resources);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

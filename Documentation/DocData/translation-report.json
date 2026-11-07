@@ -1,0 +1,218 @@
+{
+  "defaultLocale": "en",
+  "missing": [],
+  "outdated": [],
+  "untracked": [
+    {
+      "id": "api-core",
+      "title": "Core entry point",
+      "locale": "fr",
+      "expectedRevision": "4a8d816428fd"
+    },
+    {
+      "id": "api-set-locale",
+      "title": "setLocale",
+      "locale": "fr",
+      "expectedRevision": "20177f058721"
+    },
+    {
+      "id": "api-diff-viewer",
+      "title": "diffViewer",
+      "locale": "fr",
+      "expectedRevision": "04e66b98328b"
+    },
+    {
+      "id": "source-include-cyui-core-h",
+      "title": "Core.h",
+      "locale": "fr",
+      "expectedRevision": "1e3dd3a0320c"
+    },
+    {
+      "id": "source-include-cyui-corewidgets-h",
+      "title": "CoreWidgets.h",
+      "locale": "fr",
+      "expectedRevision": "2a76f44ce769"
+    },
+    {
+      "id": "source-include-cyui-cyui-h",
+      "title": "CyUI.h",
+      "locale": "fr",
+      "expectedRevision": "441acf52dd27"
+    },
+    {
+      "id": "source-include-cyui-export-h",
+      "title": "Export.h",
+      "locale": "fr",
+      "expectedRevision": "edb0bc2513e5"
+    },
+    {
+      "id": "source-include-cyui-filter-h",
+      "title": "Filter.h",
+      "locale": "fr",
+      "expectedRevision": "f0042f17e79a"
+    },
+    {
+      "id": "source-include-cyui-gallery-h",
+      "title": "Gallery.h",
+      "locale": "fr",
+      "expectedRevision": "340acf48508f"
+    },
+    {
+      "id": "source-include-cyui-icons-h",
+      "title": "Icons.h",
+      "locale": "fr",
+      "expectedRevision": "ce5eb6c712fe"
+    },
+    {
+      "id": "source-include-cyui-interaction-h",
+      "title": "Interaction.h",
+      "locale": "fr",
+      "expectedRevision": "4bfbf7969ac2"
+    },
+    {
+      "id": "source-include-cyui-layout-h",
+      "title": "Layout.h",
+      "locale": "fr",
+      "expectedRevision": "0da423d28c8b"
+    },
+    {
+      "id": "source-include-cyui-locale-h",
+      "title": "Locale.h",
+      "locale": "fr",
+      "expectedRevision": "2558e868ec9e"
+    },
+    {
+      "id": "source-include-cyui-theme-h",
+      "title": "Theme.h",
+      "locale": "fr",
+      "expectedRevision": "d6486c47ac33"
+    },
+    {
+      "id": "source-include-cyui-widgets-h",
+      "title": "Widgets.h",
+      "locale": "fr",
+      "expectedRevision": "dd3e272782d5"
+    },
+    {
+      "id": "source-include-cyui-adapters-imguizmo-h",
+      "title": "ImGuizmo.h",
+      "locale": "fr",
+      "expectedRevision": "0de368614dad"
+    },
+    {
+      "id": "source-include-cyui-adapters-webcef-h",
+      "title": "WebCEF.h",
+      "locale": "fr",
+      "expectedRevision": "478825ff5c90"
+    },
+    {
+      "id": "source-include-cyui-modules-assets-h",
+      "title": "Assets.h",
+      "locale": "fr",
+      "expectedRevision": "3edada428047"
+    },
+    {
+      "id": "source-include-cyui-modules-audio-h",
+      "title": "Audio.h",
+      "locale": "fr",
+      "expectedRevision": "cf4e8d912859"
+    },
+    {
+      "id": "source-include-cyui-modules-audioviews-h",
+      "title": "AudioViews.h",
+      "locale": "fr",
+      "expectedRevision": "84ede884eed2"
+    },
+    {
+      "id": "source-include-cyui-modules-canvas-h",
+      "title": "Canvas.h",
+      "locale": "fr",
+      "expectedRevision": "a67c85be382d"
+    },
+    {
+      "id": "source-include-cyui-modules-code-h",
+      "title": "Code.h",
+      "locale": "fr",
+      "expectedRevision": "8d0dbd17105a"
+    },
+    {
+      "id": "source-include-cyui-modules-codeeditor-h",
+      "title": "CodeEditor.h",
+      "locale": "fr",
+      "expectedRevision": "1c1e7e2ea56e"
+    },
+    {
+      "id": "source-include-cyui-modules-commands-h",
+      "title": "Commands.h",
+      "locale": "fr",
+      "expectedRevision": "53cec3273dbe"
+    },
+    {
+      "id": "source-include-cyui-modules-curves-h",
+      "title": "Curves.h",
+      "locale": "fr",
+      "expectedRevision": "d9deaf5e7af3"
+    },
+    {
+      "id": "source-include-cyui-modules-diagnostics-h",
+      "title": "Diagnostics.h",
+      "locale": "fr",
+      "expectedRevision": "f7c3cf2f7866"
+    },
+    {
+      "id": "source-include-cyui-modules-diff-h",
+      "title": "Diff.h",
+      "locale": "fr",
+      "expectedRevision": "4647076f65b7"
+    },
+    {
+      "id": "source-include-cyui-modules-documentviews-h",
+      "title": "DocumentViews.h",
+      "locale": "fr",
+      "expectedRevision": "66b0e96e76c8"
+    },
+    {
+      "id": "source-include-cyui-modules-images-h",
+      "title": "Images.h",
+      "locale": "fr",
+      "expectedRevision": "95b2a0f75516"
+    },
+    {
+      "id": "source-include-cyui-modules-inspector-h",
+      "title": "Inspector.h",
+      "locale": "fr",
+      "expectedRevision": "0f0dc0de3f10"
+    },
+    {
+      "id": "source-include-cyui-modules-nodes-h",
+      "title": "Nodes.h",
+      "locale": "fr",
+      "expectedRevision": "10f0779d4252"
+    },
+    {
+      "id": "source-include-cyui-modules-plots-h",
+      "title": "Plots.h",
+      "locale": "fr",
+      "expectedRevision": "7e09aaa4b708"
+    },
+    {
+      "id": "source-include-cyui-modules-timeline-h",
+      "title": "Timeline.h",
+      "locale": "fr",
+      "expectedRevision": "50c9164b75b4"
+    },
+    {
+      "id": "source-include-cyui-modules-viewport-h",
+      "title": "Viewport.h",
+      "locale": "fr",
+      "expectedRevision": "ed68412310c3"
+    },
+    {
+      "id": "source-include-cyui-modules-web-h",
+      "title": "Web.h",
+      "locale": "fr",
+      "expectedRevision": "c3ae0abe47aa"
+    }
+  ],
+  "current": 17
+}

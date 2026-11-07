@@ -24,4 +24,7 @@ py-modules = ["cyui"]
 
 [tool.setuptools.packages.find]
 where = ["python"]
-include = ["cyui_modules*"]
+include = ["cyui_modules*", "cyui_documentation*"]
+
+[tool.setuptools.package-data]
+cyui_documentation = ["Documentation/**/*", "Documentation/.cydoc-files.json"]

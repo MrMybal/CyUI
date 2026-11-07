@@ -67,6 +67,9 @@ def main() -> None:
     name = f"CyUI-Demo-{version}-windows-x64"
     archive = output / f"{name}.zip"
     contents = {"cyui_demo.exe": executable.read_bytes()}
+    for path in sorted((ROOT / "Documentation").rglob("*")):
+        if path.is_file():
+            contents[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     for notice in NOTICES:
         contents[notice] = (ROOT / notice).read_bytes()
     # Retain both complete stb license alternatives from the actual bundled headers.
@@ -87,6 +90,8 @@ def main() -> None:
 Extract the entire ZIP, then double-click cyui_demo.exe.
 Use Launch-French.cmd for French; the default language is English.
 Themes and language can also be changed inside the application.
+F1 or Help > Documentation opens the bundled manual offline in the selected language.
+Keep the complete Documentation folder beside the executable, including DocData.
 
 Requirements: Windows x64 with DirectX 11 support (hardware or Windows WARP).
 Visual Studio, Python and a separate Visual C++ runtime installation are not needed.
