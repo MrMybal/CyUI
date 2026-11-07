@@ -34,7 +34,7 @@ python tools/build_showcase.py --check
 python tests/test_showcase.py
 ```
 
-The generator puts the current CSS and JavaScript SHA-256 prefixes into their
+The generator puts the CSS and JavaScript SHA-256 prefixes, with text line endings normalized to LF, into their
 URLs (`?v=...`) on every page. Regeneration is required after those files change;
 the check fails on stale generated HTML or resource versions. Query links such as
 `?lang=fr` redirect to the corresponding static language page, retaining its

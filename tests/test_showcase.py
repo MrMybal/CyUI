@@ -4,8 +4,10 @@ from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -51,8 +53,28 @@ class Showcase(unittest.TestCase):
                 url = urlsplit(reference)
                 if url.path.endswith(("site.css", "site.js")):
                     asset = (SITE / name).parent / url.path
-                    expected = hashlib.sha256(asset.read_bytes()).hexdigest()[:12]
+                    expected = hashlib.sha256(asset.read_text(encoding='utf-8').encode('utf-8')).hexdigest()[:12]
                     self.assertEqual(parse_qs(url.query), {"v": [expected]})
+
+    def test_generated_html_is_identical_for_lf_and_crlf_assets(self):
+        results = []
+        (ROOT / 'build').mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='showcase-eol-', dir=ROOT / 'build') as scratch:
+            for name, ending in (('lf', b'\n'), ('crlf', b'\r\n')):
+                fixture = Path(scratch) / name
+                (fixture / 'tools').mkdir(parents=True)
+                shutil.copyfile(ROOT / 'tools/build_showcase.py', fixture / 'tools/build_showcase.py')
+                for directory in ('screenshots', 'manual'):
+                    target = fixture / 'site/assets' / directory
+                    target.mkdir(parents=True)
+                    shutil.copyfile(SITE / 'assets' / directory / 'manifest.json', target / 'manifest.json')
+                for asset in ('site.css', 'site.js'):
+                    content = (SITE / 'assets' / asset).read_text(encoding='utf-8').encode('utf-8').replace(b'\n', ending)
+                    (fixture / 'site/assets' / asset).write_bytes(content)
+                subprocess.run([sys.executable, '-B', str(fixture / 'tools/build_showcase.py')],
+                               cwd=fixture, check=True, capture_output=True)
+                results.append({name: (fixture / 'site' / name).read_bytes() for name in PAGES})
+        self.assertEqual(results[0], results[1])
 
     def test_all_local_links_resources_and_fragments_resolve(self):
         for name, document in self.documents.items():

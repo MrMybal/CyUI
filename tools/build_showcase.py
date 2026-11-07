@@ -251,8 +251,8 @@ class Page:
         if self.guide:
             title = self.t('CyUI — Integration guide','CyUI — Guide d’intégration')
         description = self.t('A themed, modular Dear ImGui library for C++ and Python. Explore real widgets, node graphs, audio displays, code editors and a portable Windows demo.','Une bibliothèque Dear ImGui thématisée et modulaire pour C++ et Python. Découvrez widgets, graphes, vues audio, éditeurs de code et démo Windows portable.')
-        css = hashlib.sha256((SITE/'assets/site.css').read_bytes()).hexdigest()[:12]
-        js = hashlib.sha256((SITE/'assets/site.js').read_bytes()).hexdigest()[:12]
+        css = hashlib.sha256((SITE/'assets/site.css').read_text(encoding='utf-8').encode('utf-8')).hexdigest()[:12]
+        js = hashlib.sha256((SITE/'assets/site.js').read_text(encoding='utf-8').encode('utf-8')).hexdigest()[:12]
         filename = "guide.html" if self.guide else "index.html"
         en = "../"+filename if self.fr else filename
         fr = filename if self.fr else "fr/"+filename
