@@ -72,6 +72,7 @@ class Showcase(unittest.TestCase):
                     if url.fragment.startswith("/") and target.name == "Documentation.html":
                         manifest = json.loads((target.parent / "DocData/manifest.json").read_text(encoding="utf-8"))
                         locale, page_id, *anchor = unquote(url.fragment).strip("/").split("/")
+                        self.assertEqual(locale, document.language, "The manual must follow the page language")
                         page = next(p for p in manifest["pages"] if p["locale"] == locale and p["id"] == page_id)
                         if anchor:
                             self.assertIn(anchor[0], [h["id"] for h in page["headings"]])
@@ -99,23 +100,34 @@ class Showcase(unittest.TestCase):
                     self.assertNotEqual(image_en["alt"], image_fr["alt"])
 
     def test_capture_hashes_and_image_metadata(self):
-        folder = SITE / "assets/screenshots"
-        manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
-        self.assertRegex(manifest["source_revision"], r"^[a-f0-9]{40}$")
-        self.assertEqual({item["file"] for item in manifest["images"]}, {p.name for p in folder.glob("*.webp")})
-        for item in manifest["images"]:
-            with self.subTest(image=item["file"]):
-                raw = (folder / item["file"]).read_bytes()
-                self.assertEqual(hashlib.sha256(raw).hexdigest(), item["sha256"])
-                self.assertEqual(raw[:4], b"RIFF")
-                self.assertEqual(raw[8:12], b"WEBP")
-                cursor = 12
-                while cursor < len(raw):
-                    chunk = raw[cursor:cursor + 4]
-                    size = int.from_bytes(raw[cursor + 4:cursor + 8], "little")
-                    self.assertNotIn(chunk, (b"EXIF", b"XMP ", b"ICCP"))
-                    cursor += 8 + size + (size % 2)
-                self.assertEqual(cursor, len(raw))
+        for directory in ("screenshots", "manual"):
+            folder = SITE / "assets" / directory
+            manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+            self.assertRegex(manifest["source_revision"], r"^[a-f0-9]{40}$")
+            self.assertEqual({item["file"] for item in manifest["images"]}, {p.name for p in folder.glob("*.webp")})
+            for item in manifest["images"]:
+                with self.subTest(image=item["file"]):
+                    raw = (folder / item["file"]).read_bytes()
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(), item["sha256"])
+                    self.assertEqual(raw[:4], b"RIFF")
+                    self.assertEqual(raw[8:12], b"WEBP")
+                    cursor = 12
+                    while cursor < len(raw):
+                        chunk = raw[cursor:cursor + 4]
+                        size = int.from_bytes(raw[cursor + 4:cursor + 8], "little")
+                        self.assertNotIn(chunk, (b"EXIF", b"XMP ", b"ICCP"))
+                        cursor += 8 + size + (size % 2)
+                    self.assertEqual(cursor, len(raw))
+
+    def test_reader_captures_use_the_matching_language_and_dimensions(self):
+        manifest = json.loads((SITE / "assets/manual/manifest.json").read_text(encoding="utf-8"))
+        self.assertRegex(manifest["documentation_manifest_sha256"], r"^[a-f0-9]{64}$")
+        self.assertEqual({item["locale"] for item in manifest["images"]}, {"en", "fr"})
+        for name in ("index.html", "fr/index.html"):
+            document = self.documents[name]
+            item = next(i for i in manifest["images"] if i["locale"] == document.language)
+            image = next(i for i in document.images if i["src"].endswith("manual/" + item["file"]))
+            self.assertEqual([int(image["width"]), int(image["height"])], item["size"])
 
     def test_site_does_not_embed_local_machine_paths(self):
         pattern = re.compile(r"(?i)[A-Z]:[\\/](?:Users|_Project|_Plugins|_UnrealSource)[\\/]|/(?:Users|home)/")

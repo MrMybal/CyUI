@@ -18,8 +18,9 @@ python -m http.server 8000 --bind 127.0.0.1 --directory site
 Then visit `http://127.0.0.1:8000/`. The HTML, styles, scripts, guide and screenshots
 work offline; GitHub source references and release downloads require a connection
 and access to the repository. The site makes no external font, script or analytics
-requests. JavaScript adds image enlargement, theme previews, the mobile menu and
-module filtering; showcase content remains accessible without it. The CyDoc reader needs JavaScript.
+requests. JavaScript adds image enlargement, keyboard-accessible workspace tabs,
+theme previews, the mobile menu and module filtering. All four workspace examples
+remain readable without JavaScript. The CyDoc reader needs JavaScript.
 
 ## Update the pages
 
@@ -54,6 +55,14 @@ images, their dimensions and SHA-256 hashes, the gallery tab/theme/language and
 the captured source revision to `assets/screenshots/manifest.json`. No other
 applications or their assets are used. The main image retains its full aspect
 ratio and is bounded by the available first-screen height on desktop.
+
+The two reader captures in `assets/manual/` show the actual bundled CyDoc reader,
+opened at `Documentation/Documentation.html#/en/overview` and its `/fr/overview`
+translation. Capture the loaded reader at a desktop viewport, convert the image
+to metadata-free WebP, and record its actual pixel dimensions, SHA-256, source
+revision and documentation manifest hash in `assets/manual/manifest.json`.
+Keep these browser captures separate from `assets/screenshots/`: the native
+gallery capture script owns that directory and CyDoc imports its images.
 
 ## GitHub Pages readiness
 

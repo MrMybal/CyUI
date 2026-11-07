@@ -55,27 +55,65 @@
   const dialogCaption = dialog?.querySelector('#image-caption');
   const dialogCounter = dialog?.querySelector('.lightbox-counter');
   const shots = [...document.querySelectorAll('[data-lightbox]')];
+  let activeShots = shots;
   let active = 0;
   let opener;
   function showShot(index) {
-    active = (index + shots.length) % shots.length;
-    const image = shots[active].querySelector('img');
+    active = (index + activeShots.length) % activeShots.length;
+    const image = activeShots[active].querySelector('img');
     dialogImage.src = image.currentSrc || image.src;
     dialogImage.alt = image.alt;
     dialogCaption.textContent = image.alt;
-    dialogCounter.textContent = `${active + 1} / ${shots.length}`;
+    dialogCounter.textContent = `${active + 1} / ${activeShots.length}`;
   }
-  shots.forEach((button, index) => button.addEventListener('click', () => {
+  shots.forEach(button => button.addEventListener('click', () => {
     if (!dialog || typeof dialog.showModal !== 'function') {
       window.open(button.querySelector('img').src, '_blank', 'noopener');
       return;
     }
     opener = button;
-    showShot(index);
+    activeShots = shots.filter(shot => !shot.closest('[hidden]'));
+    showShot(activeShots.indexOf(button));
     dialog.showModal();
     document.body.classList.add('modal-open');
     dialog.querySelector('.lightbox-close').focus();
   }));
+
+  // Complete static panels remain readable without JavaScript. With it, expose
+  // the same examples as a keyboard-operable tab set.
+  const workspaceTabs = [...document.querySelectorAll('[data-workspace-tab]')];
+  const workspacePanels = [...document.querySelectorAll('[data-workspace-panel]')];
+  const selectWorkspace = (key, focus = false) => {
+    workspaceTabs.forEach(tab => {
+      const selected = tab.dataset.workspaceTab === key;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      if (selected && focus) tab.focus();
+    });
+    workspacePanels.forEach(panel => {
+      panel.hidden = panel.dataset.workspacePanel !== key;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', `workspace-tab-${panel.dataset.workspacePanel}`);
+    });
+  };
+  workspaceTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => selectWorkspace(tab.dataset.workspaceTab));
+    tab.addEventListener('keydown', event => {
+      let next;
+      if (event.key === 'ArrowRight') next = (index + 1) % workspaceTabs.length;
+      if (event.key === 'ArrowLeft') next = (index + workspaceTabs.length - 1) % workspaceTabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = workspaceTabs.length - 1;
+      if (next !== undefined) {
+        event.preventDefault();
+        selectWorkspace(workspaceTabs[next].dataset.workspaceTab, true);
+      }
+    });
+  });
+  if (workspaceTabs.length) {
+    document.querySelector('.workspace-tabs').hidden = false;
+    selectWorkspace(workspaceTabs[0].dataset.workspaceTab);
+  }
   dialog?.querySelector('.lightbox-close').addEventListener('click', () => dialog.close());
   dialog?.querySelector('[data-previous]').addEventListener('click', () => showShot(active - 1));
   dialog?.querySelector('[data-next]').addEventListener('click', () => showShot(active + 1));
@@ -150,14 +188,15 @@
 
   if ('IntersectionObserver' in window) {
     const links = [...document.querySelectorAll('.chapter-inner a')];
-    const observer = new IntersectionObserver(entries => {
-      const visible = entries.filter(entry => entry.isIntersecting).sort((a,b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
-      if (!visible) return;
+    const sections = [...document.querySelectorAll('section[data-chapter]')];
+    const observer = new IntersectionObserver(() => {
+      const marker = innerHeight * .25;
+      const current = sections.filter(section => section.getBoundingClientRect().top <= marker).pop();
       links.forEach(link => {
-        if (link.hash === `#${visible.target.id}`) link.setAttribute('aria-current', 'location');
+        if (current && link.hash === `#${current.id}`) link.setAttribute('aria-current', 'location');
         else link.removeAttribute('aria-current');
       });
-    }, { rootMargin: '-15% 0px -55% 0px', threshold: 0 });
-    document.querySelectorAll('section[data-chapter]').forEach(section => observer.observe(section));
+    }, { rootMargin: '-25% 0px -74% 0px', threshold: 0 });
+    sections.forEach(section => observer.observe(section));
   }
 })();
