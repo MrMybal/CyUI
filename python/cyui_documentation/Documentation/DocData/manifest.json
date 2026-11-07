@@ -1221,7 +1221,7 @@
         "https://dev.epicgames.com/documentation/en-us/fortnite/verse-language-reference"
       ],
       "kind": "media",
-      "revision": "958eb6f5d586"
+      "revision": "42d49f37330c"
     },
     {
       "id": "design",
@@ -1257,7 +1257,7 @@
       ],
       "links": [],
       "kind": "media",
-      "revision": "ded1aa012462"
+      "revision": "6798dd2983f3"
     },
     {
       "id": "diff",
@@ -1281,7 +1281,7 @@
         "#/fr/module-recipes/code-editing-and-git-style-diff-presentation"
       ],
       "kind": "media",
-      "revision": "58c7faeb2e7f"
+      "revision": "c5b12e7a2f9c"
     },
     {
       "id": "filtering",
@@ -1374,7 +1374,7 @@
       ],
       "links": [],
       "kind": "media",
-      "revision": "b294880d0f7d"
+      "revision": "6e499020ab34"
     },
     {
       "id": "help",
@@ -1424,7 +1424,7 @@
       "assets": [],
       "links": [],
       "kind": "guide",
-      "revision": "c8a8f20b5526"
+      "revision": "1563c16faab4"
     },
     {
       "id": "integration",
@@ -1484,7 +1484,7 @@
         "#/fr/modules/select-only-what-an-application-needs"
       ],
       "kind": "guide",
-      "revision": "24e1f03183af"
+      "revision": "66e6e5b30f41"
     },
     {
       "id": "licensing",
@@ -1503,7 +1503,7 @@
       "assets": [],
       "links": [],
       "kind": "guide",
-      "revision": "0d18347e12f9"
+      "revision": "8c2b81d75304"
     },
     {
       "id": "localization",
@@ -1572,7 +1572,7 @@
       ],
       "links": [],
       "kind": "media",
-      "revision": "428d577d0d69"
+      "revision": "8c6eeb0e6aa7"
     },
     {
       "id": "module-recipes",
@@ -1682,7 +1682,7 @@
         "#/fr/modules/python"
       ],
       "kind": "media",
-      "revision": "268baf25ee1d"
+      "revision": "00ced7558479"
     },
     {
       "id": "modules",
@@ -1751,7 +1751,7 @@
         "#/fr/web"
       ],
       "kind": "media",
-      "revision": "aef0418b5d7e"
+      "revision": "46c0d0461516"
     },
     {
       "id": "overview",
@@ -1816,7 +1816,7 @@
         "#/fr/visual-tour"
       ],
       "kind": "media",
-      "revision": "9673a733396e"
+      "revision": "6a024afaa633"
     },
     {
       "id": "python",
@@ -1863,7 +1863,7 @@
         "#/fr/web/python"
       ],
       "kind": "guide",
-      "revision": "8f5c4225ab0e"
+      "revision": "dd6d1ec8465c"
     },
     {
       "id": "recipes",
@@ -1923,7 +1923,7 @@
         "#/fr/localization"
       ],
       "kind": "media",
-      "revision": "866461e4295b"
+      "revision": "3acd5326d406"
     },
     {
       "id": "unreal",
@@ -2041,7 +2041,7 @@
         "https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/SlateCore/FSlateRenderer"
       ],
       "kind": "guide",
-      "revision": "da2011938921"
+      "revision": "e6609ceedd7c"
     },
     {
       "id": "visual-tour",
@@ -2086,7 +2086,7 @@
         "#/fr/modules"
       ],
       "kind": "media",
-      "revision": "80ecb629e13c"
+      "revision": "ea8453455028"
     },
     {
       "id": "web",
@@ -2213,7 +2213,7 @@
         "#/fr/licensing"
       ],
       "kind": "guide",
-      "revision": "d29bba6d8146"
+      "revision": "2546138b109f"
     },
     {
       "id": "widgets",
@@ -2290,7 +2290,7 @@
         "#/fr/filtering"
       ],
       "kind": "guide",
-      "revision": "dc98ea3fd022"
+      "revision": "2c647f868d4f"
     },
     {
       "id": "api-core",

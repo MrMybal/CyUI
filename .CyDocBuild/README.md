@@ -19,6 +19,9 @@ python -B tests/test_showcase.py
 ```
 
 The initial dependency installation uses npm. Once installed, generation is local.
+Generation stages the authored Markdown and public headers with LF line endings
+inside the private cache. This keeps derived revisions and export bytes identical
+for Windows CRLF and Unix LF input, without changing the author's source files.
 The exported reader has no Node, Python, server, CDN or network dependency. Open
 `Documentation/Documentation.html` directly from disk. All its resources must
 remain together. The same export is staged under `site/Documentation/` and in

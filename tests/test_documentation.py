@@ -1,9 +1,11 @@
 """Validate the exported manual and the real application help route contract."""
 from html.parser import HTMLParser
+import importlib.util
 import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -111,6 +113,47 @@ class Documentation(unittest.TestCase):
             self.assertIn('%C3%A9', parts.path)
             self.assertTrue(Path(unquote(parts.path).lstrip('/')).is_file() if sys.platform == 'win32'
                             else Path(unquote(parts.path)).is_file())
+
+    @unittest.skipUnless(shutil.which('node') and (ROOT / '.CyDocBuild/node_modules/cydoc/tools/cli.mjs').is_file(),
+                         'Requires the documentation generation toolchain')
+    def test_export_is_identical_for_lf_and_crlf_author_sources(self):
+        spec = importlib.util.spec_from_file_location('cyui_documentation_build', ROOT / '.CyDocBuild/build.py')
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        (ROOT / 'build').mkdir(exist_ok=True)
+        exports = []
+        with tempfile.TemporaryDirectory(prefix='docs-eol-', dir=ROOT / 'build') as scratch:
+            for name, ending in (('lf', b'\n'), ('crlf', b'\r\n')):
+                project = Path(scratch) / name
+                source = project / '.CyDocBuild'
+                (source / 'assets').mkdir(parents=True)
+                public = project / 'include/cyui/Core.h'
+                public.parent.mkdir(parents=True)
+                public.write_bytes(b'#pragma once\n#include <cstdint>\n'.replace(b'\n', ending))
+                for locale in ('en', 'fr'):
+                    page = source / 'manual' / locale / 'overview.md'
+                    page.parent.mkdir(parents=True)
+                    revision = 'revision: 1' if locale == 'en' else 'sourceRevision: 1'
+                    markdown = f'---\nid: overview\ntitle: Guide {locale}\nsection: Start\n{revision}\n---\n\n```cpp\nint value = 1;\n```\n'
+                    original = markdown.encode().replace(b'\n', ending)
+                    page.write_bytes(original)
+                staged = project / 'staged'
+                generator.stage_inputs(project, staged)
+                settings = {'name': 'Fixture', 'version': '1', 'defaultLocale': 'en',
+                            'locales': [{'code': 'en', 'label': 'English'}, {'code': 'fr', 'label': 'Français'}],
+                            'homePage': 'overview', 'content': 'manual', 'assets': 'assets', 'out': '../Documentation',
+                            'modules': [], 'sources': ['../include/cyui'], 'apiIndex': {'enabled': True, 'includeDirs': ['../include']}}
+                config = staged / '.CyDocBuild/cydoc.config.json'
+                config.write_text(json.dumps(settings), encoding='utf-8', newline='\n')
+                result = subprocess.run(['node', str(ROOT / '.CyDocBuild/node_modules/cydoc/tools/cli.mjs'), 'check', str(config)],
+                                        cwd=ROOT, capture_output=True, encoding='utf-8')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                export = staged / 'Documentation'
+                exports.append({p.relative_to(export).as_posix(): p.read_bytes() for p in export.rglob('*') if p.is_file()})
+                self.assertEqual(page.read_bytes(), original, 'Generation must preserve author files')
+                manifest = json.loads((export / 'DocData/manifest.json').read_text('utf-8'))
+                self.assertTrue(any(p.get('source', '').startswith('include/cyui/') for p in manifest['pages']))
+        self.assertEqual(exports[0], exports[1])
 
 
 if __name__ == '__main__':

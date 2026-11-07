@@ -7,9 +7,22 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+
+
+def stage_inputs(project, destination):
+    """Use Git's canonical LF text without changing an author's working files."""
+    for source, target in ((project / '.CyDocBuild/manual', destination / '.CyDocBuild/manual'),
+                           (project / 'include/cyui', destination / 'include/cyui')):
+        for path in source.rglob('*'):
+            if path.is_file():
+                output = target / path.relative_to(source)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(path.read_text('utf-8'), encoding='utf-8', newline='\n')
+    shutil.copytree(project / '.CyDocBuild/assets', destination / '.CyDocBuild/assets')
 
 
 def publish(source, destination, check=False):
@@ -62,15 +75,20 @@ def main():
     if output.exists():
         shutil.rmtree(output)
     settings = json.loads((HERE / 'cydoc.config.json').read_text('utf-8'))
-    settings['out'] = '.cache/export'
-    generated = HERE / '.cache.config.json'
-    generated.write_text(json.dumps(settings), encoding='utf-8')
-    try:
+    settings['out'] = '../Documentation'
+    # Keep the original project-relative paths in API/source links while making
+    # Markdown code blocks and derived hashes independent of checkout line endings.
+    with tempfile.TemporaryDirectory(prefix='inputs-', dir=HERE / '.cache') as temporary:
+        workspace = Path(temporary).resolve()
+        if not workspace.is_relative_to((HERE / '.cache').resolve()):
+            raise RuntimeError('Inputs must remain inside the generation cache')
+        stage_inputs(ROOT, workspace)
+        generated = workspace / '.CyDocBuild/cydoc.config.json'
+        generated.write_text(json.dumps(settings), encoding='utf-8', newline='\n')
         subprocess.run(['node', str(cli), 'check', str(generated)], cwd=ROOT, check=True)
-    finally:
-        generated.unlink(missing_ok=True)
+        shutil.copytree(workspace / 'Documentation', output)
     subprocess.run(['node', str(HERE / 'compile-reader.mjs')], cwd=ROOT, check=True)
-    shutil.copy2(HERE / 'reader.css', output / 'DocData/cyui.css')
+    (output / 'DocData/cyui.css').write_text((HERE / 'reader.css').read_text('utf-8'), encoding='utf-8', newline='\n')
     # Brand the stock HTML shell; CyDoc still owns the complete reader and providers.
     html = (output / 'Documentation.html').read_text('utf-8')
     html = html.replace('<html lang="fr">', '<html lang="en">')
@@ -82,7 +100,7 @@ def main():
         digest = hashlib.sha256((output / 'DocData' / name).read_bytes()).hexdigest()[:12]
         html = html.replace(f'DocData/{name}"', f'DocData/{name}?v={digest}"')
     (output / 'Documentation.html').write_text(html, encoding='utf-8', newline='\n')
-    shutil.copy2(HERE / 'vendor/CyDoc-LICENSE.txt', output / 'DocData/CyDoc-LICENSE.txt')
+    (output / 'DocData/CyDoc-LICENSE.txt').write_text((HERE / 'vendor/CyDoc-LICENSE.txt').read_text('utf-8'), encoding='utf-8', newline='\n')
     # No mesh runtime, third-party source trees or generation workspace are shipped.
     for destination in (ROOT / 'Documentation', ROOT / 'site/Documentation', ROOT / 'python/cyui_documentation/Documentation'):
         publish(output, destination, args.check)
