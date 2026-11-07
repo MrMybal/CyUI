@@ -2,6 +2,10 @@
 
 **A themed, modular UI library for Dear ImGui.**
 
+[Explore the showcase](https://mrmybal.github.io/CyUI/) ·
+[Français](https://mrmybal.github.io/CyUI/fr/) ·
+[Integration guide](https://mrmybal.github.io/CyUI/guide.html)
+
 Build desktop tools with a shared visual language: ordinary widgets and layouts,
 audio displays, editable curves, node graphs, code editors, timelines and more.
 Start with Core and link only the modules your application uses.

@@ -61,10 +61,12 @@ requested. Keep `fr/`, `assets/` and `.nojekyll` together. All resource/navigati
 paths are relative, so the site works at an origin root or a project subpath
 such as `/CyUI/`. There are no SPA rewrites or server-side requirements.
 
-No deployment workflow or publication is enabled by these changes. Local preview
-and a local commit do not publish the site. Check repository visibility and
-download access before a public launch; existing GitHub links keep their current
-permissions.
+The `Publish CyUI showcase` workflow validates the generated pages and deploys
+this directory on relevant pushes to `main`, or when started manually from
+`main`. GitHub Pages must use **GitHub Actions** as its publishing source.
+Only the deployment job receives Pages/OIDC write permissions. Local preview and
+a local commit do not publish the site. Existing GitHub source and download links
+keep their current permissions.
 
 The copy distinguishes the portable Windows x64 release from Linux/macOS library
 source targets, and current-source captures from the versioned 1.2.0 demo. CEF and
