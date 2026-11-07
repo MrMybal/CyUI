@@ -52,6 +52,7 @@ jobs:
         with:
           node-version: '22'
       - run: python -m pip install .
+      - run: python -B tests/test_showcase.py
       - run: python -B tools/generate_locales.py --check
       - run: python -B tests/test_python_modules.py
       - run: python -B tests/test_unreal_package.py

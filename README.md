@@ -283,6 +283,7 @@ and the repository's native, Python, Web and Unreal tests.
 
 ## Documentation and license
 
+- [Static showcase and bilingual HTML integration guide](site/README.md)
 - [Integration, style rules, API and migration recipes](docs/AI_GUIDE.md)
 - [Module boundaries and dependency selection](docs/MODULES.md)
 - [Web / CEF](docs/WEB.md) and [Unreal Editor](docs/UNREAL.md)
