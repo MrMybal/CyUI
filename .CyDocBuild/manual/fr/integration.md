@@ -4,7 +4,7 @@ title: Intégrer CyUI
 description: Installer les dépendances, sélectionner les modules et initialiser une interface.
 section: Découvrir
 order: 1
-sourceRevision: 1
+sourceRevision: 2
 ---
 
 CyUI ajoute des thèmes et des composants cohérents à Dear ImGui. Conservez une seule instance compatible d’ImGui, votre moteur de rendu et vos modèles métier.
@@ -52,12 +52,12 @@ config.themeKey = "mid-grey";            // see the theme table below
 config.density  = cyui::Density::compact; // or comfortable
 config.dpiScale = dpiScale;              // 1.0 at 96 dpi
 cyui::apply(config);
-cyui::loadFonts();                       // Segoe UI + Semibold + Consolas + MDL2 icons
+cyui::loadFonts();                       // Segoe UI + Semibold + JetBrains Mono + MDL2 icons
 ```
 
 Lors d’un changement de DPI, appelez `applyDpi(newScale)` ; une échelle inchangée ne déclenche rien. `apply` et un changement effectif de DPI reconstruisent l’intégralité d’`ImGuiStyle` : appliquez ensuite vos éventuels réglages supplémentaires. Appelez `renderNotifications()` une fois en fin de frame pour afficher les notifications.
 
-`Config::squareWindows` produit des fenêtres carrées et opaques adaptées aux fenêtres OS et éditeurs de plugins. `FontConfig::size=0` prend la taille de la densité ; `fallbackFolder` permet de fournir Inter, Roboto, JetBrains Mono ou Cousine en `.ttf` lorsque les polices Windows sont absentes. `icons` active la fusion de Segoe MDL2 Assets quand cette police est disponible. Distribuez vos polices de repli avec leurs droits appropriés.
+`Config::squareWindows` produit des fenêtres carrées et opaques adaptées aux fenêtres OS et éditeurs de plugins. `FontConfig::size=0` prend la taille de la densité ; `fallbackFolder` permet de fournir Inter ou Roboto en `.ttf` lorsque les polices d’interface Windows sont absentes. `monoFont()` est JetBrains Mono Regular 2.304, embarquée sous SIL OFL 1.1 ; distribuez `third_party/jetbrains-mono/OFL.txt` avec l’application. Aucune installation système de police n’est requise pour le code. Code/CodeEditor/Diff natifs proposent Ctrl + molette par vue ; consultez le guide du code pour textScale et wheelZoom. `icons` active la fusion de Segoe MDL2 Assets quand cette police est disponible. Distribuez vos polices de repli avec leurs droits appropriés.
 
 Chaque contexte ImGui possède sa palette, son thème, sa densité, ses DPI, ses polices, ses saisies numériques et ses notifications. Initialisez chaque contexte avec `apply` et `loadFonts` lorsqu’il est courant. Les appels de thème affectent ce contexte. Sans contexte courant, `setPalette`, `setTheme` et `setDensity` changent les contextes existants et les valeurs par défaut des futurs contextes ; aucun autre thread ne doit alors dessiner. Sans contexte courant, `apply` et `applyDpi` ne changent que les valeurs par défaut. Les états sont libérés à la destruction du contexte.
 

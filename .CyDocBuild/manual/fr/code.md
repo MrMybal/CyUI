@@ -5,10 +5,57 @@ description: Utiliser les 102 modes natifs et enregistrer une syntaxe applicativ
 section: Guides
 parent: modules
 order: 30
-sourceRevision: 1
+sourceRevision: 3
 ---
 
 Liez `CyUI::Code` (C++17) pour le catalogue, les lexers et les vues en lecture seule ; `CyUI::CodeEditor` (C++20) ajoute l’édition. Core seul ne compile ni ne lie de lexer. CMake résout les dépendances et exporte `CYUI_CODE_LANGUAGE_CATALOGUE=1`. Le catalogue commité se compile sans réseau ni Python, avec une seule instance compatible d’ImGui.
+
+## Couleurs de syntaxe communes {#syntax-colors}
+
+La palette de code par défaut reprend les captures Rider fournies : texte clair,
+mots-clés/directives bleus, types mauves, nombres vert pâle, chaînes orange,
+commentaires verts et fonctions turquoise. Les lexers de tous les langages
+emploient ces mêmes rôles, y compris les commentaires de documentation et TODO.
+Accents d'interface, avertissements et statuts restent indépendants de la syntaxe.
+
+Core expose codeText, codeKeyword, codeType, codeNumber, codeString, codeComment,
+codePreprocessor et codeFunction dans Palette, l'éditeur et les fichiers de thème.
+Code/CodeEditor/Diff natifs, les adaptateurs lexicaux/parseurs de Reader et les
+vues Python les partagent. Le contraste s'adapte au thème ; sur fond clair les
+teintes deviennent plus sombres tout en restant orange/vertes. Les anciens thèmes
+héritent des champs manquants de leur palette de base. Recompilez les consommateurs
+natifs avec le nouvel en-tête Palette. Reader protège commentaires et chaînes
+lexicaux des surcharges sémantiques, y compris celles des régions inactives.
+
+## Police de code, zoom et guides de blocs {#text-presentation}
+
+`loadFonts()` charge JetBrains Mono Regular 2.304 comme `monoFont()` depuis les
+octets originaux embarqués. Code, CodeEditor, Diff et le code Markdown natif
+emploient cette police commune, sans installation, chemin externe ni réseau.
+Le paquet Python contient la même police Regular. Conservez son copyright et
+`third_party/jetbrains-mono/OFL.txt` dans les distributions. La police reste sous
+SIL OFL 1.1 et le code propre à CyUI sous MIT. Le rendu ne forme pas de ligatures.
+
+Dans `codeViewer`, `diffViewer` et `CodeEditor` natifs, Ctrl + molette verticale
+zoome uniquement le canevas de code survolé, de 50 % à 300 %. La molette simple
+défile toujours. Les menus et autres vues gardent leur taille ; les deux colonnes
+de Diff partagent la même échelle. Le zoom ne change ni texte, révision, sélection
+ni Undo. Les DPI et la taille globale de l'interface restent indépendants.
+Les traits de portée concernent les blocs entre accolades ; les arguments entre
+parenthèses gardent le fond des paires, sans trait au travers des identifiants.
+
+Réglez `CodeViewState::textScale` / `DiffState::textScale`, ou utilisez
+`CodeEditor::setTextScale(float)` et `textScale()` ; 1 réinitialise la vue.
+`wheelZoom=false` ou `setWheelZoomEnabled(false)` désactive la molette sans retirer
+le réglage programmatique. Les valeurs sont bornées à 0,5..3 ; NaN revient à 1.
+Ces API natives sont additives : recompilez les consommateurs avec les en-têtes.
+Python partage la police ; ces nouvelles API de molette/état ne sont pas des
+bindings Python. Les aperçus de code en lecture seule partagent aussi la police.
+
+Les contrôles de sources/données, compilations de production et régressions de
+syntaxe sont distincts de la validation native/graphique. Molette/pavé tactile,
+multimoniteur, pixels thème/DPI, rasterisation et Linux/macOS restent à valider
+pendant la suspension des exécutions natives sur ce poste.
 
 ## Modes intégrés {#built-in-modes}
 

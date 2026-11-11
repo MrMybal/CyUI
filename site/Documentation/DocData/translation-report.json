@@ -106,6 +106,12 @@
       "expectedRevision": "478825ff5c90"
     },
     {
+      "id": "source-include-cyui-detail-codetext-h",
+      "title": "CodeText.h",
+      "locale": "fr",
+      "expectedRevision": "eb68782f08b4"
+    },
+    {
       "id": "source-include-cyui-modules-assets-h",
       "title": "Assets.h",
       "locale": "fr",

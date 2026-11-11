@@ -44,11 +44,25 @@ def rgb(hex_value, a=1.0):
 
 FIELDS = ('bg0', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'line', 'lineStrong', 'grid', 'gridStrong',
           'text', 'textDim', 'textFaint', 'accent', 'accentHover', 'accentDim', 'accentText',
-          'selection', 'success', 'warning', 'error', 'info')
+          'selection', 'success', 'warning', 'error', 'info',
+          'codeText', 'codeKeyword', 'codeType', 'codeNumber', 'codeString', 'codeComment', 'codePreprocessor', 'codeFunction')
+
+
+_CODE_PALETTE = {
+    'codeText': rgb(0xbcbec4),
+    'codeKeyword': rgb(0x7cbdff),
+    'codeType': rgb(0xbe8efc),
+    'codeNumber': rgb(0xb5cea8),
+    'codeString': rgb(0xd69d5b),
+    'codeComment': rgb(0x83c16a),
+    'codePreprocessor': rgb(0x7cbdff),
+    'codeFunction': rgb(0x4ec9b0),
+}
 
 
 def _palette(*values):
-    return dict(zip(FIELDS, values))
+    # Older 22-field theme definitions inherit the shared syntax defaults.
+    return {**_CODE_PALETTE, **dict(zip(FIELDS, values))}
 
 
 _MID_GREY = _palette(
@@ -338,6 +352,7 @@ def _apply_style():
 def set_palette(values):
     """The palette drawn with from now on (a dict or a namespace of the FIELDS); ImGui follows."""
     values = values if isinstance(values, dict) else vars(values)
+    values = {**_CODE_PALETTE, **values}
     _state.palette = SimpleNamespace(**{key: values[key] for key in FIELDS})
     _apply_colours(imgui.get_style())
 
@@ -418,11 +433,14 @@ def _merge_icons(size, wanted):
 
 
 def load_fonts(size=0.0, fallback_folder=None, icons=True):
-    """Segoe UI, Segoe UI Semibold and Consolas, each with the Segoe MDL2 icons merged.
+    """Segoe UI, Segoe UI Semibold and bundled JetBrains Mono Regular.
+
+    Icons merge into the interface faces; code uses the shipped SIL OFL font.
 
     Call where the application builds its font atlas (hello_imgui: the
-    load_additional_fonts callback). Fallback .ttf files (Inter, Roboto, JetBrains Mono...)
-    are looked for in `fallback_folder` when the Windows fonts are missing.
+    load_additional_fonts callback). Interface fallback .ttf files (Inter, Roboto)
+    are looked for in `fallback_folder` when Windows fonts are missing. The code
+    face is shipped with the package under SIL OFL 1.1 and needs no installation.
     """
     size = size or _state.metrics.font_size
     folder = fallback_folder or ''
@@ -438,8 +456,9 @@ def load_fonts(size=0.0, fallback_folder=None, icons=True):
     _state.fonts.append(_add_font([_windows_font('seguisb.ttf'), inside('Inter-SemiBold.ttf'),
                                    inside('Roboto-Bold.ttf'), inside('Roboto-Medium.ttf')], size))
     _merge_icons(size, icons)
-    _state.fonts.append(_add_font([_windows_font('consola.ttf'), inside('JetBrainsMono-Regular.ttf'),
-                                   inside('Cousine-Regular.ttf')], size - 1.0))
+    code_font = os.path.join(os.path.dirname(__file__), 'cyui_modules', 'fonts', 'JetBrainsMono-Regular.ttf')
+    _state.fonts.append(_add_font([code_font, inside('JetBrainsMono-Regular.ttf'),
+                                   _windows_font('consola.ttf'), inside('Cousine-Regular.ttf')], max(1., size - 1.0)))
     imgui.get_io().font_default = _state.fonts[0]
 
 

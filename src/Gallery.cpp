@@ -916,6 +916,8 @@ void audioViewsPage()
 void codePage()
 {
     sectionTitle(tr("Source view & annotations").c_str());
+    textDim(tr("Ctrl + mouse wheel over code changes text size (50-300%).").c_str());
+    textDim(tr("Orange strings, green comments: shared code colors across languages.").c_str());
     static CodeDocument document;
     static CodeViewState state;
     document.setText("// audio/Voice.cpp - read-only source with host annotations\n"

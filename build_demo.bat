@@ -40,4 +40,7 @@ popd
 if not "%ERR%"=="0" exit /b %ERR%
 xcopy "%ROOT%Documentation" "%ROOT%build\Documentation\" /E /I /Y /Q >nul
 if errorlevel 1 exit /b 1
+if not exist "%ROOT%build\licenses" mkdir "%ROOT%build\licenses"
+copy /Y "%ROOT%third_party\jetbrains-mono\OFL.txt" "%ROOT%build\licenses\JetBrainsMono-OFL.txt" >nul
+if errorlevel 1 exit /b 1
 exit /b %ERR%

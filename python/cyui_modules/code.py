@@ -121,7 +121,7 @@ class CodeDocument:
 def token_color(role, background=None):
     _, c = ui()
     p = c.palette()
-    color = {'keyword': p.accent, 'type': p.info, 'number': p.warning, 'string': p.success, 'comment': p.textFaint, 'preprocessor': c.mix(p.info, p.accent, .5), 'function': c.mix(p.text, p.warning, .4)}.get(role, p.text)
+    color = {'keyword': p.codeKeyword, 'type': p.codeType, 'number': p.codeNumber, 'string': p.codeString, 'comment': p.codeComment, 'preprocessor': p.codePreprocessor, 'function': p.codeFunction}.get(role, p.codeText)
     def luminance(color):
         values = [(color >> shift & 255)/255 for shift in (0, 8, 16)]
         values = [v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4 for v in values]

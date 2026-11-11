@@ -46,6 +46,10 @@ TextEditor &CodeEditor::native() {
 void CodeEditor::setReadOnly(bool value) {
     impl_->editor.SetReadOnlyEnabled(value);
 }
+void CodeEditor::setTextScale(float value) { impl_->editor.SetFontScale(value); }
+float CodeEditor::textScale() const { return impl_->editor.GetFontScale(); }
+void CodeEditor::setWheelZoomEnabled(bool enabled) { impl_->editor.SetMouseWheelZoomEnabled(enabled); }
+bool CodeEditor::wheelZoomEnabled() const { return impl_->editor.IsMouseWheelZoomEnabled(); }
 CodeLanguage CodeEditor::language() const { return impl_->language; }
 void CodeEditor::setLanguageForPath(std::string_view path) { setLanguage(codeLanguageForPath(path)); }
 void CodeEditor::setSyntaxEnabled(bool enabled) {
@@ -117,7 +121,7 @@ bool CodeEditor::draw(const char *id, ImVec2 size) {
     p.SetReplaceButtonLabel(trLabel("Replace"));
     p.SetReplaceAllButtonLabel(trLabel("Replace All"));
     TextEditor::Palette colors;
-    colors.fill(palette().text);
+    colors.fill(tokenColor(TokenRole::text));
     using C = TextEditor::Color;
     auto put = [&](C kind, ImU32 color) { colors[std::size_t(kind)] = color; };
     put(C::keyword, tokenColor(TokenRole::keyword));

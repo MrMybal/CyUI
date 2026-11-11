@@ -1,5 +1,6 @@
 #include "cyui/modules/Diff.h"
 #include "ModuleInternal.h"
+#include "cyui/detail/CodeText.h"
 #include <cstdio>
 #include <regex>
 #include <charconv>
@@ -285,21 +286,26 @@ DiffResult diffViewer(const char *id, DiffState &state, const DiffDocument &doc,
     if (size.y > 0)
         size.y = std::max(dp(1.f), size.y - ImGui::GetFrameHeightWithSpacing());
     ScopedFont font(monoFont());
-    const float height = ImGui::GetTextLineHeightWithSpacing(),
-                gutter = dp(state.split ? 68.f : 96.f);
+    state.textScale = detail::codeTextScale(state.textScale);
+    const float pendingHeight = ImGui::GetTextLineHeightWithSpacing() * state.textScale;
     const auto count = static_cast<int>(state.split ? doc.pairs().size() : doc.rows().size());
     auto *storage = ImGui::GetStateStorage();
     const auto scrollKey = ImGui::GetID("##diff-last-scroll"),
                seenKey = ImGui::GetID("##diff-scroll-initialized");
     if (!storage->GetInt(seenKey) || state.scroll != storage->GetFloat(scrollKey))
         ImGui::SetNextWindowScroll({-1.f, std::max(0.f, state.scroll)});
-    ImGui::SetNextWindowContentSize({0, count * height});
+    ImGui::SetNextWindowContentSize({0, count * pendingHeight});
     ScopedColor ground(ImGuiCol_ChildBg, palette().bg0);
     // One child owns wheel, trackpad, keyboard and scrollbar input for both
     // columns. Painting uses the same row origin; no delayed pane mirroring.
     ScopedVar rowSpacing(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0.f));
     ImGui::BeginChild("##aligned-diff-canvas", size, ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_HorizontalScrollbar);
+    {
+    detail::CodeTextScope text(state.textScale, state.wheelZoom);
+    const float height = ImGui::GetTextLineHeightWithSpacing(),
+                gutter = std::max(dp(state.split ? 68.f : 96.f),
+                                  ImGui::CalcTextSize(state.split ? "000000" : "00000 00000").x + dp(8.f));
     const float available = std::max(dp(1.f), ImGui::GetCurrentWindow()->InnerRect.GetWidth() -
                                                   ImGui::GetStyle().WindowPadding.x * 2);
     const float gap = dp(12.f), column = std::max(dp(1.f), (available - gap) * .5f);
@@ -392,6 +398,7 @@ DiffResult diffViewer(const char *id, DiffState &state, const DiffDocument &doc,
             ImGui::SetCursorScreenPos(cursor);
             ImGui::Dummy({width, height});
         }
+    } // both columns use the same text scale and scroll canvas
     ImGui::EndChild();
     return result;
 }

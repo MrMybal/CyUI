@@ -51,6 +51,8 @@ struct DiffState {
     float scroll = 0;
     int selected = -1, focus = -1, hunk = -1;
     std::string query;
+    float textScale = 1.f; // Shared by both split columns; 0.5..3
+    bool wheelZoom = true;
 };
 struct DiffResult {
     int row = -1, oldLine = 0, newLine = 0;

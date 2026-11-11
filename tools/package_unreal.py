@@ -87,6 +87,8 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     shutil.copytree(ROOT/'integrations/unreal/CyUI', output)
     library = output/'ThirdParty/CyUI'
     shutil.copytree(ROOT/'include', library/'include')
+    shutil.copytree(ROOT/'src/fonts', library/'src/fonts')
+    shutil.copytree(ROOT/'third_party/jetbrains-mono', library/'third_party/jetbrains-mono')
     sources = ['src/Theme.cpp', 'src/Widgets.cpp', 'src/Layout.cpp', 'src/Filter.cpp']
     sources += [f'src/modules/{name}.cpp' for name in selected]
     if gallery:

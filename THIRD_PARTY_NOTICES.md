@@ -6,6 +6,7 @@ own copyright and licenses. Selecting a module does not relicense its dependenci
 
 | Component | License | Included / optional | Notice |
 | --- | --- | --- | --- |
+| JetBrains Mono Regular 2.304 | SIL OFL 1.1 | Embedded unmodified in Core; bundled with the Python package | [OFL notice](third_party/jetbrains-mono/OFL.txt) |
 | Dear ImGui | MIT | Bundled: built and linked by CMake when `CYUI_IMGUI_TARGET` is empty, and by the demo; hosts normally supply their own target | [third_party/imgui/LICENSE.txt](third_party/imgui/LICENSE.txt) |
 | stb_truetype, stb_rect_pack, stb_textedit (Sean Barrett), as `imstb_*.h` | MIT or public domain (Unlicense), at the user's choice | Bundled inside the Dear ImGui copy and compiled with it | License text at the end of each [third_party/imgui/imstb_*.h](third_party/imgui) file |
 | ImGuiColorTextEdit, Johan A. Goossens | MIT | Bundled only for the optional C++ CodeEditor target | [third_party/texteditor/LICENSE](third_party/texteditor/LICENSE) |
@@ -19,13 +20,19 @@ own copyright and licenses. Selecting a module does not relicense its dependenci
 The TextEditor source is a pinned upstream snapshot. File hashes, upstream URL
 and the serialization patch are recorded in
 [VERSION.json](third_party/texteditor/VERSION.json). The patches preserve an absent
-final newline and add revision-aware shared syntax spans; the original copyright and MIT license remain intact.
+final newline, add revision-aware shared syntax spans, per-view text zoom and brace-only scope guides; the original copyright and MIT license remain intact.
 
 CEF is distributed separately for each OS/architecture. Its Chromium components
 have additional notices and licenses; the CEF BSD license alone is not the complete
 notice set for an application shipping the runtime. Preserve the distribution's
 license/credits files, and review the exact codec/media build you choose to ship.
 No CEF runtime is downloaded automatically by CyUI's CMake configuration.
+
+The bundled JetBrains Mono font remains under SIL OFL 1.1, independently of CyUI's
+MIT code. Preserve its copyright and OFL notice when distributing binaries.
+The original font hash/version and generated C++/Python assets are checked by
+`python tools/embed_code_font.py --check`. No font download or system installation
+is needed at build or startup. The current native renderer does not shape ligatures.
 
 System fonts (for example Segoe UI on Windows) are loaded from the operating
 system or host-provided font paths. CyUI does not distribute those font files.

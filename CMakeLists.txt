@@ -166,7 +166,8 @@ if(TARGET cyui_code)
 endif()
 if(TARGET cyui_codeeditor)
     add_library(cyui_texteditor STATIC third_party/texteditor/TextEditor.cpp)
-    target_include_directories(cyui_texteditor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/texteditor)
+    target_include_directories(cyui_texteditor PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/texteditor
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_link_libraries(cyui_texteditor PUBLIC ${CYUI_IMGUI_TARGET})
     target_compile_features(cyui_texteditor PUBLIC cxx_std_20)
     if(MSVC)
@@ -301,6 +302,11 @@ if(CYUI_BUILD_DEMO AND WIN32)
     endif()
     target_include_directories(cyui_demo PRIVATE ${CYUI_IMGUI_DIR}/backends)
     target_link_libraries(cyui_demo PRIVATE CyUI::CyUI d3d11 dxgi d3dcompiler dwmapi shell32 shlwapi)
+    add_custom_command(TARGET cyui_demo POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:cyui_demo>/licenses"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party/jetbrains-mono/OFL.txt"
+            "$<TARGET_FILE_DIR:cyui_demo>/licenses/JetBrainsMono-OFL.txt")
     option(CYUI_REGENERATE_DOCUMENTATION "Regenerate the manual with the locally installed CyDoc toolchain" OFF)
     if(CYUI_REGENERATE_DOCUMENTATION)
         find_package(Python3 REQUIRED COMPONENTS Interpreter)

@@ -5,7 +5,7 @@ description: C++ code syntax and extensions for CyUI integrators.
 section: Guides
 parent: modules
 order: 30
-revision: 1
+revision: 3
 ---
 
 Link `CyUI::Code` (C++17) for the catalogue, lexer service and read-only views;
@@ -13,6 +13,52 @@ Link `CyUI::Code` (C++17) for the catalogue, lexer service and read-only views;
 not compile or link any lexer. CMake resolves dependencies automatically and
 exports `CYUI_CODE_LANGUAGE_CATALOGUE=1`. No network fetch or Python is needed
 to build the committed catalogue. Exactly one compatible ImGui instance is used.
+
+## Shared syntax colors {#syntax-colors}
+
+The default code palette follows the supplied Rider references: light text,
+blue keywords/directives, mauve types, pale-green numbers, orange strings,
+green comments and turquoise functions. Each language's lexer maps into these
+same roles, including documentation comments and TODO/task markers. UI accents,
+warnings and status colors remain independent of source syntax.
+
+Core exposes codeText, codeKeyword, codeType, codeNumber, codeString, codeComment,
+codePreprocessor and codeFunction in Palette and the theme editor/files. Native
+Code/CodeEditor/Diff, Reader's lexical/parser adapters and Python code views use
+these roles. Contrast adjustment keeps foregrounds readable on the active theme;
+light-theme variants become darker while retaining their orange/green identity.
+Older theme files inherit missing syntax fields from their base palette. Native
+consumers must rebuild with the extended Palette header. Reader protects lexical
+comments/strings from semantic overlays, including inactive-region spans.
+
+## Code font, zoom and block guides {#text-presentation}
+
+`loadFonts()` loads JetBrains Mono Regular 2.304 as `monoFont()`, directly from
+embedded original font bytes. Code, CodeEditor, Diff and native Markdown code
+use this common face; no font installation, runtime path or network is required.
+The Python package ships the same regular face. Keep its copyright and
+`third_party/jetbrains-mono/OFL.txt` in application distributions. The font is SIL
+OFL 1.1; CyUI's own sources remain MIT. Ligature shaping is not implemented.
+
+In native `codeViewer`, `diffViewer` and `CodeEditor`, Ctrl + vertical mouse wheel
+zooms only the hovered source canvas from 50% to 300%. Plain wheel still scrolls.
+Menus and other views keep their size; both Diff columns share one scale. Zoom
+does not modify source bytes, revisions, selection or Undo. DPI/global interface
+scaling remains independent. Scope strokes are drawn for brace blocks, while
+multiline parenthesis arguments keep pair backgrounds without a line across names.
+
+Set `CodeViewState::textScale` / `DiffState::textScale` or use
+`CodeEditor::setTextScale(float)` and `textScale()`; 1 resets the view. Set the
+state's `wheelZoom=false` or call `setWheelZoomEnabled(false)` to disable wheel
+zoom while keeping programmatic scaling. Values are clamped to 0.5..3; NaN resets
+to 1. These are additive native source APIs: rebuild consumers with the headers.
+Python currently shares the font; these native wheel/state APIs are not Python
+bindings. The renderer also uses the same font for read-only code previews.
+
+Source/data, production builds and compile-only regression checks are recorded
+separately from native/GUI acceptance. Actual wheel/trackpad, multi-monitor,
+theme/DPI pixels, font rasterization and Linux/macOS acceptance remain pending
+under the current workstation's native-run suspension.
 
 ## Built-in modes {#built-in-modes}
 

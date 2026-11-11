@@ -4,7 +4,7 @@ title: Integrate CyUI
 description: Integrate CyUI for CyUI integrators.
 section: Start
 order: 1
-revision: 1
+revision: 2
 ---
 
 **Localization is required for interface text:** keep English as the default and
@@ -65,7 +65,7 @@ config.themeKey = "mid-grey";            // see the theme table below
 config.density  = cyui::Density::compact; // or comfortable
 config.dpiScale = dpiScale;              // 1.0 at 96 dpi
 cyui::apply(config);
-cyui::loadFonts();                       // Segoe UI + Semibold + Consolas + MDL2 icons
+cyui::loadFonts();                       // Segoe UI + Semibold + JetBrains Mono + MDL2 icons
 ```
 
 When the DPI changes (`WM_DPICHANGED`), call `cyui::applyDpi(newScale)`. It
@@ -77,8 +77,12 @@ draws the toasts.
 `Config` also has `squareWindows`: square, opaque windows for apps whose ImGui
 windows are OS windows (multi-viewports, plug-in editors). `FontConfig` has
 `size` (0: the density's font size), `fallbackFolder` (a folder of Inter,
-Roboto, JetBrains Mono or Cousine `.ttf` files, tried when the Windows fonts
-are missing) and `icons` (merge Segoe MDL2 Assets; on by default).
+Roboto `.ttf` files, tried when Windows interface fonts are missing) and
+`icons` (merge Segoe MDL2 Assets into interface fonts; on by default).
+`monoFont()` is bundled JetBrains Mono Regular 2.304 (SIL OFL 1.1); keep
+`third_party/jetbrains-mono/OFL.txt` with your distribution. No system font
+installation is needed for code. Native Code/CodeEditor/Diff support per-view
+Ctrl + wheel zoom; see the code guide for textScale and wheelZoom controls.
 
 **Several ImGui contexts** (plug-in windows, editor panels): everything CyUI
 keeps is per context and released when the context is destroyed. That covers

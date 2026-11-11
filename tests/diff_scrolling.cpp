@@ -104,6 +104,12 @@ void run() {
     frame(state, doc, right);
     frame(state, doc, right, -2);
     require(state.scroll > old, "Wheel over the right column did not scroll the same canvas");
+    io.AddKeyEvent(ImGuiMod_Ctrl,true);frame(state,doc,right);frame(state,doc,right,1);
+    require(state.textScale>1.f,"Ctrl+wheel in right diff column did not zoom the shared view");
+    const auto zoom=state.textScale;state.wheelZoom=false;frame(state,doc,left,1);
+    require(state.textScale==zoom,"Diff wheel-zoom opt-out failed");
+    io.AddKeyEvent(ImGuiMod_Ctrl,false);state.wheelZoom=true;state.textScale=1.f;
+    frame(state,doc);frame(state,doc);
     state.scroll = 500;
     frame(state, doc);
     require(std::abs(state.scroll - 500) < 1.f,

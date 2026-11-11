@@ -129,7 +129,7 @@ TokenRole styleRole(std::string_view name) {
         if (has("UNKNOWN") || has("WRONG")) return TokenRole::error;
         return has("RECTYPE") || has("RECORDTYPE") ? TokenRole::keyword : TokenRole::number;
     }
-    if (has("COMMENT") || has("_REM")) return TokenRole::comment;
+    if (has("COMMENT") || has("_REM") || has("TASKMARKER")) return TokenRole::comment;
     if (has("_DIFF_")) {
         if (has("DELETED")) return TokenRole::removed;
         if (has("ADDED")) return TokenRole::added;

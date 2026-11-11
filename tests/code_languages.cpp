@@ -184,6 +184,8 @@ static void verse() {
 }
 int main() {
     ImGui::CreateContext();
-    try { catalogue();extensions();logs();verse();ImGui::DestroyContext();std::cout<<"Shared catalogue, shader types/intrinsics, plugin registration/rules/callbacks/removal and editor revisions passed\n";return 0; }
+    try {
+        check(role("// TODO keep this comment green\n",CodeLanguage::cpp,"TODO")==TokenRole::comment,"TODO marker escaped the common comment role");
+        catalogue();extensions();logs();verse();ImGui::DestroyContext();std::cout<<"Shared catalogue, shader types/intrinsics, plugin registration/rules/callbacks/removal and editor revisions passed\n";return 0; }
     catch (const std::exception &error) { std::cerr<<error.what()<<'\n';ImGui::DestroyContext();return 1; }
 }

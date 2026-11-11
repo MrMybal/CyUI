@@ -744,6 +744,11 @@ public:
 	};
 
 	void SetLanguage(const Language* language);
+	// CyUI display-only scale. These setters never create text transactions.
+	void SetFontScale(float value);
+	float GetFontScale() const { return fontScale; }
+	void SetMouseWheelZoomEnabled(bool value) { mouseWheelZoom = value; }
+	bool IsMouseWheelZoomEnabled() const { return mouseWheelZoom; }
 	inline const Language* GetLanguage() const { return config.language; };
 	inline bool HasLanguage() const { return config.language != nullptr; }
 	inline std::string GetLanguageName() const { return config.language == nullptr ? "None" : config.language->name; }
@@ -2036,6 +2041,8 @@ protected:
 	ImVec2 visibleSize;
 	ImDrawList* drawList;
 
+	float fontScale = 1.f;
+	bool mouseWheelZoom = true;
 	ImFont* font;
 	float fontSize;
 	float fontScaleDpi;

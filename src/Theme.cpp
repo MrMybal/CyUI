@@ -6,6 +6,7 @@
 #include "cyui/Locale.h"
 
 #include <imgui_internal.h>
+#include "fonts/JetBrainsMonoRegular.inc"
 
 #include <algorithm>
 #include <cctype>
@@ -644,6 +645,14 @@ const std::vector<PaletteField>& paletteFields()
         { "text", "Text", 2, &Palette::text },
         { "textDim", "Secondary text", 2, &Palette::textDim },
         { "textFaint", "Faint text", 2, &Palette::textFaint },
+        { "codeText", "Code text", 2, &Palette::codeText },
+        { "codeKeyword", "Code keywords", 2, &Palette::codeKeyword },
+        { "codeType", "Code types", 2, &Palette::codeType },
+        { "codeNumber", "Code numbers", 2, &Palette::codeNumber },
+        { "codeString", "Code strings", 2, &Palette::codeString },
+        { "codeComment", "Code comments", 2, &Palette::codeComment },
+        { "codePreprocessor", "Code directives and macros", 2, &Palette::codePreprocessor },
+        { "codeFunction", "Code functions", 2, &Palette::codeFunction },
         { "accent", "Accent", 3, &Palette::accent },
         { "accentHover", "Accent hovered", 3, &Palette::accentHover },
         { "accentDim", "Accent dimmed", 3, &Palette::accentDim },
@@ -873,9 +882,13 @@ void loadFonts(const FontConfig& config)
                                inFolder(folder, "Roboto-Bold.ttf"), inFolder(folder, "Roboto-Medium.ttf") },
                              size);
     mergeIcons(state, size, config.icons);
-    state.fonts[2] = addFont({ windowsFont("consola.ttf"), inFolder(folder, "JetBrainsMono-Regular.ttf"),
-                               inFolder(folder, "Cousine-Regular.ttf") },
-                             size - 1.0f);
+    ImFontConfig codeFont;
+    codeFont.FontDataOwnedByAtlas = false; // Immutable static bytes outlive every context.
+    codeFont.OversampleH = codeFont.OversampleV = 2;
+    std::snprintf(codeFont.Name, sizeof(codeFont.Name), "JetBrains Mono Regular");
+    state.fonts[2] = io.Fonts->AddFontFromMemoryTTF(
+        const_cast<unsigned char *>(jetBrainsMonoRegular), int(sizeof(jetBrainsMonoRegular)),
+        std::max(1.f, size - 1.f), &codeFont);
     io.FontDefault = state.fonts[0];
 }
 

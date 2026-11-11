@@ -1,4 +1,5 @@
 #include <cyui/CyUI.h>
+#include <cyui/detail/CodeText.h>
 #include <imgui_internal.h>
 #include <cstdio>
 #include <cstring>
@@ -9,6 +10,13 @@
 #if defined(CYUI_HAS_CODEEDITOR)
 #include <TextEditor.h>
 #endif
+
+static_assert(cyui::detail::codeTextScale(1.f) == 1.f);
+static_assert(cyui::detail::codeTextScale(.1f) == .5f);
+static_assert(cyui::detail::codeTextScale(8.f) == 3.f);
+static_assert(cyui::detail::codeTextScale(std::numeric_limits<float>::quiet_NaN()) == 1.f);
+static_assert(cyui::detail::codeTextScale(std::numeric_limits<float>::infinity()) == 3.f);
+static_assert(cyui::detail::codeTextScale(-std::numeric_limits<float>::infinity()) == .5f);
 
 namespace {
 int failures = 0;
@@ -61,6 +69,14 @@ int main() {
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
     io.Fonts->SetTexID(ImTextureID(1));
     using namespace cyui;
+    for (const auto &theme : builtInThemes()) {
+        setTheme(theme.key.c_str());
+        check(palette().codeString==rgb(0xd69d5b) && palette().codeComment==rgb(0x83c16a),"syntax defaults do not depend on UI theme/accent");
+        const auto copy=paletteFromText(paletteToText(palette()),palette());
+        check(copy.codeString==palette().codeString && copy.codeFunction==palette().codeFunction,"syntax palette fields round-trip");
+    }
+    setTheme(defaultThemeKey);
+    check(monoFont() && std::strstr(monoFont()->GetDebugName(), "JetBrains Mono"), "default code font is embedded JetBrains Mono");
     check(locale() == "en" && tr("Save") == "Save", "English is the default UI language");
     check(setLocale("fr_CA") && locale() == "fr" && tr("Save") == "Enregistrer", "French regional fallback");
     check(tr("application.unknown", "Readable fallback") == "Readable fallback", "unknown keys keep the English fallback");
@@ -313,6 +329,17 @@ int main() {
     }
 #endif
 #if defined(CYUI_HAS_CODE)
+    {
+        CodeDocument document;document.setText("int first;\nint second;\n",CodeLanguage::cpp,17);
+        CodeViewState state,other;
+        auto draw=[&] { codeViewer("zoom-source",state,document,{650,300});codeViewer("zoom-other",other,document,{650,150}); };
+        frame(draw,200,160);frame(draw,200,160);
+        io.AddKeyEvent(ImGuiMod_Ctrl,true);frame(draw,200,160,-1,false,false,1);
+        check(state.textScale>1.f && other.textScale==1.f,"read-only code zoom belongs to the hovered view");
+        state.wheelZoom=false;const auto scale=state.textScale;frame(draw,200,160,-1,false,false,1);
+        check(state.textScale==scale && document.revision()==17 && document.text()=="int first;\nint second;\n","read-only zoom opt-out preserves document ownership");
+        io.AddKeyEvent(ImGuiMod_Ctrl,false);frame(draw);
+    }
     CodeDocument source;
     source.setText("\tfloat value = 42; // 音楽\r\n/* comment\ncontinued */\n", CodeLanguage::cpp, 7);
     check(source.lines().size() == 4 && source.lines()[0].text.rfind("    float", 0) == 0,
@@ -370,6 +397,46 @@ int main() {
     }
 #endif
 #if defined(CYUI_HAS_CODEEDITOR)
+    {
+        // Inspect actual native draw vertices: guide color is isolated from all
+        // other native elements. The previous renderer stroked argument names.
+        CodeEditor guides;guides.setLanguage(CodeLanguage::cpp);
+        auto &native=guides.native();TextEditor::Palette colors;colors.fill(palette().bg0);
+        colors[std::size_t(TextEditor::Color::whitespace)]=palette().warning;
+        colors[std::size_t(TextEditor::Color::matchingBracketActive)]=palette().warning;
+        native.SetPalette(colors);native.SetShowMatchingBrackets(true);
+        native.SetShowWhitespacesEnabled(false);native.SetShowMiniMapEnabled(false);native.SetShowScrollbarMiniMapEnabled(false);
+        auto draw=[&] { native.Render("guide-canvas",{650,250}); };
+        auto strokes=[&] {
+            int result=0;
+            for (auto *window : GImGui->Windows)
+                if (window->LastFrameActive==ImGui::GetFrameCount() && (window->Flags & ImGuiWindowFlags_ChildWindow))
+                    for (const auto &vertex : window->DrawList->VtxBuffer) result+=vertex.col==palette().warning;
+            return result;
+        };
+        guides.setText("void call(\n    int value,\n    int other);\n");native.SetCursor({1,4});frame(draw);frame(draw);
+        check(strokes()==0,"multiline parenthesis guide crosses parameter names");
+        guides.setText("void call() {\n    int value;\n    int other;\n}\n");native.SetCursor({1,4});frame(draw);frame(draw);
+        check(strokes()>0,"brace block scope guides were lost");
+    }
+    {
+        CodeEditor first, second;
+        std::string text; for (int n=0;n<200;++n) text+="int value = 42;\n";
+        first.setText(text);first.setReadOnly(true);second.setText("other\n");
+        auto draw=[&] { first.draw("zoom-first",{650,350});second.draw("zoom-second",{650,100}); };
+        frame(draw,200,160);frame(draw,200,160);
+        const auto revision=first.native().GetTextRevision(), undo=first.native().GetUndoIndex();
+        const auto lineHeight=first.native().GetLineHeight(), uiSize=ImGui::GetStyle().FontSizeBase;
+        io.AddKeyEvent(ImGuiMod_Ctrl,true);frame(draw,200,160,-1,false,false,1);
+        check(first.textScale()>1.f && first.native().GetLineHeight()>lineHeight,"Ctrl+wheel scales read-only editor text");
+        check(second.textScale()==1.f && ImGui::GetStyle().FontSizeBase==uiSize,"zoom is isolated from other views/interface");
+        first.setWheelZoomEnabled(false);const auto scale=first.textScale();frame(draw,200,160,-1,false,false,1);
+        check(first.textScale()==scale,"host can disable wheel zoom");
+        first.setWheelZoomEnabled(true);frame(draw,200,160,-1,false,false,100);check(first.textScale()==3.f,"wheel zoom upper bound");
+        frame(draw,200,160,-1,false,false,-100);check(first.textScale()==.5f,"wheel zoom lower bound");
+        io.AddKeyEvent(ImGuiMod_Ctrl,false);frame(draw,200,160,-1,false,false,-1);
+        check(first.textScale()==.5f && first.text()==text && first.native().GetTextRevision()==revision && first.native().GetUndoIndex()==undo,"plain wheel/zoom preserve text and Undo");
+    }
     {
         CodeEditor editor;
         const std::string text = "\tconst char* label = \"音楽\";";

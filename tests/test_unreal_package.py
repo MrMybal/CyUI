@@ -33,6 +33,8 @@ class UnrealPackage(unittest.TestCase):
             syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
             self.assertEqual(len(sources), 10+len(syntax_units))
             self.assertTrue((output/'ThirdParty/CyUI/third_party/code-syntax.lock.json').is_file())
+            self.assertEqual((output/'ThirdParty/CyUI/src/fonts/JetBrainsMonoRegular.inc').read_bytes(), (ROOT/'src/fonts/JetBrainsMonoRegular.inc').read_bytes())
+            self.assertEqual((output/'ThirdParty/CyUI/third_party/jetbrains-mono/OFL.txt').read_bytes(), (ROOT/'third_party/jetbrains-mono/OFL.txt').read_bytes())
             self.assertTrue((output/'ThirdParty/CyUI/third_party/lexilla/License.txt').is_file())
             for source in sources:
                 include = '../../../ThirdParty/'+source.read_text().split('#include "../../../ThirdParty/')[1].split('"')[0]
