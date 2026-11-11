@@ -408,6 +408,23 @@
     "Module reference": "Référence des modules",
     "Quick filters": "Filtres rapides",
     "Localization guide": "Guide de localisation",
-    "Unable to open local documentation. Keep the Documentation folder beside the demo.": "Impossible d’ouvrir la documentation locale. Conservez le dossier Documentation à côté de la démo."
+    "Unable to open local documentation. Keep the Documentation folder beside the demo.": "Impossible d’ouvrir la documentation locale. Conservez le dossier Documentation à côté de la démo.",
+    "Paged code editor": "Éditeur de code paginé",
+    "Paged editor": "Éditeur paginé",
+    "In-memory editor": "Éditeur en mémoire",
+    "Loading page...": "Chargement de la page…",
+    "Waiting for the application...": "En attente de l’application…",
+    "Page unavailable": "Page indisponible",
+    "No document": "Aucun document",
+    "Open a document through the host application.": "Ouvrez un document depuis l’application hôte.",
+    "Only visible fragments are cached. The application owns storage, syntax, search and Undo/Redo.": "Seuls les fragments visibles sont en cache. L’application gère stockage, syntaxe, recherche et annulation/rétablissement.",
+    "Editable host document": "Document modifiable de l’hôte",
+    "Type, select, copy/paste and Undo. Each accepted edit is one host transaction.": "Saisissez, sélectionnez, copiez/collez et annulez. Chaque édition validée forme une transaction de l’hôte.",
+    "Generated million-line source": "Source générée d’un million de lignes",
+    "This action is handled by the host application.": "Cette action est gérée par l’application hôte.",
+    "Input retained for host recovery": "Saisie conservée pour récupération par l’hôte",
+    "Read-only": "Lecture seule",
+    "Go": "Aller",
+    "Retry": "Réessayer"
   }
 }

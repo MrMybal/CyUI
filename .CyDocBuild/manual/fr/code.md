@@ -5,7 +5,7 @@ description: Utiliser les 102 modes natifs et enregistrer une syntaxe applicativ
 section: Guides
 parent: modules
 order: 30
-sourceRevision: 3
+sourceRevision: 4
 ---
 
 Liez `CyUI::Code` (C++17) pour le catalogue, les lexers et les vues en lecture seule ; `CyUI::CodeEditor` (C++20) ajoute l’édition. Core seul ne compile ni ne lie de lexer. CMake résout les dépendances et exporte `CYUI_CODE_LANGUAGE_CATALOGUE=1`. Le catalogue commité se compile sans réseau ni Python, avec une seule instance compatible d’ImGui.
@@ -96,6 +96,12 @@ Réenregistrer un ID de plugin le met à jour sans changer sa valeur numérique.
 CodeDocument met en cache révisions du document et du registre. CodeEditor ne recolore qu’après un changement de texte natif ou de registre. Lexilla relit l’instantané borné entier après une édition : ce n’est pas un parseur incrémental. Une modification pendant le dessin reçoit les nouvelles couleurs à la frame suivante. `refreshSyntax()` prépare explicitement, même sans fenêtre. La préparation ne modifie ni octets, ni curseur, ni historique Undo. `setSyntaxEnabled(false)` conserve les adaptateurs lexicaux/sémantiques d’un hôte plus riche sans imposer un autre éditeur.
 
 Il s’agit de coloration lexicale, sans complétion LSP, refactoring ou sémantique de compilateur. Les modules Python historiques gardent leur implémentation ; cette nouvelle API native de registre et callbacks est C++ et ne fournit pas de liaison Python.
+
+Pour les grands documents servis par l’hôte, utilisez [PagedCodeEditor](doc:paged-code)
+dans le même module CodeEditor, sans passer chaque page à `CodeEditor::setText`.
+Cette vue distincte conserve des fragments bornés et remet les transactions
+protégées par révision au modèle documentaire de l’application. Ses fonctions
+d’édition de base diffèrent du TextEditor en mémoire ; consultez ses limites.
 
 ## Dépendances embarquées {#bundled-dependencies}
 

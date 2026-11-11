@@ -408,6 +408,23 @@
     "Module reference": "Module reference",
     "Quick filters": "Quick filters",
     "Localization guide": "Localization guide",
-    "Unable to open local documentation. Keep the Documentation folder beside the demo.": "Unable to open local documentation. Keep the Documentation folder beside the demo."
+    "Unable to open local documentation. Keep the Documentation folder beside the demo.": "Unable to open local documentation. Keep the Documentation folder beside the demo.",
+    "Paged code editor": "Paged code editor",
+    "Paged editor": "Paged editor",
+    "In-memory editor": "In-memory editor",
+    "Loading page...": "Loading page...",
+    "Waiting for the application...": "Waiting for the application...",
+    "Page unavailable": "Page unavailable",
+    "No document": "No document",
+    "Open a document through the host application.": "Open a document through the host application.",
+    "Only visible fragments are cached. The application owns storage, syntax, search and Undo/Redo.": "Only visible fragments are cached. The application owns storage, syntax, search and Undo/Redo.",
+    "Editable host document": "Editable host document",
+    "Type, select, copy/paste and Undo. Each accepted edit is one host transaction.": "Type, select, copy/paste and Undo. Each accepted edit is one host transaction.",
+    "Generated million-line source": "Generated million-line source",
+    "This action is handled by the host application.": "This action is handled by the host application.",
+    "Input retained for host recovery": "Input retained for host recovery",
+    "Read-only": "Read-only",
+    "Go": "Go",
+    "Retry": "Retry"
   }
 }

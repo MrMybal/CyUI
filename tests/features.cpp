@@ -1,5 +1,8 @@
 #include <cyui/CyUI.h>
 #include <cyui/detail/CodeText.h>
+#if defined(CYUI_HAS_CODE)
+#include <cyui/modules/CodePaging.h>
+#endif
 #include <imgui_internal.h>
 #include <cstdio>
 #include <cstring>
@@ -394,6 +397,86 @@ int main() {
                 reconstructedB += r.code.text + '\n';
         }
         check(a == reconstructedA && b == reconstructedB, "bounded diff reconstruction property");
+    }
+#endif
+#if defined(CYUI_HAS_CODE)
+    {
+        PagedCodeLineBuilder builder(7, 4, 3, 4, 3);
+        const std::string source = "a\té🛠z";
+        for (const char byte : source) check(builder.append({&byte, 1}), "streaming UTF-8 chunk split");
+        PagedCodeLine line;
+        check(builder.finish(line) && line.text == "é🛠" && line.firstCharacter == 2 &&
+              line.firstColumn == 4 && line.firstByte == 2 && line.characters == 6 && line.columns == 8,
+              "paged UTF-8/UTF-16/tab coordinates remain distinct");
+        check(builder.revealedColumn() == 5 && builder.revealedByte() == 4, "UTF-16 reveal resolves byte and display column");
+        PagedCodeLineBuilder split(0, 0, 20, 4, 4);
+        check(!split.append(source), "reveal rejects a surrogate-half position");
+        std::vector<PagedCodeGlyph> glyphs;
+        for (const auto bad : {std::string("\xc0\xaf"), std::string("\xed\xa0\x80"), std::string("\xf0\x9f"),
+                               std::string("x\n"), std::string("\0", 1)})
+            check(!pagedCodeGlyphs(bad, 0, 0, 4, glyphs), "paged text rejects malformed UTF-8/line terminators/NUL");
+        PagedCodeLineBuilder longLine(0, 8000000, 40);
+        const std::string chunk(4096, 'x');
+        for (unsigned n=0;n<4096;++n) check(longLine.append(chunk), "long line streams in bounded chunks");
+        check(longLine.finish(line) && line.text.size() == 40 && line.characters == 16777216 &&
+              line.firstByte == 8000000, "a long logical line retains only the requested fragment");
+        PagedCodeDocument document{11, 23, UINT64_C(1) << 40};
+        PagedCodeRead request{1, 11, 23, UINT64_C(1) << 35, 0, 1, 20, 4, 4096, {}};
+        PagedCodeLineBuilder row(request.firstLine, 0, 20);
+        check(row.append("é🛠") && row.finish(line), "page fixture");
+        PagedCodePage page{1, 11, 23, 0, {line}};
+        check(validateCodePage(request, document, page), "64-bit logical line IDs do not use float canvas coordinates");
+        auto bad = page; bad.revision++;
+        check(!validateCodePage(request, document, bad), "stale page revision refused");
+        bad = page; bad.lines.clear();
+        check(!validateCodePage(request, document, bad), "partial pages refused");
+        bad = page; bad.lines[0].tokens.push_back({1, 1, TokenRole::keyword});
+        check(!validateCodePage(request, document, bad), "token inside UTF-8 scalar refused");
+        auto bounded = request; bounded.maxBytes=1;
+        check(!validateCodePage(bounded, document, page), "aggregate page budget enforced");
+        bad=page;bad.firstColumn=UINT64_MAX;request.firstColumn=UINT64_MAX;
+        check(!validateCodePage(request, document, bad), "display coordinate overflow refused");
+    }
+#endif
+#if defined(CYUI_HAS_CODEEDITOR)
+    {
+        PagedCodeEditor view, other;
+        const PagedCodeDocument document{71, 3, 100};
+        view.setDocument(document); other.setDocument({72, 3, 2});
+        PagedCodeEditorResult event;
+        auto draw=[&] { event=view.draw("paged-regression", {650,300}); };
+        frame(draw);check(event.read.has_value(), "paged view emits initial read");
+        const auto first=*event.read;
+        frame(draw);check(!event.read, "pending read emitted only once");
+        view.scrollTo(80);frame(draw);check(event.read && event.cancelledRead == first.id, "scroll cancels old request");
+        const auto read=*event.read;
+        const auto makePage=[](const PagedCodeRead &query) {
+            PagedCodePage page{query.id, query.document, query.revision, query.firstColumn, {}};
+            for (std::uint64_t n=query.firstLine;n<std::min<std::uint64_t>(100,query.firstLine+query.lines);++n) {
+                PagedCodeLineBuilder build(n, query.firstColumn, query.columns, query.tabSize);
+                PagedCodeLine line;build.append("hello");build.finish(line);page.lines.push_back(std::move(line));
+            }
+            return page;
+        };
+        check(!view.supplyPage(makePage(first)) && view.pendingRead()->id == read.id, "late response cannot replace current request");
+        check(view.supplyPage(makePage(read)), "current bounded page accepted");
+        frame(draw);check(!event.read, "prepared viewport remains cached");
+        check(view.setSelection({{80,1},{80,2}},false) && view.replaceSelection("é"), "guarded replacement proposed");
+        frame(draw);check(event.edit.committed() && event.edit.value.revision==3 && event.edit.value.text=="é", "one-shot edit proposal preserves UTF-8 and revision");
+        const auto edit=event.edit.value;
+        frame(draw);check(!event.edit.committed() && event.waitingForEdit, "edit awaits host acknowledgement without re-emission");
+        check(!view.acceptEdit(edit.id,{71,3,100},{{80,2},{80,2}}), "unchanged revision cannot acknowledge commit");
+        check(view.acceptEdit(edit.id,{71,4,100},{{80,2},{80,2}}), "host committed revision acknowledged");
+        check(other.document().id==72 && other.selection().empty(), "independent paged views");
+        check(view.replaceSelection("x"), "second pending edit");frame(draw);
+        view.setDocument({71,5,100});frame(draw);
+        check(event.edit.phase==EditPhase::cancel, "external revision cancels uncommitted edit");
+        view.setSelection({{90,0},{90,0}},true);frame(draw);
+        check(event.read && event.read->reveal.has_value(), "uncached selection requests a reveal");
+        view.scrollTo(10);frame(draw);
+        check(event.read && !event.read->reveal, "manual scrolling does not reveal an offscreen stale caret");
+        view.setDocument({71,6,100,0,true});
+        check(!view.replaceSelection("x") && !view.requestAction(PagedCodeCommand::undo) && view.requestAction(PagedCodeCommand::copy), "read-only view allows copy and refuses mutations");
     }
 #endif
 #if defined(CYUI_HAS_CODEEDITOR)

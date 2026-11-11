@@ -5,7 +5,7 @@ description: C++ code syntax and extensions for CyUI integrators.
 section: Guides
 parent: modules
 order: 30
-revision: 3
+revision: 4
 ---
 
 Link `CyUI::Code` (C++17) for the catalogue, lexer service and read-only views;
@@ -138,6 +138,12 @@ This is lexical coloring, not language-server completion, refactoring or compile
 semantics. Legacy Python modules keep their existing implementation; the new
 native registry/callback API described here is C++ only. A Python native binding
 is not supplied by this change.
+
+For host-backed large documents, use [PagedCodeEditor](doc:paged-code) in the
+same CodeEditor module instead of passing each page to `CodeEditor::setText`.
+This separate view keeps only bounded line fragments and returns revision-guarded
+transactions to the application's existing document model. Its basic editing
+capabilities differ from the in-memory TextEditor; see the guide's limits.
 
 ## Bundled dependencies {#bundled-dependencies}
 

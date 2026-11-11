@@ -17,6 +17,7 @@ struct GalleryResources {
     ImTextureID texture = 0;          // shown by the Images / Viewport pages (0: none)
     int width = 0, height = 0;        // its size in texels (256 when 0)
     WebBackend *web = nullptr;        // Web page: a live backend (a preview when null)
+    bool previewPagedCode = false;    // Code page: select the host-paged example.
     bool previewCommands = false;     // Commands page: keep the palette open (captures)
     std::array<ImTextureID, 4> imagePreviews{}; // Optional host textures for asset/node examples.
     bool previewImageGraph = false;   // Nodes page: show the image-processing example (captures).

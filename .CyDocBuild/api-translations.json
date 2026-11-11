@@ -3,6 +3,8 @@
   "api-core:fr": "b4bed16a88cddc100d7cf9859d46e70ab0e5a0d135e322dc28e645b094669d46",
   "api-diff-viewer:en": "948ac24bdfd175248a709732bfb896f40edd9582d0bb35d33097fe65d54c95c0",
   "api-diff-viewer:fr": "98af3ceb5393a2c7fb1cc958191a765ad390861b482a881288a04505742d258e",
+  "api-paged-code-editor:en": "f1cf82e09fb843eae1dd5f4196b2bef20015ff08c61e8a422aa810398fd5d4f6",
+  "api-paged-code-editor:fr": "8bf89314ecf23d565ba47438ace1274c1aaac65fef94e2bd394a342d68e75940",
   "api-set-locale:en": "886c128fba7bb05622346e0480b1d580a1b8565b5dd13412791bba23ba60b58e",
   "api-set-locale:fr": "dc1435c576821f6397a5fa639b24a3e83ec62437c1ff45d2ab51c3aed9d7c4e8"
 }

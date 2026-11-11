@@ -12,6 +12,19 @@ package = importlib.util.module_from_spec(spec); spec.loader.exec_module(package
 
 
 class UnrealPackage(unittest.TestCase):
+    def test_paged_editor_sources_follow_module_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base=Path(directory)
+            code=base/'CodeOnly'; editor=base/'CodeEditor'
+            package.prepare_module(code, ['Code'])
+            package.prepare_module(editor, ['CodeEditor'])
+            for output in (code, editor):
+                self.assertTrue((output/'Library/src/modules/code/CodePaging.inl').is_file())
+                self.assertTrue((output/'Library/include/cyui/modules/CodePaging.h').is_file())
+            self.assertFalse((code/'Library/src/modules/PagedCodeEditor.inl').exists())
+            self.assertTrue((editor/'Library/src/modules/PagedCodeEditor.inl').is_file())
+            self.assertTrue((editor/'Library/include/cyui/modules/PagedCodeEditor.h').is_file())
+
     def test_selection(self):
         self.assertEqual(package.select_modules(['Core']), [])
         self.assertEqual(package.select_modules(['Diff']), ['Code', 'Diff'])

@@ -662,6 +662,22 @@ presentation heuristic; supply semantic parser/LSP results as overlays when need
   native TextEditor. draw returns document-changed. `native()` exposes advanced
   TextEditor hooks for completion, annotations, cursors, wrapping and Undo/Redo;
   include TextEditor.h and handle document storage/revisions in the host.
+- `PagedCodeEditor` (same CodeEditor target, `modules/PagedCodeEditor.h`) draws
+  virtual line fragments without copying an entire file into TextEditor. Code's
+  `CodePaging.h` provides the C++17 contracts, UTF-8 validator and streaming line
+  window builder. Keep stable nonzero document IDs/revisions and one widget per
+  UI thread. Process `draw().read` outside draw, then deliver `supplyPage` on the
+  UI thread. Discard/cancel stale reads. Edit results are **proposals**: validate
+  and commit one host Undo transaction, then `acceptEdit`; otherwise `rejectEdit`.
+  Recover `cancelledInput` instead of dropping user text after an external change.
+  The host supplies contextual byte spans, file I/O, search, clipboard extraction
+  across uncached pages, Undo and semantic services. UTF-16 positions, UTF-8 byte
+  spans and display cells are separate. Basic single-selection editing is not
+  the native TextEditor's multicursor/completion/folding feature set. No bidi,
+  grapheme shaping/navigation or soft wrap is provided. See
+  [CODE_PAGING.md](CODE_PAGING.md) and Gallery Code → Paged editor (editable host
+  fixture plus virtual million-line source). No Core, LSP, Python or Web adapter
+  is introduced by this library API.
 - `DiffDocument::setTexts(before, after, language, workBudget)` prepares a bounded
   comparison; `setUnified(text, language)` reads a unified patch. `rows`, `pairs`,
   `hunks`, `columns`, `revision`, `approximate` expose prepared presentation data.

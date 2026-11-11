@@ -505,7 +505,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     // --capture out.bmp [--theme key] [--comfortable] [--tab n]: renders a few
     // frames, writes the window to a BMP and quits.
     std::wstring capturePath,webUrl;
-    bool cefNoSandbox=false, galleryOnly=false, imageGraph=false;
+    bool cefNoSandbox=false, galleryOnly=false, imageGraph=false, pagedCode=false;
     std::string themeKey = "mid-grey";
     std::string language = "en";
     auto comfortable = false;
@@ -519,6 +519,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             if(arg==L"--web-url")webUrl=next();
             else if(arg==L"--gallery-only")galleryOnly=true;
             else if(arg==L"--image-graph")imageGraph=true;
+            else if(arg==L"--paged-code")pagedCode=true;
             else if(arg==L"--locale") {
                 language.clear();
                 for (const auto c : next()) {
@@ -590,6 +591,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     for (std::size_t i = 0; i < gImagePreviews.size(); ++i)
         app.resources.imagePreviews[i] = ImTextureID(reinterpret_cast<std::uintptr_t>(gImagePreviews[i]));
     app.resources.previewImageGraph = imageGraph;
+    app.resources.previewPagedCode = pagedCode;
 #if defined(CYUI_DEMO_CEF)
     std::unique_ptr<cyui::WebBackend> web;
     if(!webUrl.empty()){

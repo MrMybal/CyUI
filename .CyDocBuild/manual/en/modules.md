@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 1
+revision: 2
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -36,9 +36,9 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | `CyUI::Nodes` | `modules/Nodes.h` | Cards, pins, links, layout, move/connect/remove requests | Canvas |
 | `CyUI::Timeline` | `modules/Timeline.h` | Lanes, clips, markers, ruler, move/trim, range selection | Canvas |
 | `CyUI::AudioViews` | `modules/AudioViews.h` | Waveforms, spectrum, oscilloscope, stereo scope | Plots |
-| `CyUI::Code` | `modules/Code.h` | Source viewer, 102 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
+| `CyUI::Code` | `modules/Code.h` | Paged line contracts/builders, source viewer, 102 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
 | `CyUI::Diff` | `modules/Diff.h` | Unified/split diff, line numbers, hunk navigation, inline ranges | Code |
-| `CyUI::CodeEditor` | `modules/CodeEditor.h` | Native editable source, Undo/Redo, multiple cursors, completion hooks | Code + MIT TextEditor, C++20 |
+| `CyUI::CodeEditor` | `modules/CodeEditor.h` | In-memory TextEditor and host-backed PagedCodeEditor (distinct capabilities) | Code + MIT TextEditor, C++20 |
 | `CyUI::Inspector` | `modules/Inspector.h` | Typed properties, exact int64, validation, draft edits | Core |
 | `CyUI::Assets` | `modules/Assets.h` | Hierarchical folder navigation, grid/list, search, thumbnails, drag/drop | Core |
 | `CyUI::Images` | `modules/Images.h` | Texture viewport, checkerboard, crop, gradient stops | Canvas |
@@ -106,7 +106,7 @@ retain their original ON defaults; disable those explicitly when not used.
 
 Without CMake, compile the four Core sources and only the selected
 `src/modules/<Name>.cpp` files plus their dependency closure. Define the matching
-`CYUI_HAS_<NAME>` macros for Gallery/CyUI.h. CodeEditor also needs TextEditor.cpp,
+`CYUI_HAS_<NAME>` macros for Gallery/CyUI.h. CodeEditor also needs `src/modules/PagedCodeEditor.cpp`, TextEditor.cpp,
 its include directory and C++20. Code and its dependents additionally compile
 `src/modules/code/*.cpp`, the bundled `third_party/lexilla/lexlib/*.cxx` and
 `lexers/*.cxx`, with Lexilla include/lexlib and Scintilla include directories.
@@ -169,3 +169,13 @@ CEF binaries are not included in the Python package. See [WEB.md](doc:web).
 ```image
 {"id": "modules-view", "src": "assets/assets.webp", "alt": "Content browser with folders and thumbnails", "controls": "minimal"}
 ```
+
+## Paged documents {#paged-documents}
+
+`CodePaging.h` belongs to Code (C++17); `PagedCodeEditor.h` belongs to CodeEditor
+(C++20). [The provider guide](doc:paged-code) specifies bounded reads, UTF-16
+positions, contextual syntax and host-owned transactions. The paged editor does
+not inherit the classic lexer's 32 MiB snapshot limit or copy the whole file.
+Per-page and input budgets still apply. This native C++ API has no Python or Web
+binding yet. Source packaging includes it when CodeEditor is selected; Unreal
+Editor compilation and platform input still require host validation.

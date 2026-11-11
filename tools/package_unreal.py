@@ -91,6 +91,8 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     shutil.copytree(ROOT/'third_party/jetbrains-mono', library/'third_party/jetbrains-mono')
     sources = ['src/Theme.cpp', 'src/Widgets.cpp', 'src/Layout.cpp', 'src/Filter.cpp']
     sources += [f'src/modules/{name}.cpp' for name in selected]
+    if 'CodeEditor' in selected:
+        sources.append('src/modules/PagedCodeEditor.cpp')
     if gallery:
         sources.append('src/Gallery.cpp')
     (library/'src/modules').mkdir(parents=True)

@@ -1,5 +1,6 @@
 #pragma once
 #include "cyui/modules/Code.h"
+#include "cyui/modules/PagedCodeEditor.h"
 #include <memory>
 class IMGUI_API TextEditor;
 

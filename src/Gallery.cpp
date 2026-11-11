@@ -20,6 +20,10 @@
 #include <cmath>
 #include <cstdio>
 #include <utility>
+#include <future>
+#include <atomic>
+#include <chrono>
+#include <stdexcept>
 
 namespace cyui {
 namespace {
@@ -913,8 +917,213 @@ void audioViewsPage()
 #endif
 
 #if defined(CYUI_HAS_CODE)
-void codePage()
+#if defined(CYUI_HAS_CODEEDITOR)
+// Gallery-owned fixtures demonstrate the host contract; CyUI owns no source files.
+struct PagedGalleryHost {
+    PagedCodeEditor editor;
+    std::string text = "// An editable, host-owned UTF-8 document\n"
+                       "#include <algorithm>\n\n"
+                       "float process(float sample, float gain) {\n"
+                       "\t// Unicode: été 🛠\n"
+                       "\treturn std::clamp(sample * gain, -1.0f, 1.0f);\n}\n";
+    std::vector<std::pair<std::string, PagedCodeSelection>> undo, redo;
+    std::uint64_t revision = 1, active = 0, jump = 500001;
+    bool large = false;
+    std::future<PagedCodePage> worker;
+    std::shared_ptr<std::atomic<bool>> cancelled;
+    std::optional<PagedCodeRead> queued;
+    std::size_t preparedRows = 0;
+    std::vector<PagedCodeInput> recoveredInput;
+
+    explicit PagedGalleryHost(bool virtualSource = false) : large(virtualSource) {
+        editor.setDocument(snapshot());
+        if (large) editor.scrollTo(499990);
+    }
+    PagedCodeDocument snapshot() const {
+        return {large ? 2u : 1u, revision, large ? 1000000u : 1u + std::uint64_t(std::count(text.begin(), text.end(), '\n')),
+                large ? 2u * 1024u * 1024u : 0u, large};
+    }
+    static std::vector<std::string_view> lines(const std::string &text) {
+        std::vector<std::string_view> values;
+        for (std::size_t at = 0; at <= text.size();) {
+            const auto end = text.find('\n', at);
+            values.emplace_back(text.data() + at, end == std::string::npos ? text.size() - at : end - at);
+            if (end == std::string::npos) break;
+            at = end + 1;
+        }
+        return values;
+    }
+    static PagedCodePage page(PagedCodeRead read, const std::string &source, bool large,
+                               const std::shared_ptr<std::atomic<bool>> &cancel) {
+        const auto small = large ? std::vector<std::string_view>{} : lines(source);
+        auto line = [&](std::uint64_t number, std::uint64_t column, std::optional<std::uint64_t> reveal,
+                        std::optional<std::uint64_t> *revealed) {
+            PagedCodeLineBuilder build(number, column, read.columns, read.tabSize, reveal);
+            auto append = [&](std::string_view chunk) {
+                if (cancel->load() || !build.append(chunk)) throw std::runtime_error("Page preparation cancelled or invalid");
+            };
+            if (!large) append(small.at(std::size_t(number)));
+            else if (number == 500003) {
+                append("// A streamed long line: ");
+                for (unsigned n = 0; n < 16384; ++n) append("value\t0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+            } else append("static const uint64 Value_" + std::to_string(number) + " = " + std::to_string(number) + "; // generated row");
+            PagedCodeLine value;
+            if (!build.finish(value)) throw std::runtime_error("Invalid source line");
+            if (revealed) *revealed = build.revealedColumn();
+            return value;
+        };
+        auto firstColumn = read.firstColumn;
+        if (read.reveal) {
+            std::optional<std::uint64_t> column;
+            line(read.reveal->line, firstColumn, read.reveal->character, &column);
+            if (!column) throw std::runtime_error("Invalid UTF-16 reveal position");
+            if (*column < firstColumn || *column - firstColumn >= read.columns)
+                firstColumn = *column > read.columns / 2 ? *column - read.columns / 2 : 0;
+        }
+        PagedCodePage result{read.id, read.document, read.revision, firstColumn, {}};
+        const auto total = large ? 1000000u : std::uint64_t(small.size());
+        const auto count = std::min<std::uint64_t>(read.lines, total - read.firstLine);
+        const auto tokens = large ? std::vector<CodeToken>{} : highlightCode(source, CodeLanguage::cpp);
+        for (std::uint64_t n = 0; n < count; ++n) {
+            auto value = line(read.firstLine + n, firstColumn, {}, nullptr);
+            if (large && value.line == 500003) {
+                if (!value.text.empty()) value.tokens.push_back({0, value.text.size(), TokenRole::comment});
+            } else if (large) value.tokens = highlightCode(value.text, CodeLanguage::cpp);
+            else {
+                const auto offset = std::uint64_t(small[std::size_t(value.line)].data() - source.data()) + value.firstByte;
+                for (const auto &token : tokens) {
+                    const auto begin = std::max<std::uint64_t>(offset, token.start);
+                    const auto end = std::min<std::uint64_t>(offset + value.text.size(), token.start + token.length);
+                    if (end > begin) value.tokens.push_back({std::size_t(begin - offset), std::size_t(end - begin), token.role});
+                }
+            }
+            result.lines.push_back(std::move(value));
+        }
+        return result;
+    }
+    std::size_t byte(PagedCodePosition point) const {
+        const auto rows = lines(text);
+        if (point.line >= rows.size()) throw std::runtime_error("Stale selection");
+        const auto row = rows[std::size_t(point.line)];
+        const auto offset = std::size_t(row.data() - text.data());
+        PagedCodeLineBuilder build(point.line, 0, 1, 4, point.character); PagedCodeLine value;
+        if (!build.append(row) || !build.finish(value)) throw std::runtime_error("Invalid fixture line");
+        if (point.character <= value.characters && build.revealedByte()) return offset + std::size_t(*build.revealedByte());
+        throw std::runtime_error("Position is not a UTF-16 boundary");
+    }
+    static PagedCodePosition position(const std::string &text, std::size_t offset) {
+        std::uint64_t line = 0; std::size_t start = 0;
+        for (std::size_t n = 0; n < offset; ++n) if (text[n] == '\n') { ++line; start = n + 1; }
+        PagedCodeLineBuilder builder(line, 0, 1); PagedCodeLine value;
+        if (!builder.append(std::string_view(text).substr(start, offset - start)) || !builder.finish(value))
+            throw std::runtime_error("Invalid fixture position");
+        return {line, value.characters};
+    }
+    void apply(const PagedCodeReplacement &edit) {
+        if (large || edit.document != 1 || edit.revision != revision) { editor.rejectEdit(edit.id, "Stale host revision"); return; }
+        try {
+            const auto first = byte(edit.selection.first()), last = byte(edit.selection.last());
+            std::string replacement;
+            for (std::size_t n = 0; n < edit.text.size(); ++n) {
+                if (edit.text[n] == '\r') { replacement += '\n'; if (n + 1 < edit.text.size() && edit.text[n + 1] == '\n') ++n; }
+                else replacement += edit.text[n];
+            }
+            if (text.size() - (last - first) + replacement.size() > 128 * 1024)
+                throw std::runtime_error("The small editable Gallery fixture is limited to 128 KiB");
+            auto candidate = text;
+            candidate.replace(first, last - first, replacement);
+            const auto caret = position(candidate, first + replacement.size());
+            auto previous = std::move(text); text = std::move(candidate); ++revision;
+            if (!editor.acceptEdit(edit.id, snapshot(), {caret, caret})) {
+                text = std::move(previous); --revision;
+                throw std::runtime_error("Host acknowledgement failed");
+            }
+            undo.emplace_back(std::move(previous), edit.selection);
+            if (undo.size() > 32) undo.erase(undo.begin()); redo.clear();
+        } catch (const std::exception &error) { editor.rejectEdit(edit.id, error.what()); }
+    }
+    void draw(const char *id, ImVec2 size) {
+        if (worker.valid() && worker.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            try { const auto result = worker.get(); if (editor.supplyPage(result)) preparedRows = result.lines.size(); }
+            catch (const std::exception &error) { editor.failRead(active, error.what()); }
+        }
+        auto result = editor.draw(id, size);
+        if (result.cancelledRead == active && cancelled) cancelled->store(true);
+        if (result.read) queued = result.read;
+        if (result.edit.committed()) apply(result.edit.value);
+        for (auto &input : result.cancelledInput) recoveredInput.push_back(std::move(input));
+        if (!recoveredInput.empty()) {
+            textDim(tr("Input retained for host recovery").c_str());
+            ImGui::SameLine();
+            if (button(trLabel("Copy##recover-input").c_str())) {
+                std::string recovered;
+                for (const auto &input : recoveredInput) recovered += input.text;
+                ImGui::SetClipboardText(recovered.c_str()); recoveredInput.clear();
+            }
+        }
+        for (const auto &action : result.actions) {
+            if (action.document != snapshot().id || action.revision != revision) continue;
+            if (!large && (action.command == PagedCodeCommand::copy || action.command == PagedCodeCommand::cut)) {
+                try {
+                    const auto first = byte(action.selection.first()), last = byte(action.selection.last());
+                    if (first != last) {
+                        ImGui::SetClipboardText(text.substr(first, last - first).c_str());
+                        if (action.command == PagedCodeCommand::cut && editor.setSelection(action.selection)) editor.replaceSelection({});
+                    }
+                } catch (const std::exception &error) { notify(error.what(), Tone::error); }
+            } else if (!large && (action.command == PagedCodeCommand::undo || action.command == PagedCodeCommand::redo)) {
+                auto &from = action.command == PagedCodeCommand::undo ? undo : redo;
+                auto &to = action.command == PagedCodeCommand::undo ? redo : undo;
+                if (!from.empty()) {
+                    to.emplace_back(text, editor.selection());
+                    auto previous = std::move(from.back()); from.pop_back(); text = std::move(previous.first); ++revision;
+                    editor.setDocument(snapshot()); editor.setSelection(previous.second);
+                }
+            } else notify(tr("This action is handled by the host application.").c_str(), Tone::info);
+        }
+        if (queued && !worker.valid()) {
+            const auto read = *queued; queued.reset(); active = read.id;
+            cancelled = std::make_shared<std::atomic<bool>>(false);
+            worker = std::async(std::launch::async, [read, source = large ? std::string() : text, virtualSource = large, cancel = cancelled] {
+                return page(read, source, virtualSource, cancel);
+            });
+        }
+    }
+};
+void pagedCodePage() {
+    sectionTitle(tr("Paged code editor").c_str());
+    textDim(tr("Only visible fragments are cached. The application owns storage, syntax, search and Undo/Redo.").c_str());
+    static PagedGalleryHost editable, large(true);
+    if (ImGui::BeginTable("##paged-examples", 2, ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextColumn();
+        sectionTitle(tr("Editable host document").c_str());
+        textDim(tr("Type, select, copy/paste and Undo. Each accepted edit is one host transaction.").c_str());
+        editable.draw("##paged-editable", dp(0, 380));
+        ImGui::TableNextColumn();
+        sectionTitle(tr("Generated million-line source").c_str());
+        ImGui::SetNextItemWidth(dp(130));
+        ImGui::InputScalar(trLabel("Line##paged-jump").c_str(), ImGuiDataType_U64, &large.jump);
+        ImGui::SameLine();
+        if (button(trLabel("Go##paged-go").c_str())) large.editor.scrollTo(large.jump ? large.jump - 1 : 0);
+        large.draw("##paged-large", dp(0, 360));
+        ImGui::EndTable();
+    }
+}
+#endif
+
+void codePage(bool previewPaged)
 {
+#if defined(CYUI_HAS_CODEEDITOR)
+    static bool paged = false, preset = false;
+    if (previewPaged && !preset) { paged = true; preset = true; }
+    if (button(trLabel("In-memory editor##code-mode-memory").c_str())) paged = false;
+    ImGui::SameLine();
+    if (button(trLabel("Paged editor##code-mode-paged").c_str())) paged = true;
+    if (paged) { pagedCodePage(); return; }
+#else
+    (void)previewPaged;
+#endif
+
     sectionTitle(tr("Source view & annotations").c_str());
     textDim(tr("Ctrl + mouse wheel over code changes text size (50-300%).").c_str());
     textDim(tr("Orange strings, green comments: shared code colors across languages.").c_str());
@@ -1026,7 +1235,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
     page("Audio views",9,audioViewsPage);
 #endif
 #if defined(CYUI_HAS_CODE)
-    page("Code",10,codePage);
+    page("Code",10,[&]{codePage(resources.previewPagedCode);});
 #endif
 #if defined(CYUI_HAS_DIFF)
     page("Code / Diff",11,diffPage);

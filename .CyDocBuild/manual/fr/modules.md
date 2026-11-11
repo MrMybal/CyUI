@@ -4,7 +4,7 @@ title: Sélectionner les modules
 description: Cibles CMake, dépendances et contrats des composants optionnels.
 section: Guides
 order: 10
-sourceRevision: 1
+sourceRevision: 2
 ---
 
 CyUI 1.2 fournit un socle Dear ImGui et des modules d’interface sélectionnables. Le code CyUI est sous MIT. L’application conserve modèles, moteurs, fichiers, services, validation et historique Undo.
@@ -28,9 +28,9 @@ Les en-têtes ci-dessous sont relatifs à `include/cyui/`. Chaque cible porte le
 | Nodes | `modules/Nodes.h` | Cartes, ports, liens et propositions de déplacement/connexion/suppression | Canvas |
 | Timeline | `modules/Timeline.h` | Pistes, clips, marqueurs, règle, déplacement/rognage, plage | Canvas |
 | AudioViews | `modules/AudioViews.h` | Formes d’onde, spectre, oscilloscope et vue stéréo | Plots |
-| Code | `modules/Code.h` | Lecture de source, 102 syntaxes, registre, superpositions sémantiques, annotations, recherche | Core + Lexilla + threads système |
+| Code | `modules/Code.h` | Contrats/constructeurs de fragments paginés ; Lecture de source, 102 syntaxes, registre, superpositions sémantiques, annotations, recherche | Core + Lexilla + threads système |
 | Diff | `modules/Diff.h` | Comparaison unifiée/côte à côte, numéros, blocs et différences internes | Code |
-| CodeEditor | `modules/CodeEditor.h` | Édition native, Undo/Redo, multicurseurs, extension de complétion | Code + TextEditor MIT, C++20 |
+| CodeEditor | `modules/CodeEditor.h` | TextEditor en mémoire et PagedCodeEditor fourni par l’hôte (capacités distinctes) | Code + TextEditor MIT, C++20 |
 | Inspector | `modules/Inspector.h` | Propriétés typées, int64 exact, validation et brouillons | Core |
 | Assets | `modules/Assets.h` | Dossiers hiérarchiques, grille/liste, recherche, vignettes, glisser-déposer | Core |
 | Images | `modules/Images.h` | Texture, damier, recadrage et dégradé | Canvas |
@@ -71,7 +71,7 @@ Les dépendances sont automatiques : Diff active Code, sans CodeEditor, audio, t
 
 `CYUI_MODULES` accepte une liste séparée par points-virgules, Core, une liste vide ou All. La démo autonome complète prend All par défaut. Les intégrations et builds sans démo n’activent pas de nouveaux modules optionnels par défaut. Audio et Gallery gardent leur ancien défaut ON : désactivez-les explicitement. Core ne les lie jamais. Les anciennes déclarations Widgets.h/CyUI.h restent compatibles.
 
-Sans CMake, compilez les quatre sources Core et les `src/modules/<Name>.cpp` sélectionnés avec leurs dépendances et macros `CYUI_HAS_<NAME>` pour Gallery/CyUI.h. CodeEditor ajoute TextEditor.cpp, son include et C++20. Code et ses dépendants ajoutent `src/modules/code/*.cpp`, Lexilla lexlib/lexers et les includes Lexilla/Scintilla. Définissez `CYUI_CODE_LANGUAGE_CATALOGUE=1` pour le catalogue étendu. `build_demo.bat` compile la démo Windows complète.
+Sans CMake, compilez les quatre sources Core et les `src/modules/<Name>.cpp` sélectionnés avec leurs dépendances et macros `CYUI_HAS_<NAME>` pour Gallery/CyUI.h. CodeEditor ajoute `src/modules/PagedCodeEditor.cpp`, TextEditor.cpp, son include et C++20. Code et ses dépendants ajoutent `src/modules/code/*.cpp`, Lexilla lexlib/lexers et les includes Lexilla/Scintilla. Définissez `CYUI_CODE_LANGUAGE_CATALOGUE=1` pour le catalogue étendu. `build_demo.bat` compile la démo Windows complète.
 
 ## Contrat commun des données et éditions {#shared-data-and-edit-contract}
 
@@ -98,3 +98,14 @@ IDs, plages, palette, phases d’édition, origines et diff borné suivent les m
 ```image
 {"id": "modules-view", "src": "assets/assets.webp", "alt": "Navigateur de contenu avec dossiers et vignettes", "controls": "minimal"}
 ```
+
+## Documents paginés {#paged-documents}
+
+`CodePaging.h` appartient à Code (C++17) ; `PagedCodeEditor.h` à CodeEditor
+(C++20). [Le guide fournisseur](doc:paged-code) décrit lectures bornées, positions
+UTF-16, syntaxe contextuelle et transactions possédées par l’hôte. L’éditeur
+paginé ne reprend pas la limite d’instantané de 32 Mio du lexer classique et ne
+copie pas le fichier entier. Les budgets de pages et de saisie restent actifs.
+Cette API C++ native n’a pas encore de liaison Python ou Web. Le packaging source
+l’inclut avec CodeEditor ; compilation Unreal Editor et saisie de chaque plateforme
+restent à valider par l’hôte.

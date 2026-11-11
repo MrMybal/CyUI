@@ -22,6 +22,12 @@
       "expectedRevision": "04e66b98328b"
     },
     {
+      "id": "api-paged-code-editor",
+      "title": "PagedCodeEditor",
+      "locale": "fr",
+      "expectedRevision": "2e586714ba60"
+    },
+    {
       "id": "source-include-cyui-core-h",
       "title": "Core.h",
       "locale": "fr",
@@ -145,7 +151,13 @@
       "id": "source-include-cyui-modules-codeeditor-h",
       "title": "CodeEditor.h",
       "locale": "fr",
-      "expectedRevision": "1c1e7e2ea56e"
+      "expectedRevision": "9391ece048bd"
+    },
+    {
+      "id": "source-include-cyui-modules-codepaging-h",
+      "title": "CodePaging.h",
+      "locale": "fr",
+      "expectedRevision": "86706466cea6"
     },
     {
       "id": "source-include-cyui-modules-commands-h",
@@ -196,6 +208,12 @@
       "expectedRevision": "10f0779d4252"
     },
     {
+      "id": "source-include-cyui-modules-pagedcodeeditor-h",
+      "title": "PagedCodeEditor.h",
+      "locale": "fr",
+      "expectedRevision": "1f6b2dff4b31"
+    },
+    {
       "id": "source-include-cyui-modules-plots-h",
       "title": "Plots.h",
       "locale": "fr",
@@ -220,5 +238,5 @@
       "expectedRevision": "c3ae0abe47aa"
     }
   ],
-  "current": 17
+  "current": 18
 }
