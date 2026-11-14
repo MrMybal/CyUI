@@ -4,7 +4,7 @@ title: Manuel CyUI
 description: Un socle Dear ImGui commun pour les outils de bureau C++ et Python.
 section: Découvrir
 order: 0
-sourceRevision: 1
+sourceRevision: 2
 ---
 
 CyUI est une bibliothèque de widgets thématisés construite sur **Dear ImGui 1.92+**, avec des modules C++ et Python sélectionnables. Elle s’adresse aux développeurs d’éditeurs, d’outils créatifs et d’utilitaires de bureau qui recherchent contrôles cohérents, localisation et vues spécialisées. L’hôte conserve moteur de rendu, données, moteurs métier et historique Undo.
@@ -33,6 +33,8 @@ cyui_demo.exe --gallery-only --tab 7 --image-graph
 ```
 
 La galerie native propose Texte, Boutons, Contrôles, Conteneurs, Canevas, Tracés, Courbes, Nœuds, Timeline, Vues audio, Code, Diff, Détails, Assets, Images, Viewport, Commandes, Diagnostics, Documents, Web, Disposition et Filtres. Le panneau Web nécessite un backend CEF configuré séparément pour naviguer ; la démo ordinaire téléchargeable n’embarque ni CEF ni Unreal.
+
+Les sources actuelles proposent aussi l’onglet **Analyse audio** (22) : spectrogramme, sonie LUFS/LRA, crête vraie, corrélation, EQ/phase et dynamique. Lancez `cyui_demo.exe --gallery-only --tab 22` après compilation.
 
 ## Plateformes et statut {#platforms}
 

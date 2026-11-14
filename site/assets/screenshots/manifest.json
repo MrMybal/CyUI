@@ -1,5 +1,5 @@
 {
-  "source_revision": "c5b0f8ad818a6927a4e04600e3867d7d350a8841",
+  "source_revision": "0ba1ba663b4b2bf46d066a32829bc91ea2743cba",
   "images": [
     {
       "file": "overview.webp",
@@ -253,6 +253,28 @@
         721
       ],
       "sha256": "f5d83b2ad071f0ebeabb7ebfb422154e701b4397853308f5e679412395d8fb01"
+    },
+    {
+      "file": "audio-analysis.webp",
+      "theme": "mid-grey",
+      "tab": 22,
+      "locale": "en",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "48eb7e23095ddc5a8007960f656d9155208d2e5eb37bf9fc73249adb441ad814"
+    },
+    {
+      "file": "audio-analysis-fr.webp",
+      "theme": "mid-grey",
+      "tab": 22,
+      "locale": "fr",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "cecc41cec268520b5c9f537b4a24737bb4ec0b59c13b67a937a1ed4b35180ca2"
     }
   ]
 }

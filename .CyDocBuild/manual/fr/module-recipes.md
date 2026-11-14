@@ -4,7 +4,7 @@ title: API et recettes des modules
 description: Données, gestes et retours d’action des vues spécialisées.
 section: API
 order: 21
-sourceRevision: 1
+sourceRevision: 2
 ---
 
 Les en-têtes utilisent le préfixe `cyui/` ; liez leurs [cibles correspondantes](doc:modules). Gallery.cpp, onglets 4–19, contient les exemples. Les callbacks et superpositions de l’hôte suivent les règles palette/dp/style.
@@ -73,6 +73,80 @@ Audio.h conserve knob/fader/meter et meterPosition. Le fader répartit sa plage 
 | `stereoScope(...)` | Vue carrée X/Y, plage symétrique commune autour de zéro |
 
 Waveform propose seek/plage, zoom molette, déplacement Shift+molette ou milieu. L’hôte décode, met les enveloppes en cache et calcule FFT/DSP hors dessin, en possédant les échantillons et leur synchronisation.
+
+### Vues d’analyse audio {#audio-analysis-displays}
+
+Ces vues appartiennent à **AudioViews**, avec les mêmes dépendances (`Plots`,
+`Canvas`, `Core`). Les contrôles Audio, Curves et les SDK audio restent optionnels.
+L’onglet natif **Analyse audio** (22) et la galerie Python présentent chaque vue.
+
+| API C++ / Python | Affichage et entrées |
+| --- | --- |
+| `spectrogram` | Matrice temps/fréquence/intensité, cases et vue fréquentielle linéaires ou logarithmiques, couleurs de palette, échelle, réticule et case survolée exacte |
+| `loudness` | LUFS momentanés, à court terme et intégrés, LRA en LU depuis les bornes absolues en LUFS, cible configurable et historiques superposés |
+| `truePeak` / `true_peak` | dBTP par canal, crêtes maintenues, dépassements, repères d’avertissement/plafond, liste défilante et demande de remise à zéro |
+| `correlation` | Jauge signée -1..+1 et historique optionnel ; associez `stereoScope` / `stereo_scope` pour les tracés de phase L/R ou M/S préparés |
+| `filterResponse` / `filter_response` | Courbes de gain Hz/dB superposées, axe de phase indépendant à droite en degrés, points fréquence/gain éditables à identifiants stables |
+| `dynamics` | Courbes de transfert entrée/sortie en dB, référence unitaire, point de fonctionnement et barre de réduction de gain en dB positifs |
+
+```image
+{"id":"audio-analysis","src":"assets/audio-analysis-fr.webp","alt":"Galerie AudioViews : spectrogramme, EQ et phase éditables, LUFS, dynamique, crête vraie et corrélation","controls":"minimal"}
+```
+
+**Matrice du spectrogramme :** `SpectrogramData.values[frame * bins + bin]` contient
+les trames et cases dans l’ordre croissant sur `time` et `frequency`.
+`logarithmicBins` décrit l’espacement des cases stockées indépendamment de
+`PlotState.y.logarithmic`. L’unité est le dB par défaut ;
+`SpectrogramOptions.intensity/unit` configure la plage de couleurs et l’unité.
+Initialisez la vue sur l’intervalle couvert, par exemple
+`PlotState{{{0, 8}, false}, {{20, 20000}, true}}`.
+La molette zoome le temps, Ctrl+molette aussi les fréquences, et le glissement
+central déplace les deux axes. `SpectrogramResult` renvoie `valid`, `hovered`,
+`clicked`, `viewChanged`, `mouse`, `frame`, `bin` et `intensity`. Dimensions et plages
+incorrectes sont rejetées avant indexation ; les cases NaN restent vides.
+Le rendu échantillonne le centre des cellules écran, au plus `maxCells` (65 536 par
+défaut, borné à 1..262 144). Cette réduction ne préserve pas les pics : préparez une
+résolution visible adaptée quand de petits transitoires doivent rester visibles.
+
+**Mesures :** NaN (`missingAudioValue`) représente une valeur indisponible et
+l’infini négatif le silence. Fournissez mesures LUFS, bornes LRA, crêtes maintenues,
+dépassements dBTP et séries historiques. `LoudnessOptions` et `TruePeakOptions`
+configurent cibles, plages et bouton de remise à zéro. Le bouton renvoie
+`AudioMeterResult.resetRequested` sans modifier les mesures fournies.
+`clippedChannels` compte les canaux actuellement au-dessus du plafond ou ayant des
+dépassements enregistrés. L’hôte choisit les valeurs accumulées et historiques à
+effacer. L’axe Y des historiques de sonie/corrélation reste fixé à leur échelle ;
+leur vue X propose la navigation des graphiques. Donnez-lui une plage temporelle.
+
+```cpp
+cyui::ResponseState state; // persistant par panneau
+std::vector<cyui::ResponsePoint> bands{{1, 120, 4}, {2, 1800, -7}};
+cyui::ResponseOptions options;
+options.revision = revision;
+auto result = cyui::filterResponse("##eq", state, gainCurves, phaseCurves,
+                                  bands, cyui::dp(0, 240), options);
+if (result.points.committed()) commitBands(result.points.value); // une entrée Undo
+// Pendant le glissement, évaluer les courbes depuis state.preview.
+```
+
+Les points EQ ont des positions Hz/dB et des IDs 64 bits uniques non nuls (1 024
+maximum). Le résultat suit begin/update/commit/cancel : déplacement en aperçu,
+validation au relâchement, annulation par Échap. Un changement de révision, de
+modèle fourni, du mode lecture seule ou la perte de focus de la fenêtre annule le
+geste actif. Des points invalides ou dupliqués désactivent l’édition.
+Les bornes fréquence/gain limitent l’édition ; la navigation règle la vue affichée.
+Les séries de phase dépassant `PlotOptions.maxPoints` sont signalées dans
+`result.plot.skippedSeries`, comme celles de gain. L’hôte fournit séparément les
+courbes de gain et de phase, y compris celles de l’aperçu.
+
+Python utilise les mêmes classes avec champs snake_case : `SpectrogramData`,
+`LoudnessData`, `TruePeakChannel`, `ResponsePoint`, `ResponseState`, `DynamicsData`.
+Les options sont des arguments nommés. Les résultats sont des dictionnaires à clés
+snake_case ; `filter_response(...)["points"]` est un `Edit` avec `.phase`, `.value`,
+`.committed`. L’argument des courbes `gain` se distingue des bornes d’édition
+`gains=Range(-24, 24)`. Pour `dynamics`, initialisez les deux axes en dB linéaires,
+par exemple -60..0 ; `DynamicsOptions.reduction` / Python `reduction=` règle
+l’échelle d’atténuation.
 
 ### Code, édition et comparaison {#code-editing-and-git-style-diff-presentation}
 

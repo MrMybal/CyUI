@@ -425,6 +425,27 @@
     "Input retained for host recovery": "Saisie conservée pour récupération par l’hôte",
     "Read-only": "Lecture seule",
     "Go": "Aller",
-    "Retry": "Réessayer"
+    "Retry": "Réessayer",
+    "Audio analysis": "Analyse audio",
+    "Correlation": "Corrélation",
+    "Correlation and phase": "Corrélation et phase",
+    "Dynamics transfer": "Courbe de dynamique",
+    "EQ and phase response": "Réponse EQ et phase",
+    "Gain reduction": "Réduction de gain",
+    "Held": "Maintenu",
+    "Integrated": "Intégrée",
+    "Loudness": "Sonie",
+    "Loudness range": "Plage de sonie",
+    "Momentary": "Momentanée",
+    "No channels": "Aucun canal",
+    "Overs": "Dépassements",
+    "Phase": "Phase",
+    "Prepared audio displays. Drag EQ handles; Escape cancels. Wheel zooms, middle drag pans.": "Vues audio préparées. Glissez les points EQ ; Échap annule. Molette : zoom ; glissement central : déplacement.",
+    "Reset measurements": "Réinitialiser les mesures",
+    "Short-term": "Court terme",
+    "Spectrogram": "Spectrogramme",
+    "True peak": "Crête vraie",
+    "dB in": "dB entrée",
+    "dB out": "dB sortie"
   }
 }

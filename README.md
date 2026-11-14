@@ -57,6 +57,10 @@ audio decoding, FFTs and DSP remain in the application.
 
 ![AudioViews: stereo waveform, spectrum, oscilloscope and stereo scope](docs/screenshots/audio-views.png)
 
+AudioViews also includes a spectrogram, LUFS/LRA and true-peak displays, correlation history, editable EQ handles with gain/phase overlays, and dynamics transfer with gain reduction. These additions are available in the current sources and the gallery’s Audio analysis tab.
+
+![Audio analysis: spectrogram, LUFS, EQ and phase, dynamics, true peak and correlation](docs/screenshots/audio-analysis.png)
+
 #### Blueprint-style node graphs
 
 Colored pins, curved connections, selection, dragging, pan/zoom and automatic
@@ -165,7 +169,7 @@ adding a code editor, audio engine or browser.
 | `CyUI::Curves` | Keyframes, Bezier handles, snapping, selection and edit transactions |
 | `CyUI::Nodes` | Connected cards and pins, graph navigation and layout |
 | `CyUI::Timeline` | Clip lanes, trimming, markers, playhead and range selection |
-| `CyUI::AudioViews` | Waveforms, spectra, oscilloscopes and stereo scopes |
+| `CyUI::AudioViews` | Waveforms, spectrum, spectrogram, LUFS/true peak, correlation, EQ/phase and dynamics |
 | `CyUI::Code` | Source views, syntax colors, annotations and search |
 | `CyUI::CodeEditor` | Editable source using the bundled MIT TextEditor backend |
 | `CyUI::Diff` | Unified/split comparisons, inline changes and hunk navigation |

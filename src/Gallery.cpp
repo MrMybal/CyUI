@@ -848,6 +848,74 @@ void inspectorPage(const GalleryResources& resources)
 #endif
 
 #if defined(CYUI_HAS_AUDIOVIEWS)
+void audioAnalysisPage()
+{
+    textDim(tr("Prepared audio displays. Drag EQ handles; Escape cancels. Wheel zooms, middle drag pans.").c_str());
+    static std::vector<float> matrix;
+    static std::vector<Point> momentary, shortTerm, integrated, coherence, transfer;
+    if (matrix.empty()) {
+        for (int t = 0; t < 192; ++t)
+            for (int f = 0; f < 96; ++f) {
+                const double hz = 20 * std::pow(1000., (f + .5) / 96.);
+                const double fundamental = 180 + 100 * std::sin(t * .04);
+                double v = -92 + 5 * std::sin(t * .3 + f * .71);
+                for (int h = 1; h <= 12; ++h)
+                    v = std::max(v, -15 - h * 3 - 60 * std::pow(std::log(hz / (fundamental * h)) / .13, 2));
+                matrix.push_back(float(v));
+            }
+        for (int n = 0; n <= 120; ++n) {
+            momentary.push_back({double(n), -19 + 4 * std::sin(n * .12) + std::sin(n * .67)});
+            shortTerm.push_back({double(n), -19 + 2.5 * std::sin(n * .12 - .7)});
+            integrated.push_back({double(n), -21 + 1.7 * (1 - std::exp(-n / 35.))});
+            coherence.push_back({double(n), .55 + .3 * std::sin(n * .08)});
+            const double input = -60 + n * .5;
+            transfer.push_back({input, input < -18 ? input : -18 + (input + 18) / 4});
+        }
+    }
+    static PlotState spectrogramView{{{0, 8}, false}, {{20, 20000}, true}};
+    static PlotState loudnessView{{{0, 120}, false}, {{-60, 0}, false}};
+    static PlotState correlationView{{{0, 120}, false}, {{-1, 1}, false}};
+    static PlotState transferView{{{-60, 0}, false}, {{-60, 0}, false}};
+    static ResponseState response;
+    static std::vector<ResponsePoint> bands{{1, 120, 4}, {2, 1800, -7}, {3, 8000, 3}};
+    static bool resetLoudness = false, resetPeaks = false;
+    if (!ImGui::BeginTable("##analysis", 2, ImGuiTableFlags_SizingStretchSame)) return;
+    ImGui::TableNextColumn(); sectionTitle(tr("Spectrogram").c_str());
+    spectrogram("##spectrogram", spectrogramView, {matrix, 192, 96, {0, 8}, {20, 20000}, true}, dp(0, 192));
+    ImGui::TableNextColumn(); sectionTitle(tr("EQ and phase response").c_str());
+    std::vector<Point> gain, phase;
+    const auto &preview = response.dragging ? response.preview : bands;
+    for (int n = 0; n < 240; ++n) {
+        const double hz = 20 * std::pow(1000., n / 239.);
+        double db = 0, angle = 0;
+        for (const auto &band : preview) {
+            const double x = std::log(hz / band.frequency) / .5, bell = std::exp(-x * x);
+            db += band.gain * bell; angle += band.gain * x * bell * 5;
+        }
+        gain.push_back({hz, db}); phase.push_back({hz, angle});
+    }
+    const auto gainLabel = tr("Gain"), phaseLabel = tr("Phase"), m = tr("Momentary"), s = tr("Short-term"), in = tr("Integrated");
+    PlotSeries gainCurve{1, gainLabel.c_str(), gain, PlotStyle::line, 0}, phaseCurve{2, phaseLabel.c_str(), phase, PlotStyle::line, 1};
+    const auto edit = filterResponse("##response", response, {&gainCurve, 1}, {&phaseCurve, 1}, bands, dp(0, 192));
+    if (edit.points.committed()) bands = edit.points.value;
+    ImGui::TableNextColumn(); sectionTitle(tr("Loudness").c_str());
+    PlotSeries histories[]{{1, m.c_str(), momentary, PlotStyle::line, 1}, {2, s.c_str(), shortTerm, PlotStyle::line, 2}, {3, in.c_str(), integrated, PlotStyle::line, 0}};
+    LoudnessData loudnessData{-16.2, -18.1, resetLoudness ? missingAudioValue : -19.3, -25, -17, {histories, 3}};
+    if (loudness("##loudness", loudnessView, loudnessData, dp(0, 190)).resetRequested) resetLoudness = true;
+    ImGui::TableNextColumn(); sectionTitle(tr("Dynamics transfer").c_str());
+    const auto outputLabel = tr("Output");
+    PlotSeries curve{1, outputLabel.c_str(), transfer, PlotStyle::line, 0};
+    dynamics("##dynamics", transferView, {{&curve, 1}, -9, -15.75, 6.75}, dp(0, 190));
+    ImGui::TableNextColumn(); sectionTitle(tr("True peak").c_str());
+    TruePeakChannel channels[]{{"L", -1.3, resetPeaks ? -1.3 : .4, resetPeaks ? 0u : 3u}, {"R", -2.1, resetPeaks ? -2.1 : -.6, 0}};
+    if (truePeak("##truePeak", {channels, 2}, dp(0, 126)).resetRequested) resetPeaks = true;
+    ImGui::TableNextColumn(); sectionTitle(tr("Correlation and phase").c_str());
+    const auto correlationLabel = tr("Correlation");
+    PlotSeries correlationCurve{1, correlationLabel.c_str(), coherence, PlotStyle::line, 2};
+    correlation("##correlation", correlationView, .72, {&correlationCurve, 1}, dp(0, 126));
+    ImGui::EndTable();
+}
+
 void audioViewsPage()
 {
     sectionTitle(tr("Stereo waveform").c_str());
@@ -1233,6 +1301,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
 #endif
 #if defined(CYUI_HAS_AUDIOVIEWS)
     page("Audio views",9,audioViewsPage);
+    page("Audio analysis",22,audioAnalysisPage);
 #endif
 #if defined(CYUI_HAS_CODE)
     page("Code",10,[&]{codePage(resources.previewPagedCode);});

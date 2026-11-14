@@ -14,6 +14,8 @@ from cyui_modules.curves import CurvePoint, CurveState, curve_editor
 from cyui_modules.nodes import Node, Pin, Link, NodeState, node_editor
 from cyui_modules.timeline import Lane, Clip, Marker, TimelineState, timeline
 from cyui_modules.audioviews import make_peaks, WaveformState, waveform, spectrum, oscilloscope, stereo_scope
+from cyui_modules.audioviews import (SpectrogramData, spectrogram, LoudnessData, loudness,
+    TruePeakChannel, true_peak, correlation, ResponseState, ResponsePoint, filter_response, DynamicsData, dynamics)
 from cyui_modules.audio import knob, fader, meter, MeterState
 from cyui_modules.code import CodeDocument, CodeViewState, CodeEditor, code_viewer
 from cyui_modules.diff import DiffDocument, DiffState, diff_viewer
@@ -45,6 +47,18 @@ class ModuleGallery:
         self.peaks = make_peaks([math.sin(n*.04)*math.sin(n*.0001) for n in range(48000)], 1200)
         self.spectrum = PlotState(Axis(Range(20, 20000), True), Axis(Range(-90, 0)))
         self.spectrum_data = [Series(2, [(20*1000**(n/159), -60+35*math.exp(-math.log(20*1000**(n/159)/1000)**2)) for n in range(160)], 'Spectrum', color_index=1)]
+        self.spectrogram = SpectrogramData([
+            max([-92+5*math.sin(t*.3+f*.71)]+[-15-h*3-60*(math.log((20*1000**((f+.5)/48))/((180+100*math.sin(t*.08))*h))/.13)**2 for h in range(1, 13)])
+            for t in range(96) for f in range(48)], 96, 48, Range(0, 8), logarithmic_bins=True)
+        self.spectrogram_view = PlotState(Axis(Range(0, 8)), Axis(Range(20, 20000), True))
+        self.loudness_view = PlotState(Axis(Range(0, 120)), Axis(Range(-60, 0)))
+        self.loudness_data = LoudnessData(-16.2, -18.1, -19.3, -25, -17, [Series(1, [(n, -19+4*math.sin(n*.12)) for n in range(121)], 'Momentary', color_index=1)])
+        self.peak_channels = [TruePeakChannel('L', -1.3, .4, 3), TruePeakChannel('R', -2.1, -.6)]
+        self.response = ResponseState(); self.bands = [ResponsePoint(1, 120, 4), ResponsePoint(2, 1800, -7), ResponsePoint(3, 8000, 3)]
+        self.dynamics_view = PlotState(Axis(Range(-60, 0)), Axis(Range(-60, 0)))
+        self.transfer = [Series(1, [(x, x if x < -18 else -18+(x+18)/4) for x in range(-60, 1)], 'Output')]
+        self.correlation_view = PlotState(Axis(Range(0, 120)), Axis(Range(-1, 1)))
+        self.coherence = [Series(1, [(n, .55+.3*math.sin(n*.08)) for n in range(121)], 'Correlation', color_index=2)]
         self.source, self.code_state = CodeDocument('// Shared code\nfloat gain = 0.5;\n', 'cpp'), CodeViewState()
         self.editor = CodeEditor('// Edit with native ImGui undo\nfloat value = 42;\n', 'cpp')
         self.diff, self.diff_state = DiffDocument(), DiffState()
@@ -101,6 +115,33 @@ class ModuleGallery:
             waveform('waveform', self.wave, [self.peaks, self.peaks], Range(0, 1), .4, (0, 140))
             spectrum('spectrum', self.spectrum, self.spectrum_data, (0, 130))
             oscilloscope('scope', self.plot, self.signal, (0, 100))
+        elif name == 'Audio analysis':
+            if i.begin_table('analysis', 2, i.TableFlags_.sizing_stretch_same):
+                i.table_next_column(); c.section_title(c.tr('Spectrogram'))
+                spectrogram('spectrogram', self.spectrogram_view, self.spectrogram, (0, 192))
+                i.table_next_column(); c.section_title(c.tr('EQ and phase response'))
+                gain, phase = [], []
+                for n in range(240):
+                    hz = 20*1000**(n/239)
+                    x = [(math.log(hz/b.frequency)/.5, b.gain) for b in (self.response.preview if self.response.dragging else self.bands)]
+                    gain.append((hz, sum(g*math.exp(-a*a) for a, g in x)))
+                    phase.append((hz, sum(g*a*math.exp(-a*a)*5 for a, g in x)))
+                result = filter_response('response', self.response, [Series(1, gain, c.tr('Gain'))], [Series(2, phase, c.tr('Phase'), color_index=1)], self.bands, (0, 192))
+                if result['points'].committed: self.bands = result['points'].value
+                i.table_next_column(); c.section_title(c.tr('Loudness'))
+                self.loudness_data.history[0].label = c.tr('Momentary')
+                if loudness('loudness', self.loudness_view, self.loudness_data, (0, 190))['reset_requested']:
+                    self.loudness_data.integrated = math.nan
+                i.table_next_column(); c.section_title(c.tr('Dynamics transfer'))
+                self.transfer[0].label = c.tr('Output')
+                dynamics('dynamics', self.dynamics_view, DynamicsData(self.transfer, -9, -15.75, 6.75), (0, 190))
+                i.table_next_column(); c.section_title(c.tr('True peak'))
+                if true_peak('truePeak', self.peak_channels, (0, 126))['reset_requested']:
+                    for channel in self.peak_channels: channel.held, channel.overs = channel.level, 0
+                i.table_next_column(); c.section_title(c.tr('Correlation and phase'))
+                self.coherence[0].label = c.tr('Correlation')
+                correlation('correlation', self.correlation_view, .72, self.coherence, (0, 126))
+                i.end_table()
         elif name == 'Code':
             code_viewer('code', self.code_state, self.source, (0, 180))
             self.editor.draw('editor', (0, 300))
@@ -159,7 +200,7 @@ class ModuleGallery:
         help_requested = (i.is_window_focused(i.FocusedFlags_.root_and_child_windows)
                           and i.is_key_pressed(i.Key.f1, False)) or help_requested
         if i.begin_tab_bar('##modules', i.TabBarFlags_.fitting_policy_scroll):
-            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
+            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
                 shown, _ = i.begin_tab_item(c.tr_label(name))
                 if shown:
                     self.active_page = name
@@ -176,6 +217,7 @@ class ModuleGallery:
                      'Timeline': ('module-recipes', 'curves-graphs-and-timeline'),
                      'Audio': ('module-recipes', 'audio-controls-and-prepared-signal-views'),
                      'Audio views': ('module-recipes', 'audio-controls-and-prepared-signal-views'),
+                     'Audio analysis': ('module-recipes', 'audio-analysis-displays'),
                      'Inspector': ('module-recipes', 'inspector-and-assets'),
                      'Assets': ('module-recipes', 'inspector-and-assets'),
                      'Images': ('module-recipes', 'images-viewport-and-optional-3d-gizmo'),

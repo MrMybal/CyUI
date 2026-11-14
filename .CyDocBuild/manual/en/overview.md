@@ -4,7 +4,7 @@ title: CyUI manual
 description: A common Dear ImGui foundation for C++ and Python desktop tools.
 section: Start
 order: 0
-revision: 1
+revision: 2
 ---
 
 CyUI is a themed widget library on top of **Dear ImGui 1.92+**, with independently selectable C++ and Python interface modules. It serves developers of editors, creative tools and desktop utilities who need consistent controls, localization and specialized views. The host application keeps its renderer, data, engines and Undo history.
@@ -29,10 +29,11 @@ Extract the entire portable Windows ZIP, then run `cyui_demo.exe`. English is th
 cyui_demo.exe --locale fr
 cyui_demo.exe --theme violet --comfortable
 cyui_demo.exe --gallery-only --tab 21
+cyui_demo.exe --gallery-only --tab 22
 cyui_demo.exe --gallery-only --tab 7 --image-graph
 ```
 
-The native gallery contains Text, Buttons, Controls, Containers, Canvas, Plots, Curves, Nodes, Timeline, Audio views, Code, Diff, Details, Assets, Images, Viewport, Commands, Diagnostics, Documents, Web, Layout and Filtering. The Web page needs a separately configured CEF backend for live browsing; the ordinary downloadable demo does not bundle CEF or Unreal.
+The native gallery contains Text, Buttons, Controls, Containers, Canvas, Plots, Curves, Nodes, Timeline, Audio views, Audio analysis, Code, Diff, Details, Assets, Images, Viewport, Commands, Diagnostics, Documents, Web, Layout and Filtering. The Web page needs a separately configured CEF backend for live browsing; the ordinary downloadable demo does not bundle CEF or Unreal.
 
 ## Platforms and status {#platforms}
 

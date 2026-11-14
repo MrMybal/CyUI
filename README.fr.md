@@ -62,6 +62,10 @@ dans l’application.
 
 ![AudioViews : forme d’onde stéréo, spectre, oscilloscope et vue stéréo](docs/screenshots/audio-views.png)
 
+AudioViews propose aussi un spectrogramme, les vues LUFS/LRA et crête vraie, un historique de corrélation, des points EQ éditables avec superposition gain/phase, ainsi que les courbes de dynamique et la réduction de gain. Ces ajouts sont disponibles dans les sources actuelles et l’onglet Analyse audio de la galerie.
+
+![Analyse audio : spectrogramme, LUFS, EQ et phase, dynamique, crête vraie et corrélation](docs/screenshots/audio-analysis.png)
+
 #### Graphes à nœuds de type blueprint
 
 Ports colorés, liaisons courbes, sélection, déplacement, navigation, zoom et
@@ -178,7 +182,7 @@ Les dépendances entre modules sont sélectionnées automatiquement ; par exempl
 | `CyUI::Curves` | Images clés, poignées de Bézier, alignement, sélection et transactions d’édition |
 | `CyUI::Nodes` | Cartes et ports reliés, navigation et disposition du graphe |
 | `CyUI::Timeline` | Pistes de clips, ajustement des bords, marqueurs, tête de lecture et sélection de plage |
-| `CyUI::AudioViews` | Formes d’onde, spectres, oscilloscopes et vues stéréo |
+| `CyUI::AudioViews` | Formes d’onde, spectre, spectrogramme, LUFS/crête vraie, corrélation, EQ/phase et dynamique |
 | `CyUI::Code` | Vues de sources, coloration syntaxique, annotations et recherche |
 | `CyUI::CodeEditor` | Édition des sources avec le backend TextEditor MIT fourni |
 | `CyUI::Diff` | Comparaisons unifiées/côte à côte, différences dans les lignes et navigation entre blocs modifiés |

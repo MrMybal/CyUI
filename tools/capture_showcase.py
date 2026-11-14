@@ -21,6 +21,8 @@ PREVIEWS = (
     ("theme-violet", "violet", 2, False, "en"),
     ("theme-navy", "navy", 2, False, "en"),
     ("audio", "mid-grey", 9, True, "en"),
+    ("audio-analysis", "mid-grey", 22, True, "en"),
+    ("audio-analysis-fr", "mid-grey", 22, True, "fr"),
     ("nodes", "violet", 7, True, "en"),
     ("image-graph", "violet", 7, True, "en", "--image-graph"),
     ("assets", "mid-grey", 13, True, "en"),
@@ -43,6 +45,8 @@ PREVIEWS = (
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path, default=ROOT / "build/cyui_demo.exe")
+    parser.add_argument("--only", nargs="+", choices=[preview[0] for preview in PREVIEWS],
+                        help="Refresh selected captures while preserving the other manifest entries")
     args = parser.parse_args()
     executable = args.exe.resolve()
     if not executable.is_file():
@@ -55,8 +59,12 @@ def main():
     manifest = {"source_revision": subprocess.check_output(
         ["git", "-c", f"safe.directory={ROOT.as_posix()}", "rev-parse", "HEAD"],
         cwd=ROOT, text=True).strip(), "images": []}
+    if args.only and (target / "manifest.json").is_file():
+        manifest["images"] = json.loads((target / "manifest.json").read_text("utf-8"))["images"]
     with tempfile.TemporaryDirectory(prefix="showcase-captures-", dir=ROOT / "build") as scratch:
         for name, theme, tab, gallery_only, language, *extra in PREVIEWS:
+            if args.only and name not in args.only:
+                continue
             bitmap = Path(scratch) / f"{name}.bmp"
             command = [str(executable), "--capture", str(bitmap), "--theme", theme,
                        "--tab", str(tab), "--locale", language]
@@ -69,11 +77,12 @@ def main():
                 image.paste(captured.convert("RGB"))
                 image.save(target / f"{name}.webp", lossless=True, method=6)
             output = target / f"{name}.webp"
+            manifest["images"] = [entry for entry in manifest["images"] if entry["file"] != output.name]
             manifest["images"].append({"file": output.name, "theme": theme, "tab": tab,
                 "locale": language, "size": list(image.size),
                 "sha256": hashlib.sha256(output.read_bytes()).hexdigest()})
             print(f"{name}: {theme}, {language}, tab {tab}", flush=True)
-    (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 if __name__ == "__main__":

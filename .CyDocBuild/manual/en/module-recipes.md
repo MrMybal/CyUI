@@ -4,7 +4,7 @@ title: Module API and recipes
 description: Module API and recipes for CyUI integrators.
 section: API
 order: 21
-revision: 1
+revision: 2
 ---
 
 All headers below use the `cyui/` prefix. Link the corresponding target described
@@ -121,6 +121,73 @@ The separate AudioViews target offers:
 Waveform emits seek/range-selection state, supports wheel zoom, Shift-wheel pan
 and middle drag. Decode audio, query envelope caches and compute FFT/DSP on the
 host side. Keep raw float audio ownership and thread synchronization out of draw.
+
+### Audio analysis displays {#audio-analysis-displays}
+
+These views belong to **AudioViews**, with the same dependency closure (`Plots`,
+`Canvas`, `Core`); linking Audio controls, Curves or an audio SDK is unnecessary.
+The native gallery's **Audio analysis** tab (22) and Python gallery show every view.
+
+| C++ / Python API | Display and inputs |
+| --- | --- |
+| `spectrogram` | Time/frequency/intensity matrix, linear or logarithmic bins and frequency view, palette heat colors, intensity scale, crosshair and exact hovered frame/bin/value |
+| `loudness` | Momentary, short-term and integrated LUFS, LRA in LU from absolute low/high LUFS bounds, configurable target marker and overlaid histories |
+| `truePeak` / `true_peak` | Per-channel dBTP, held peaks, overs, warning/ceiling markers, scrollable channel list and reset request |
+| `correlation` | Signed -1..+1 gauge and optional history; use `stereoScope` / `stereo_scope` alongside it for L/R or prepared M/S phase traces |
+| `filterResponse` / `filter_response` | Overlaid Hz/dB gain curves, independent right-side degree axis for phase, editable stable-ID frequency/gain handles |
+| `dynamics` | Input/output dB transfer curves, unity reference, current operating point and positive-dB gain-reduction bar |
+
+```image
+{"id":"audio-analysis","src":"assets/audio-analysis.webp","alt":"AudioViews gallery with spectrogram, editable EQ and phase, LUFS, dynamics, true peak and correlation","controls":"minimal"}
+```
+
+**Spectrogram layout:** `SpectrogramData.values[frame * bins + bin]` uses increasing
+frames and bins over `time` and `frequency`. `logarithmicBins` describes stored bin
+spacing, independently of `PlotState.y.logarithmic`. Values are dB by default;
+`SpectrogramOptions.intensity/unit` configure the color range and displayed unit.
+Initialize the view to the coverage, e.g. `PlotState{{{0, 8}, false}, {{20, 20000}, true}}`.
+Wheel zooms time, Ctrl-wheel also zooms frequency, and middle drag pans both axes.
+`SpectrogramResult` reports `valid`, `hovered`, `clicked`, `viewChanged`, `mouse`,
+`frame`, `bin`, `intensity`. Malformed dimensions/ranges are rejected before indexing.
+NaN cells stay blank. Rendering samples screen-cell centers with at most `maxCells`
+(default 65,536, clamped to 1..262,144); it is not a peak-preserving reduction.
+Prepare the desired visible resolution when small transients must remain visible.
+
+**Meter values:** unavailable readings use NaN (`missingAudioValue`); negative
+infinity represents silence. Supply LUFS, LRA bounds, dBTP holds/overs and history
+series as measurements. `LoudnessOptions` and `TruePeakOptions` customize targets,
+level ranges and the reset button. Reset returns `AudioMeterResult.resetRequested`
+without changing input measurements. `clippedChannels` counts channels currently
+above the ceiling or with recorded overs. The host decides which accumulated values
+and histories to clear. Loudness/correlation history Y ranges remain fixed to their
+meter scale; their X view supports plot navigation. Give history X a time range.
+
+```cpp
+cyui::ResponseState state; // persist per panel
+std::vector<cyui::ResponsePoint> bands{{1, 120, 4}, {2, 1800, -7}};
+cyui::ResponseOptions options;
+options.revision = revision;
+auto result = cyui::filterResponse("##eq", state, gainCurves, phaseCurves,
+                                  bands, cyui::dp(0, 240), options);
+if (result.points.committed()) commitBands(result.points.value); // one Undo entry
+// During a drag, evaluate preview curves from state.preview.
+```
+
+EQ handles are Hz/dB positions, with unique nonzero 64-bit IDs (at most 1,024).
+The result follows begin/update/commit/cancel; drag updates a preview, release
+commits, Escape cancels. Changed revision, input model, read-only mode or lost
+window focus cancels an active gesture. Invalid/duplicate handles disable editing.
+Frequency/gain bounds constrain edits; plot navigation controls the visible view.
+Phase series exceeding `PlotOptions.maxPoints` appear in `result.plot.skippedSeries`,
+as gain series do. Gain/phase curves remain separately supplied, including previews.
+
+Python uses the same data classes with snake_case fields: `SpectrogramData`,
+`LoudnessData`, `TruePeakChannel`, `ResponsePoint`, `ResponseState`, `DynamicsData`.
+Pass display options as keyword arguments. Results use snake_case dictionary keys;
+`filter_response(...)["points"]` is an `Edit` with `.phase`, `.value`, `.committed`.
+The `gain` curves argument uses a different name from the `gains=Range(-24, 24)`
+editing bounds. `dynamics` expects a linear dB plot view, e.g. both axes -60..0;
+`DynamicsOptions.reduction` / Python `reduction=` sets its attenuation scale.
 
 ### Code, editing and Git-style diff presentation {#code-editing-and-git-style-diff-presentation}
 

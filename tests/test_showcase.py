@@ -152,7 +152,9 @@ class Showcase(unittest.TestCase):
             self.assertEqual([int(image["width"]), int(image["height"])], item["size"])
 
     def test_site_does_not_embed_local_machine_paths(self):
-        pattern = re.compile(r"(?i)[A-Z]:[\\/](?:Users|_Project|_Plugins|_UnrealSource)[\\/]|/(?:Users|home)/")
+        pattern = re.compile(r"(?i)[A-Z]:[\\/](?:Users|_Project|_Plugins|_UnrealSource)[\\/]|(?<![\w+])/(?:Users|home)/")
+        self.assertIsNone(pattern.search('Ctrl/Cmd+A/Home/End'))
+        self.assertIsNotNone(pattern.search('"/home/example/file.txt"'))
         for path in SITE.rglob("*"):
             if path.is_file() and path.suffix in (".html", ".js", ".css", ".json", ".md", ".svg"):
                 self.assertIsNone(pattern.search(path.read_text(encoding="utf-8")), path)

@@ -375,6 +375,13 @@ if(CYUI_BUILD_TESTS AND TARGET cyui_code)
     add_test(NAME cyui_code_languages COMMAND cyui_test_code_languages)
 endif()
 
+if(CYUI_BUILD_TESTS AND TARGET cyui_audioviews)
+    add_executable(cyui_test_audio_views tests/audio_views.cpp)
+    target_link_libraries(cyui_test_audio_views PRIVATE CyUI::AudioViews)
+    cyui_configure_target(cyui_test_audio_views)
+    add_test(NAME cyui_audio_views COMMAND cyui_test_audio_views)
+endif()
+
 if(CYUI_BUILD_TESTS AND TARGET cyui_diff)
     add_executable(cyui_test_diff_scrolling tests/diff_scrolling.cpp)
     target_link_libraries(cyui_test_diff_scrolling PRIVATE CyUI::Diff)

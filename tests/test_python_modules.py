@@ -20,6 +20,8 @@ from cyui_modules.curves import CurvePoint, CurveState, evaluate_curve, curve_ed
 from cyui_modules.nodes import Node, Pin, Link, NodeState, node_editor, arrange_nodes
 from cyui_modules.timeline import Lane, Clip, TimelineState, timeline
 from cyui_modules.audioviews import make_peaks, WaveformState, waveform, spectrum, oscilloscope
+from cyui_modules.audioviews import (SpectrogramData, spectrogram, LoudnessData, loudness,
+    TruePeakChannel, true_peak, correlation, ResponseState, ResponsePoint, filter_response, DynamicsData, dynamics)
 from cyui_modules.images import ImageData, ImageState, GradientStop, GradientState, sample_gradient, image_viewport, gradient_editor
 from cyui_modules.viewport import OrbitCamera, ViewportState, Transform2D, TransformState, camera_position, camera_view_matrix, viewport, transform_gizmo
 from cyui_modules.code import CodeDocument, CodeViewState, SourceSpan, CodeEditor, code_viewer
@@ -236,6 +238,7 @@ class Environment(unittest.TestCase):
         self.assertEqual(locale(), 'en')
         with locale_scope('fr-CA'):
             self.assertEqual(tr('Save'), 'Enregistrer')
+            self.assertEqual(tr_label('Reset measurements###reset'), 'Réinitialiser les mesures###reset')
             self.assertEqual(tr('unknown', 'English fallback'), 'English fallback')
             self.assertTrue(tr_label('Save###document').endswith('###document'))
             self.assertFalse(set_locale('unknown'))
@@ -255,6 +258,65 @@ class Environment(unittest.TestCase):
 
 @unittest.skipIf(i is None, 'imgui-bundle is required for real UI frame tests')
 class Frames(unittest.TestCase):
+    def test_audio_analysis_gestures_and_missing_data(self):
+        data = SpectrogramData(list(range(16)), 4, 4, Range(0, 4), Range(20, 20000), True)
+        state = PlotState(Axis(Range(0, 4)), Axis(Range(20, 20000), True))
+        draw = lambda: spectrogram('heat', state, data, (400, 200))
+        self.frame(draw); self.frame(draw, (220, 120))
+        hit = self.frame(draw, (220, 120), (0, True))
+        self.assertTrue(hit['valid'] and hit['hovered'] and hit['clicked'])
+        self.assertEqual((hit['frame'], hit['bin'], hit['intensity']), (2, 2, 10))
+        self.frame(draw, (220, 120), (0, False))
+        i.get_io().add_mouse_wheel_event(0, 1)
+        zoomed = self.frame(draw, (220, 120))
+        self.assertTrue(zoomed['view_changed'])
+        self.assertLess(state.x.view.span, 4)
+        self.assertAlmostEqual((state.x.view.minimum+state.x.view.maximum)/2, 2)
+        data.frames = 10**30
+        self.assertFalse(self.frame(draw)['valid'])
+        data.frames = data.bins = 1000; data.values = [-30]*1000000
+        self.frame(lambda: spectrogram('bounded', state, data, (400, 200), max_cells=8, axes=False))
+        self.assertLess(i.get_draw_data().total_vtx_count, 200)
+
+        response = ResponseState(); points = [ResponsePoint(0x100000001, math.sqrt(20*20000), 0)]
+        options = dict(revision=0)
+        draw = lambda: filter_response('response', response, [], [], points, (400, 200), **options)['points']
+        self.frame(draw); self.frame(draw)
+        self.assertEqual(self.frame(draw, (220, 120), (0, True)).phase, 'begin')
+        moved = self.frame(draw, (320, 80))
+        self.assertEqual(moved.phase, 'update')
+        self.assertGreater(moved.value[0].frequency, 3000)
+        self.assertGreater(moved.value[0].gain, 9)
+        self.assertEqual(points[0].gain, 0)
+        self.assertEqual(self.frame(draw, (320, 80), escape=True).phase, 'cancel')
+        self.frame(draw, (220, 120), (0, False)); self.frame(draw, (220, 120))
+        self.assertEqual(self.frame(draw, (220, 120), (0, True)).phase, 'begin')
+        self.frame(draw, (320, 80))
+        self.assertTrue(self.frame(draw, (320, 80), (0, False)).committed)
+        self.frame(draw, (220, 120), (0, True)); options['revision'] += 1
+        self.assertEqual(self.frame(draw, (250, 100)).phase, 'cancel')
+        self.frame(draw, (220, 120), (0, False))
+        options['read_only'] = True
+        self.assertEqual(self.frame(draw, (220, 120), (0, True)).phase, 'none')
+        self.frame(draw, (220, 120), (0, False)); options['read_only'] = False
+        points.append(ResponsePoint(points[0].id, points[0].frequency, 2))
+        self.assertEqual(self.frame(draw, (220, 120), (0, True)).phase, 'none')
+        self.frame(draw, (220, 120), (0, False))
+
+        channels = [TruePeakChannel('L', -1, .4, 3), TruePeakChannel('R', -math.inf), TruePeakChannel('Missing')]
+        draw = lambda: true_peak('peaks', channels, (600, 180))
+        self.assertEqual(self.frame(draw)['clipped_channels'], 1)
+        self.frame(draw, (35, 27), (0, True))
+        self.assertTrue(self.frame(draw, (35, 27), (0, False))['reset_requested'])
+        self.assertEqual(channels[0].overs, 3)
+        many = [TruePeakChannel('Channel', -12, -6) for _ in range(10000)]
+        many[-1].overs = 1
+        result = self.frame(lambda: true_peak('many', many, (600, 180)))
+        self.assertEqual(result['clipped_channels'], 1)
+        self.assertLess(i.get_draw_data().total_vtx_count, 5000)
+        self.frame(lambda: None)  # let the removed child leave ImGui's previous-frame hover state
+        self.frame(lambda: None)
+
     def test_live_language_switch_keeps_widget_ids(self):
         from cyui_modules.locale import locale_scope
         english = self.frame(lambda: i.get_id(c.tr_label('Save')))
@@ -315,6 +377,12 @@ class Frames(unittest.TestCase):
             'waveform': lambda: waveform('wave', WaveformState(), [make_peaks([0, 1, -1, .5], 2)], Range(0, 1)),
             'spectrum': lambda: spectrum('spectrum', PlotState(), [line]),
             'scope': lambda: oscilloscope('scope', PlotState(), [line]),
+            'spectrogram': lambda: spectrogram('spectrogram', PlotState(), SpectrogramData([0, math.nan, -50, -20], 2, 2)),
+            'loudness': lambda: loudness('loudness', PlotState(), LoudnessData()),
+            'true_peak': lambda: true_peak('true_peak', [TruePeakChannel('L', -1, .4, 3), TruePeakChannel('R', -math.inf)]),
+            'correlation': lambda: correlation('correlation', PlotState(), math.nan),
+            'response': lambda: filter_response('response', ResponseState(), [line], [line], [ResponsePoint(1)]),
+            'dynamics': lambda: dynamics('dynamics', PlotState(), DynamicsData()),
             'code': lambda: code_viewer('code', CodeViewState(), doc),
             'editor': lambda: CodeEditor('a\r\nb\r\n', 'cpp').draw('editor'),
             'diff': lambda: diff_viewer('diff', DiffState(), diff),
@@ -381,7 +449,7 @@ class Frames(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('cyui_example', path)
         example = importlib.util.module_from_spec(spec); spec.loader.exec_module(example)
         gallery = example.ModuleGallery()
-        for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
+        for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
             self.frame(lambda: gallery.draw_page(name))
 
     def test_example_gallery_f1_opens_local_contextual_help(self):

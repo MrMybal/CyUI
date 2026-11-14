@@ -425,6 +425,27 @@
     "Input retained for host recovery": "Input retained for host recovery",
     "Read-only": "Read-only",
     "Go": "Go",
-    "Retry": "Retry"
+    "Retry": "Retry",
+    "Audio analysis": "Audio analysis",
+    "Correlation": "Correlation",
+    "Correlation and phase": "Correlation and phase",
+    "Dynamics transfer": "Dynamics transfer",
+    "EQ and phase response": "EQ and phase response",
+    "Gain reduction": "Gain reduction",
+    "Held": "Held",
+    "Integrated": "Integrated",
+    "Loudness": "Loudness",
+    "Loudness range": "Loudness range",
+    "Momentary": "Momentary",
+    "No channels": "No channels",
+    "Overs": "Overs",
+    "Phase": "Phase",
+    "Prepared audio displays. Drag EQ handles; Escape cancels. Wheel zooms, middle drag pans.": "Prepared audio displays. Drag EQ handles; Escape cancels. Wheel zooms, middle drag pans.",
+    "Reset measurements": "Reset measurements",
+    "Short-term": "Short-term",
+    "Spectrogram": "Spectrogram",
+    "True peak": "True peak",
+    "dB in": "dB in",
+    "dB out": "dB out"
   }
 }
