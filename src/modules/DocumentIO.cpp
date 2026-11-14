@@ -187,7 +187,8 @@ std::vector<unsigned char> encodeMarkdown(const DocumentPackage &doc) {
     }
     return out;
 }
-DocumentPackage readCyMD(ArrayView<unsigned char> bytes, const DocumentIOLimits &limit) {
+std::vector<DocumentAsset> readDocumentArchive(ArrayView<unsigned char> bytes,
+                                               const DocumentIOLimits &limit) {
     checkSize(bytes.count, limit.archiveBytes);
     if (bytes.count < 22)
         malformed();
@@ -261,7 +262,19 @@ DocumentPackage readCyMD(ArrayView<unsigned char> bytes, const DocumentIOLimits 
             malformed();
         files.emplace(std::move(name), std::move(decoded));
     }
-    if (cursor != eocd || !files.count("document.md"))
+    if (cursor != eocd)
+        malformed();
+    std::vector<DocumentAsset> entries;
+    for (auto &file : files)
+        entries.push_back({file.first, std::move(file.second)});
+    std::sort(entries.begin(), entries.end(), [](const auto &a, const auto &b) { return a.path < b.path; });
+    return entries;
+}
+DocumentPackage readCyMD(ArrayView<unsigned char> bytes, const DocumentIOLimits &limit) {
+    std::unordered_map<std::string, Bytes> files;
+    for (auto &entry : readDocumentArchive(bytes, limit))
+        files.emplace(entry.path, std::move(entry.bytes));
+    if (!files.count("document.md"))
         malformed();
     if (files.count("mimetype") &&
         std::string(files["mimetype"].begin(), files["mimetype"].end()) != "application/x-cymd")
@@ -290,6 +303,10 @@ std::vector<unsigned char> writeCyMD(const DocumentPackage &doc, const DocumentI
         {"document.md", bytes(doc.markdown)},
         {"previews.json", bytes(doc.previews)}};
     entries.insert(entries.end(), doc.assets.begin(), doc.assets.end());
+    return writeDocumentArchive(entries, limit);
+}
+std::vector<unsigned char> writeDocumentArchive(const std::vector<DocumentAsset> &entries,
+                                                const DocumentIOLimits &limit) {
     checkSize(entries.size(), std::min<std::size_t>(65534, limit.entries));
     Bytes out, central;
     std::unordered_set<std::string> names;

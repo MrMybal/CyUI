@@ -15,8 +15,9 @@ dependencies = {
     'Curves': ['Plots'], 'Nodes': ['Canvas'], 'Timeline': ['Canvas'],
     'AudioViews': ['Plots'], 'Code': [], 'Diff': ['Code'], 'CodeEditor': ['Code'],
     'Inspector': [], 'Assets': [], 'Images': ['Canvas'], 'Viewport': ['Images'],
-    'Commands': [], 'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor'],
-    'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [],
+    'Commands': [], 'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor', 'DataGrid'],
+    'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [], 'DataGrid': [], 'Spreadsheet': ['DataGrid'],
+    'RichDocument': ['DocumentEditor', 'DataGrid'], 'OfficeIO': ['RichDocument', 'Spreadsheet', 'DocumentIO'],
 }
 # Modules whose consumer runs module_smoke.cpp (a link and a few calls), not features.cpp.
 smoke_only = {'Audio', 'Gallery'}

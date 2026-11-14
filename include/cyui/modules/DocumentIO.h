@@ -2,10 +2,6 @@
 #include "cyui/modules/DocumentViews.h"
 namespace cyui {
 enum class DocumentEncoding { utf8, utf16LE, utf16BE };
-struct DocumentAsset {
-    std::string path;
-    std::vector<unsigned char> bytes;
-};
 struct DocumentPackage {
     std::string markdown, previews = "{}";
     std::vector<DocumentAsset> assets;
@@ -17,6 +13,10 @@ struct DocumentIOLimits {
     std::size_t archiveBytes = 64 * 1024 * 1024, expandedBytes = 128 * 1024 * 1024,
                 entryBytes = 32 * 1024 * 1024, entries = 4096;
 };
+// Shared bounded ZIP container for optional document formats. Stored writer,
+// stored/DEFLATE reader; no extraction, encryption, ZIP64 or external resolution.
+CYUI_API std::vector<DocumentAsset> readDocumentArchive(ArrayView<unsigned char>, const DocumentIOLimits & = {});
+CYUI_API std::vector<unsigned char> writeDocumentArchive(const std::vector<DocumentAsset> &, const DocumentIOLimits & = {});
 // Memory-only APIs. No filesystem, network, browser, or OS clipboard dependency.
 // Throw std::invalid_argument/length_error on malformed input or exceeded budgets.
 CYUI_API DocumentPackage decodeMarkdown(ArrayView<unsigned char> bytes);

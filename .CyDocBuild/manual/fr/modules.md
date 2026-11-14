@@ -4,7 +4,7 @@ title: Sélectionner les modules
 description: Cibles CMake, dépendances et contrats des composants optionnels.
 section: Guides
 order: 10
-sourceRevision: 5
+sourceRevision: 6
 ---
 
 CyUI 1.2 fournit un socle Dear ImGui et des modules d’interface sélectionnables. Le code CyUI est sous MIT. L’application conserve modèles, moteurs, fichiers, services, validation et historique Undo.
@@ -38,11 +38,15 @@ Les en-têtes ci-dessous sont relatifs à `include/cyui/`. Chaque cible porte le
 | Commands | `modules/Commands.h` | Palette de commandes recherchable au clavier | Core |
 | Diagnostics | `modules/Diagnostics.h` | Journaux bornés synchronisés, filtres et navigation | Core + threads système |
 | DocumentViews | `modules/DocumentViews.h` | Markdown/GFM natif, images, tâches, spoilers, tableaux et conversations | Code, Images, MD4C MIT |
-| `CyUI::DocumentEditor` | `modules/DocumentEditor.h` | Éditeur Direct/Source/Côte à côte/Lecture | DocumentViews, CodeEditor |
+| `CyUI::DocumentEditor` | `modules/DocumentEditor.h` | Éditeur Direct/Source/Côte à côte/Lecture | DocumentViews, CodeEditor, DataGrid |
 | `CyUI::DocumentIO` | `modules/DocumentIO.h` | Tampons Markdown/CyMD, presse-papiers HTML | DocumentViews, miniz |
 | `CyUI::DocumentWeb` | `modules/DocumentWeb.h` | Adaptateur optionnel vers le moteur web existant | DocumentViews, Web |
 | `CyUI::Media` | `modules/Media.h` | Contrôles de lecture natifs avec moteur hôte | Images |
 | Web | `modules/Web.h` | Contrat texture/entrée, origines, messages et thème | Core |
+| `CyUI::DataGrid` | `modules/DataGrid.h` | Cellules éditables, plages, presse-papiers, lignes/colonnes, formats et annulation | Core |
+| `CyUI::Spreadsheet` | `modules/Spreadsheet.h` | Feuilles, barre de formule, calcul borné et annulation du classeur | DataGrid |
+| `CyUI::RichDocument` | `modules/RichDocument.h` | Éditeur paginé, paragraphes enrichis, tableaux, images et mise en page | DocumentEditor, DataGrid |
+| `CyUI::OfficeIO` | `modules/OfficeIO.h` | Import/export ODT/ODS, DOCX/XLSX et ODF plat avec rapports | RichDocument, Spreadsheet, DocumentIO, MIT pugixml |
 | Gallery | `Gallery.h` | Exemples et éditeur de thème | Modules activés uniquement |
 
 `CyUI::Code::Diff` est un alias de `CyUI::Diff`. `CyUI::CyUI` regroupe les modules sélectionnés. Un module est une bibliothèque statique, pas un plugin chargé dynamiquement.

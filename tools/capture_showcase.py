@@ -47,6 +47,12 @@ PREVIEWS = (
     ("markdown-split-fr", "navy", 24, True, "fr", "--document-mode", "split"),
     ("markdown-zoom", "violet", 18, True, "en", "--document-zoom"),
     ("markdown-zoom-fr", "violet", 18, True, "fr", "--document-zoom"),
+    ("office-grid", "mid-grey", 28, True, "en"),
+    ("office-grid-fr", "mid-grey", 28, True, "fr"),
+    ("office-spreadsheet", "navy", 26, True, "en"),
+    ("office-spreadsheet-fr", "navy", 26, True, "fr"),
+    ("office-writer", "mid-grey", 27, True, "en"),
+    ("office-writer-fr", "mid-grey", 27, True, "fr"),
     ("diagnostics", "navy", 17, True, "en"),
     ("viewport", "mid-grey", 15, True, "en"),
 )

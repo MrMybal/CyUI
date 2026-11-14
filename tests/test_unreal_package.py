@@ -110,6 +110,23 @@ class UnrealPackage(unittest.TestCase):
             self.assertNotIn('"ToolMenus"', rules)
             self.assertNotIn('"UnrealEd"', rules)
 
+    def test_office_dependencies_and_xml_notice(self):
+        with tempfile.TemporaryDirectory() as directory:
+            grid = Path(directory)/'Grid'
+            office = Path(directory)/'Office'
+            self.assertEqual(package.prepare_module(grid, ['DataGrid']), ['DataGrid'])
+            self.assertFalse((grid/'Library/third_party/pugixml').exists())
+            selected = package.prepare_module(office, ['OfficeIO'])
+            self.assertIn('Spreadsheet', selected)
+            self.assertIn('RichDocument', selected)
+            self.assertNotIn('Web', selected)
+            vendor = office/'Library/third_party/pugixml'
+            self.assertTrue((vendor/'LICENSE.md').is_file())
+            metadata = json.loads((vendor/'VERSION.json').read_text())
+            self.assertEqual(metadata['packaged_paths'], {'pugixml.cpp':'pugixml.inl'})
+            for name, digest in metadata['files'].items():
+                self.assertEqual(hashlib.sha256((vendor/name).read_bytes()).hexdigest(), digest)
+
     def test_output_outside_copied_trees(self):
         for inside in ('docs/x', 'src/x', 'web/x', 'tools/x', 'examples/x', 'Build2/x'):
             with self.assertRaises(ValueError, msg=inside):

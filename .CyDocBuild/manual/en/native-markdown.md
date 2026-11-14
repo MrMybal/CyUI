@@ -4,7 +4,7 @@ title: Native Markdown, editing and media
 description: Compose native documents, chats and editors with optional resource adapters.
 section: Guides
 order: 17
-revision: 1
+revision: 2
 ---
 
 ## Choose the components {#components}
@@ -15,7 +15,7 @@ Neither needs a browser. Select only the targets your application uses:
 | Target | Purpose | Dependencies |
 | --- | --- | --- |
 | `CyUI::DocumentViews` | Markdown reader and streaming transcripts | Code, Images, MIT MD4C parser |
-| `CyUI::DocumentEditor` | Live, source, split and reading modes | DocumentViews, CodeEditor |
+| `CyUI::DocumentEditor` | Live, source, split and reading modes | DocumentViews, CodeEditor, DataGrid |
 | `CyUI::DocumentIO` | In-memory `.md`/`.cymd`, clipboard HTML conversion | DocumentViews, MIT miniz inflate |
 | `CyUI::Media` | Native audio/video playback controls | Images; application playback backend |
 | `CyUI::DocumentWeb` | Optional document embed adapter | DocumentViews, Web; application browser backend |
@@ -136,8 +136,10 @@ if (editor.draw("editor", {0, 560}, options).changed)
 
 Live uses native text inputs with Markdown markers hidden and styled glyphs
 overlaid at the input's own wrapping/selection positions. Images and tables are
-native elements. Code blocks are editable with lexical colors; table structure
-is edited in Source. Source uses CodeEditor; Split adds a source-position-synchronized
+native elements. Code blocks are editable with lexical colors. Tables use the shared native DataGrid:
+edit cells directly, select/copy/paste ranges, and insert/remove rows or columns
+from the toolbar or context menu. Cell input accepts inline Markdown; Reading
+renders that formatting. Table changes share the source undo history. Source uses CodeEditor; Split adds a source-position-synchronized
 preview. Reading uses the same reader. Switching modes preserves the source.
 All native editing modes share the source editor's transaction history.
 
@@ -202,3 +204,5 @@ identified simulated playback backend at tab 25. Windows builds and headless
 interaction tests cover the native implementation. Linux/macOS runtime, native
 IME platform integration and external engine integrations require validation in
 the target application; portable source alone does not establish those results.
+
+See [grids, paginated documents and Office formats](doc:office) for ODT/ODS and DOCX/XLSX support.

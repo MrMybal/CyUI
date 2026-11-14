@@ -22,6 +22,7 @@ NOTICES = (
     "third_party/texteditor/LICENSE",
     "third_party/md4c/LICENSE.md",
     "third_party/miniz/LICENSE",
+    "third_party/pugixml/LICENSE.md",
     "third_party/jetbrains-mono/OFL.txt",
     "third_party/lexilla/License.txt",
     "third_party/scintilla/License.txt",

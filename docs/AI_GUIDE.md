@@ -1039,3 +1039,26 @@ definitions before unloading plugins. Built-in IDs cannot be overwritten.
 Gallery's Code page includes a syntax selector for the shared registry. The
 native backend accepts shared display spans without replacing its lexical state;
 hosts with richer syntax overlays can use `CodeEditor::setSyntaxEnabled(false)`.
+
+### Native grids, spreadsheets and paginated documents
+
+- Link `CyUI::DataGrid` for `GridModel` and `dataGrid`: cell edits, rectangular
+  selection, TSV/CSV APIs, row/column structure, common formats and undo. Core only.
+- `DocumentEditor` uses DataGrid for Live Markdown tables. Cell input accepts
+  inline Markdown; source undo covers table changes.
+- `CyUI::Spreadsheet` provides `Workbook`, `SpreadsheetState`, `spreadsheet`,
+  `evaluateWorkbook`, structural A1 rewrites and relative copy/paste. Calculation
+  is a bounded subset, not a complete Excel/OpenFormula engine.
+- `CyUI::RichDocument` provides `RichDocumentData`, `RichDocumentEditor` and native
+  page layout. Double-click a paragraph/table/image to edit that block. Page setup
+  controls dimensions, margins, header/footer and page fields. No browser is used.
+- `CyUI::OfficeIO` imports/exports ODT/DOCX, ODS/XLSX and flat FODT/FODS. APIs use
+  memory buffers, including packaged image bytes, and never launch another app.
+  Inspect `OfficeIssue`; `strict=true` rejects recognized lossy conversions.
+  Conversion is not a document-fidelity guarantee.
+- These new Office APIs/widgets are C++ APIs. The existing Python editor retains
+  its previously documented capabilities.
+- Gallery: 26 spreadsheet, 27 paginated document, 28 standalone grid.
+
+The bilingual `office` manual documents selection, examples, supported formulas,
+format limits and real LibreOffice validation commands.

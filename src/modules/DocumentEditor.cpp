@@ -1,4 +1,5 @@
 #include "cyui/modules/DocumentEditor.h"
+#include "cyui/modules/DataGrid.h"
 #include "DocumentLayout.h"
 #include "cyui/modules/CodeEditor.h"
 #include <TextEditor.h>
@@ -374,6 +375,12 @@ struct DocumentEditor::Impl {
     DocumentState view;
     DocumentMode mode = DocumentMode::live;
     std::unordered_map<std::size_t, LiveField> fields;
+    struct TableField {
+        GridModel grid;
+        GridState state;
+        std::string source;
+    };
+    std::unordered_map<std::size_t, TableField> tables;
     std::size_t first = 0, last = 0;
     bool readOnly = false, changed = false, preserveCRLF = false;
     ImGuiID activeInput = 0;
@@ -460,19 +467,80 @@ struct DocumentEditor::Impl {
                             [](const auto &r) { return r.kind == DocumentInlineKind::image; });
             if (special) {
                 if (b.kind == DocumentBlockKind::table) {
-                    if (ImGui::BeginTable(
-                            "##table",
-                            int(std::max<std::size_t>(1, std::min<std::size_t>(32, b.alignments.size()))),
-                            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                        for (const auto &row : b.cells) {
-                            ImGui::TableNextRow();
-                            for (std::size_t c = 0; c < std::min<std::size_t>(32, row.size()); ++c) {
-                                ScopedID cell{int(c)};
-                                ImGui::TableNextColumn();
-                                renderer.text(row[c]);
-                            }
+                    std::size_t gridColumns = 1;
+                    for (const auto &row : b.cells)
+                        gridColumns = std::max(gridColumns, row.size());
+                    if (b.cells.size() > 100000 || gridColumns > 256 ||
+                        b.cells.size() > 1000000 / gridColumns) {
+                        callout(Tone::info,
+                                tr("Table exceeds native grid limits. Edit it in Source.").c_str());
+                    } else {
+                        auto &session = tables[n];
+                        const auto range = blockRange(b, current);
+                        const auto original = current.substr(range.first, range.second - range.first);
+                        if (session.source != original) {
+                            std::size_t columns = 1;
+                            for (const auto &row : b.cells)
+                                columns = std::max(columns, row.size());
+                            std::vector<GridCell> cells(b.cells.size() * columns);
+                            for (std::size_t row = 0; row < b.cells.size(); ++row)
+                                for (std::size_t column = 0; column < b.cells[row].size(); ++column) {
+                                    auto &cell = cells[row * columns + column];
+                                    cell.text = RichText(b.cells[row][column]).markdown();
+                                    if (column < b.alignments.size())
+                                        cell.alignment = GridAlignment(b.alignments[column]);
+                                }
+                            session.grid.assign(b.cells.size(), columns, cells);
+                            session.grid.clearHistory();
+                            session.state = {};
+                            session.source = original;
                         }
-                        ImGui::EndTable();
+                        GridOptions gridOptions;
+                        gridOptions.readOnly = readOnly;
+                        gridOptions.history = false;
+                        gridOptions.formatting = false;
+                        gridOptions.display = [](std::size_t, std::size_t, const GridCell &cell) {
+                            Document parsed;
+                            parsed.setMarkdown(cell.text);
+                            return parsed.plainText();
+                        };
+                        const auto edit = dataGrid(
+                            "##table", session.state, session.grid,
+                            {0, dp(std::min(360.f, 95.f + float(session.grid.rows()) * 30))}, gridOptions);
+                        if (edit.changed) {
+                            std::string markup;
+                            for (std::size_t row = 0; row < session.grid.rows(); ++row) {
+                                markup += '|';
+                                for (std::size_t column = 0; column < session.grid.columns(); ++column) {
+                                    const auto &text = session.grid.cell(row, column).text;
+                                    for (std::size_t at = 0; at < text.size(); ++at) {
+                                        char ch = text[at];
+                                        if (ch == '|' && (at == 0 || text[at - 1] != '\\'))
+                                            markup += '\\';
+                                        if (ch == '\n')
+                                            markup += "<br>";
+                                        else
+                                            markup += ch;
+                                    }
+                                    markup += " |";
+                                }
+                                if (row + 1 < session.grid.rows() || row == 0)
+                                    markup += '\n';
+                                if (row == 0) {
+                                    markup += '|';
+                                    for (std::size_t column = 0; column < session.grid.columns(); ++column) {
+                                        auto align = session.grid.cell(0, column).alignment;
+                                        markup += align == GridAlignment::center  ? " :---: |"
+                                                  : align == GridAlignment::right ? " ---: |"
+                                                                                  : " --- |";
+                                    }
+                                    if (session.grid.rows() > 1)
+                                        markup += '\n';
+                                }
+                            }
+                            session.source = markup;
+                            edits.emplace_back(range.first, range.second, std::move(markup));
+                        }
                     }
                 } else if (b.kind == DocumentBlockKind::rule)
                     divider();
@@ -717,6 +785,8 @@ bool DocumentEditor::canRedo() const {
 }
 bool DocumentEditor::command(DocumentCommand command, const std::string &argument) {
     auto &s = *impl_;
+    if (command == DocumentCommand::table && !s.readOnly)
+        return insert("\n\n| A | B |\n| --- | --- |\n|   |   |\n");
     if (command == DocumentCommand::find) {
         setMode(DocumentMode::source);
         s.source.native().OpenFindReplaceWindow();
@@ -960,7 +1030,8 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
                 {"Heading 1", DocumentCommand::heading1},     {"Heading 2", DocumentCommand::heading2},
                 {"Heading 3", DocumentCommand::heading3},     {"Bullet list", DocumentCommand::bullet},
                 {"Numbered list", DocumentCommand::numbered}, {"Quote", DocumentCommand::quote},
-                {"Indent", DocumentCommand::indent},          {"Outdent", DocumentCommand::outdent}};
+                {"Indent", DocumentCommand::indent},          {"Outdent", DocumentCommand::outdent},
+                {"Insert table", DocumentCommand::table}};
             for (const auto &item : extra)
                 if (ImGui::Selectable(tr(item.first).c_str()))
                     command(item.second);

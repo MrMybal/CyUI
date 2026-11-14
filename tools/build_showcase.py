@@ -38,6 +38,10 @@ MODULES = (
     ("DocumentWeb", "media", "Optional existing web backend adapter.", "Adaptateur optionnel vers le moteur web existant.", "DocumentViews, Web"),
     ("Media", "media", "Native playback controls with a host engine.", "Contrôles de lecture natifs avec moteur hôte.", "Images"),
     ("Web", "integration", "Browser surface, messages, origin policy and theme bridge.", "Surface web, messages, politique d’origine et passerelle de thème.", "Core · host backend"),
+    ("DataGrid", "editor", "Editable cells, ranges, clipboard and row/column structure.", "Cellules éditables, plages, presse-papiers et lignes/colonnes.", "Core"),
+    ("Spreadsheet", "editor", "Worksheets, formula bar and bounded calculation.", "Feuilles, barre de formule et calcul borné.", "DataGrid"),
+    ("RichDocument", "editor", "Paginated native documents, tables and page settings.", "Documents natifs paginés, tableaux et mise en page.", "DocumentEditor, DataGrid"),
+    ("OfficeIO", "editor", "ODT/ODS, DOCX/XLSX and flat OpenDocument exchange.", "Échanges ODT/ODS, DOCX/XLSX et OpenDocument plat.", "RichDocument, Spreadsheet, DocumentIO, pugixml"),
     ("Gallery", "core", "Interactive widget/module examples and theme editor.", "Exemples interactifs des widgets/modules et éditeur de thème.", "Core + selected modules"),
 )
 CMAKE = '''set(CYUI_IMGUI_TARGET app_imgui)
@@ -83,7 +87,7 @@ DOC_ROUTES = {
     "media": "module-recipes/images-viewport-and-optional-3d-gizmo",
     "filtering": "filtering", "localization": "localization", "design": "design",
     "python": "python", "web": "web", "unreal": "unreal",
-    "markdown": "native-markdown", "markdown-editor": "native-markdown/editor", "playback": "native-markdown/resources",
+    "office-grid": "office/grid", "office-sheet": "office/spreadsheet", "office-writer": "office/writer", "office-formats": "office/formats", "markdown": "native-markdown", "markdown-editor": "native-markdown/editor", "playback": "native-markdown/resources",
     "platforms": "overview/platforms", "tour": "visual-tour",
 }
 MODULE_DOCS = {
@@ -93,7 +97,7 @@ MODULE_DOCS = {
     "Inspector": "editors", "Assets": "editors", "Images": "media",
     "Viewport": "media", "Commands": "commands", "Diagnostics": "commands",
     "DocumentViews": "markdown", "DocumentEditor": "markdown-editor", "DocumentIO": "markdown",
-    "DocumentWeb": "markdown", "Media": "playback", "Web": "web", "Gallery": "widgets",
+    "DocumentWeb": "markdown", "Media": "playback", "Web": "web", "Gallery": "widgets", "DataGrid": "office-grid", "Spreadsheet": "office-sheet", "RichDocument": "office-writer", "OfficeIO": "office-formats",
 }
 WORKSPACES = (
     ("visual", "Visual editors", "Éditeurs visuels", "image-graph",
@@ -271,7 +275,7 @@ class Page:
 def legacy_guide(language):
     reader = ("../" if language == "fr" else "") + "Documentation/Documentation.html"
     routes = {"start": "integration", "editors": "module-recipes/curves-graphs-and-timeline", "data": "module-recipes/canvas-and-numeric-plots", "code": "code", "media": "module-recipes/images-viewport-and-optional-3d-gizmo", "filtering": "filtering", "python": "python", "web": "web", "unreal": "unreal",
-    "markdown": "native-markdown", "markdown-editor": "native-markdown/editor", "playback": "native-markdown/resources", "platforms": "overview/platforms"}
+    "office-grid": "office/grid", "office-sheet": "office/spreadsheet", "office-writer": "office/writer", "office-formats": "office/formats", "markdown": "native-markdown", "markdown-editor": "native-markdown/editor", "playback": "native-markdown/resources", "platforms": "overview/platforms"}
     mapping = json.dumps(routes, separators=(",", ":"))
     return f'''<!doctype html>
 <html lang="{language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CyUI — Documentation</title></head><body><main id="main"><h1>CyUI Documentation</h1><p><a href="{reader}#/{language}/overview">{"Ouvrir le manuel local" if language == "fr" else "Open the local manual"}</a></p></main><script>

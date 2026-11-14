@@ -78,6 +78,18 @@
 #if defined(CYUI_HAS_DOCUMENTEDITOR)
 #include "cyui/modules/DocumentEditor.h"
 #endif
+#if defined(CYUI_HAS_DATAGRID)
+#include "cyui/modules/DataGrid.h"
+#endif
+#if defined(CYUI_HAS_SPREADSHEET)
+#include "cyui/modules/Spreadsheet.h"
+#endif
+#if defined(CYUI_HAS_RICHDOCUMENT)
+#include "cyui/modules/RichDocument.h"
+#endif
+#if defined(CYUI_HAS_OFFICEIO)
+#include "cyui/modules/OfficeIO.h"
+#endif
 #if defined(CYUI_HAS_DOCUMENTWEB)
 #include "cyui/modules/DocumentWeb.h"
 #endif

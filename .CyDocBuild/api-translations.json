@@ -1,10 +1,18 @@
 {
   "api-core:en": "0374f737a78e1c20dc473541150c35fa620edb44fe71b5b1d369d61dbb9f8fd2",
   "api-core:fr": "b4bed16a88cddc100d7cf9859d46e70ab0e5a0d135e322dc28e645b094669d46",
+  "api-data-grid:en": "dee14278d1b30dc0e87893fc0d491900fe7371a45aa3d1951b9f57234cb67b55",
+  "api-data-grid:fr": "e42d3462703d5c37c97d2a15493a605103c232b74ef0bac737560b60feaaa251",
   "api-diff-viewer:en": "948ac24bdfd175248a709732bfb896f40edd9582d0bb35d33097fe65d54c95c0",
   "api-diff-viewer:fr": "98af3ceb5393a2c7fb1cc958191a765ad390861b482a881288a04505742d258e",
+  "api-office-io:en": "e21453243e011fe8ecd002b47b3ede90ed7ca3b47913ccb0a9d93fe053235aa3",
+  "api-office-io:fr": "6d3d1e0483942bfb2ad46b2b5c8ea1f243a92449ca4e99575cfe02d39e65bd13",
   "api-paged-code-editor:en": "f1cf82e09fb843eae1dd5f4196b2bef20015ff08c61e8a422aa810398fd5d4f6",
   "api-paged-code-editor:fr": "8bf89314ecf23d565ba47438ace1274c1aaac65fef94e2bd394a342d68e75940",
+  "api-rich-document:en": "76771445ead30a373ad4d95b7e28f2a0948afa8c2a9bbc50ea4ffd208aba4a92",
+  "api-rich-document:fr": "f0366f6c69910f1c1badd30b234ae08a770a3553fd35afa8a42ee54496067fd1",
   "api-set-locale:en": "886c128fba7bb05622346e0480b1d580a1b8565b5dd13412791bba23ba60b58e",
-  "api-set-locale:fr": "dc1435c576821f6397a5fa639b24a3e83ec62437c1ff45d2ab51c3aed9d7c4e8"
+  "api-set-locale:fr": "dc1435c576821f6397a5fa639b24a3e83ec62437c1ff45d2ab51c3aed9d7c4e8",
+  "api-spreadsheet:en": "1b4068ca4b381e1030d9092db499de04bf7df1837a0050b3fd0e751740d3199a",
+  "api-spreadsheet:fr": "8d53a7b50d9147457e094224df1b280f982db31ba12d1865da7f964bca42f247"
 }

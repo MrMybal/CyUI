@@ -4,6 +4,15 @@
 #include "cyui/Layout.h"
 #include "cyui/Theme.h"
 #include "cyui/CoreWidgets.h"
+#if defined(CYUI_HAS_DATAGRID)
+#include "cyui/modules/DataGrid.h"
+#endif
+#if defined(CYUI_HAS_SPREADSHEET)
+#include "cyui/modules/Spreadsheet.h"
+#endif
+#if defined(CYUI_HAS_RICHDOCUMENT)
+#include "cyui/modules/RichDocument.h"
+#endif
 
 #if defined(CYUI_HAS_AUDIO)
 #include "cyui/modules/Audio.h"
@@ -1492,6 +1501,91 @@ void mediaPage(const GalleryResources &resources) {
     mediaPlayer("##media", state, backend, dp(0, 470));
 }
 #endif
+#if defined(CYUI_HAS_DATAGRID)
+void dataGridPage() {
+    static GridModel model(12, 5);
+    static GridState state;
+    static bool ready = false;
+    if (!ready) {
+        model.paste(
+            {0, 0},
+            "Resource\tType\tCount\tStatus\tNotes\nLandscape\tImage\t4\tReady\tNative textures\nEditor "
+            "panel\tInterface\t12\tReview\tShared controls\nSignal graph\tGraph\t3\tReady\tReusable views");
+        model.format({{0, 0}, {0, 4}}, 1);
+        model.clearHistory();
+        ready = true;
+    }
+    textDim("%s",
+            tr("Select a range, double-click or press F2 to edit. Right-click for row and column actions.")
+                .c_str());
+    dataGrid("##standaloneGrid", state, model, dp(0, 520));
+}
+#endif
+#if defined(CYUI_HAS_SPREADSHEET)
+void spreadsheetPage() {
+    static Workbook book;
+    static SpreadsheetState state;
+    static bool ready = false;
+    if (!ready) {
+        auto &m = book.sheets[0].grid;
+        book.sheets[0].name = "Budget";
+        m.resize(14, 6);
+        m.paste({0, 0}, "Item\tUnit price\tQuantity\tTotal\tNotes\nCable\t12.5\t4\t=B2*C2\tReusable "
+                        "equipment\nMicrophone\t99\t2\t=B3*C3\tStudio\nHeadphones\t49\t3\t=B4*"
+                        "C4\tMonitoring\nTotal\t\t\t=SUM(D2:D4)\nAverage\t\t\t=AVERAGE(D2:D4)\nTax "
+                        "(20%)\t\t\t=ROUND(D5*0.2,2)\nGrand total\t\t\t=D5+D7");
+        m.format({{0, 0}, {0, 5}}, 1);
+        m.format({{1, 1}, {7, 3}}, 0, GridAlignment::right, 2);
+        m.clearHistory();
+        SpreadsheetSheet summary;
+        summary.name = "Summary";
+        summary.grid.setText(0, 0, "=Budget!D8");
+        book.sheets.push_back(std::move(summary));
+        state.grid.hasSelection = true;
+        state.grid.anchor = state.grid.current = {4, 3};
+        ready = true;
+    }
+    textDim("%s",
+            tr("Native worksheets, formulas and shared grid editing. Office formats are an optional module.")
+                .c_str());
+    spreadsheet("##workbook", state, book, dp(0, 560));
+}
+#endif
+#if defined(CYUI_HAS_RICHDOCUMENT)
+void richDocumentPage(const GalleryResources &resources) {
+    static RichDocumentEditor editor;
+    static std::string lastLocale;
+    if (lastLocale != locale()) {
+        auto document = richDocumentFromMarkdown(
+            locale() == "fr"
+                ? "# Documents natifs\n\nUn espace de travail paginé avec du **texte enrichi**, des images "
+                  "et des tableaux éditables.\n\n## Une base commune\n\nDouble-cliquez sur un paragraphe ou "
+                  "un tableau pour le modifier. Les marges et les en-têtes se règlent dans la configuration "
+                  "de page.\n\n| Élément | Fonction |\n| --- | --- |\n| Tableaux | Cellules et plages |\n| "
+                  "Formats | ODT, DOCX, ODS, XLSX |"
+                : "# Native documents\n\nA paginated workspace with **rich text**, images and editable "
+                  "tables.\n\n## One shared foundation\n\nDouble-click a paragraph or table to edit it. Set "
+                  "margins and headers in page setup.\n\n| Element | Function |\n| --- | --- |\n| Tables | "
+                  "Cells and ranges |\n| Formats | ODT, DOCX, ODS, XLSX |");
+        document.page.header = "CyUI";
+        document.page.footer = locale() == "fr" ? "Page {page} sur {pages}" : "Page {page} of {pages}";
+        RichBlock image;
+        image.kind = RichBlockKind::image;
+        image.image = "gallery/landscape.png";
+        image.caption = tr("Image");
+        image.imageWidthMM = 100;
+        image.imageHeightMM = 55;
+        document.blocks.push_back(image);
+        editor.setDocument(document);
+        editor.setZoom(.6f);
+        lastLocale = locale();
+    }
+    auto services = galleryDocumentServices(resources);
+    RichDocumentOptions options;
+    options.services = &services;
+    editor.draw("##writer", dp(0, 570), options);
+}
+#endif
 void moduleGallery(int selectedTab,const GalleryResources& resources) {
     (void)resources;
     auto page=[&](const char*label,int index,auto body){if(ImGui::BeginTabItem(trLabel(label).c_str(),nullptr,selectedTab==index?ImGuiTabItemFlags_SetSelected:0)){body();ImGui::EndTabItem();}};
@@ -1551,6 +1645,15 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
 #endif
 #if defined(CYUI_HAS_MEDIA)
     page("Media player",25,[&]{mediaPage(resources);});
+#endif
+#if defined(CYUI_HAS_DATAGRID)
+    page("Data grid",28,dataGridPage);
+#endif
+#if defined(CYUI_HAS_SPREADSHEET)
+    page("Spreadsheet",26,spreadsheetPage);
+#endif
+#if defined(CYUI_HAS_RICHDOCUMENT)
+    page("Paged document",27,[&]{richDocumentPage(resources);});
 #endif
 #if defined(CYUI_HAS_WEB)
     page("Web",19,[&]{textDim(tr("Optional CEF rendering in an ImGui texture. HTML/compiled TypeScript; host-owned messages.").c_str());

@@ -4,7 +4,7 @@ title: Markdown natif, édition et médias
 description: Composer des documents, conversations et éditeurs natifs avec des adaptateurs optionnels.
 section: Guides
 order: 17
-sourceRevision: 1
+sourceRevision: 2
 ---
 
 ## Choisir les composants {#components}
@@ -15,7 +15,7 @@ Ils fonctionnent sans navigateur. Sélectionnez les cibles nécessaires :
 | Cible | Usage | Dépendances |
 | --- | --- | --- |
 | `CyUI::DocumentViews` | Lecteur Markdown et conversations en flux | Code, Images, parseur MIT MD4C |
-| `CyUI::DocumentEditor` | Modes Direct, Source, Côte à côte et Lecture | DocumentViews, CodeEditor |
+| `CyUI::DocumentEditor` | Modes Direct, Source, Côte à côte et Lecture | DocumentViews, CodeEditor, DataGrid |
 | `CyUI::DocumentIO` | `.md`/`.cymd` en mémoire, conversion HTML du presse-papiers | DocumentViews, décompression MIT miniz |
 | `CyUI::Media` | Contrôles natifs de lecture audio/vidéo | Images ; moteur de lecture de l’application |
 | `CyUI::DocumentWeb` | Adaptateur optionnel des contenus web | DocumentViews, Web ; moteur de l’application |
@@ -142,8 +142,11 @@ if (editor.draw("editor", {0, 560}, options).changed)
 
 Direct utilise des champs natifs avec les marqueurs masqués et des glyphes formatés
 aux positions de sélection et de retour à la ligne calculées par le champ. Images
-et tableaux sont natifs. Les blocs de code sont éditables avec coloration ; la
-structure des tableaux se modifie dans Source. Source utilise CodeEditor ; Côte à
+et tableaux sont natifs. Les blocs de code sont éditables avec coloration. Les tableaux utilisent la
+grille native commune DataGrid : cellules éditables, sélection/copie/collage de
+plages et insertion/suppression de lignes ou colonnes par barre/menu contextuel.
+Les cellules acceptent le Markdown en ligne ; Lecture affiche son formatage.
+Les modifications partagent l’historique source. Source utilise CodeEditor ; Côte à
 côte ajoute un aperçu synchronisé par positions source. Lecture emploie le même
 lecteur. Changer de mode préserve le document. Les modes natifs partagent
 l’historique de transactions de l’éditeur source.
@@ -214,3 +217,5 @@ et tests d’interaction sans fenêtre couvrent l’implémentation native. Exé
 Linux/macOS, intégration IME de plateforme et moteurs externes demandent une
 validation dans l’application cible ; la portabilité des sources seule ne
 démontre pas ces résultats.
+
+Consultez [les grilles, documents paginés et formats bureautiques](doc:office) pour ODT/ODS et DOCX/XLSX.

@@ -14,6 +14,7 @@ own copyright and licenses. Selecting a module does not relicense its dependenci
 | Scintilla public headers | Same permissive license | Header-only interface for Lexilla; no Scintilla UI sources | [Scintilla license](third_party/scintilla/License.txt) |
 | SciTE keyword/property data | Same permissive license | Generated built-in language profiles | [SciTE properties license](third_party/SciTE-Properties-License.txt) |
 | MD4C | MIT | Bundled CommonMark/GFM parser, only with DocumentViews | [License](third_party/md4c/LICENSE.md), [pinned source and C++ casts](third_party/md4c/UPSTREAM.md) |
+| pugixml 1.15 | MIT | XML parsing only with OfficeIO | [License](third_party/pugixml/LICENSE.md), [pinned version](third_party/pugixml/UPSTREAM.md) |
 | miniz inflate | MIT | Raw DEFLATE decompressor, only with DocumentIO | [License](third_party/miniz/LICENSE), [pinned source](third_party/miniz/UPSTREAM.md) |
 | markdown-it-py and linkify-it-py | MIT | Python document parsing; external pure Python dependencies | Preserve the installed packages’ licenses, including mdurl and uc-micro-py notices |
 | ImGuizmo | MIT upstream | Optional host-supplied target | Preserve the license of the exact host dependency |

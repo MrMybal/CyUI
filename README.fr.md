@@ -148,6 +148,19 @@ Consultez le [guide des documents natifs](Documentation/Documentation.html#/fr/n
 
 ![Éditeur Markdown natif avec source et rendu, tâches, tableaux et image](docs/screenshots/markdown-editor.png)
 
+#### Grilles éditables, tableurs et documents paginés
+
+Des modules C++ optionnels ajoutent cellules partagées, sélection/copie/collage de
+plages, formules de feuilles et espace paginé natif avec marges, en-têtes/pieds,
+images et tableaux. OfficeIO lit/écrit **ODT/ODS** pour LibreOffice et **DOCX/XLSX**,
+ainsi que FODT/FODS plats. Inspectez les rapports de conversion ; formats et
+formules pris en charge restent un sous-ensemble documenté. Consultez le
+[guide bureautique](Documentation/Documentation.html#/fr/office).
+
+![Tableur natif avec formules, formatage et plusieurs feuilles](docs/screenshots/spreadsheet.png)
+
+![Document paginé natif avec paragraphes enrichis, tableau et image](docs/screenshots/paged-document.png)
+
 ## Interfaces multilingues, anglais par défaut
 
 Core inclut des catalogues anglais et français, le changement de langue à chaud
@@ -213,6 +226,10 @@ Les dépendances entre modules sont sélectionnées automatiquement ; par exempl
 | `CyUI::DocumentIO` | Tampons Markdown/CyMD, presse-papiers HTML |
 | `CyUI::DocumentWeb` | Adaptateur optionnel vers le moteur web existant |
 | `CyUI::Media` | Contrôles de lecture natifs avec moteur hôte |
+| `CyUI::DataGrid` | Cellules natives éditables, plages et structure des tableaux |
+| `CyUI::Spreadsheet` | Feuilles, formules et historique du classeur |
+| `CyUI::RichDocument` | Espace natif de documents paginés |
+| `CyUI::OfficeIO` | Échanges ODT/ODS, DOCX/XLSX et ODF plat |
 | `CyUI::Web` | Surface de navigateur, entrées, politique d’origine, messages et passerelle de thème |
 | `CyUI::Gallery` | Exemples de widgets/modules et éditeur de thème |
 
@@ -438,6 +455,7 @@ les polices du système d’exploitation.
 | [Propriétés SciTE](https://github.com/mirror/scite) | [Licence permissive](third_party/SciTE-Properties-License.txt) | Mots-clés et propriétés des profils syntaxiques générés. |
 | [MD4C](https://github.com/mity/md4c) | [MIT](third_party/md4c/LICENSE.md) | Parseur CommonMark/GFM natif fourni pour DocumentViews. |
 | [miniz](https://github.com/richgel999/miniz) | [MIT](third_party/miniz/LICENSE) | Import DEFLATE des archives par DocumentIO optionnel. |
+| [pugixml 1.15](https://github.com/zeux/pugixml) | [MIT](third_party/pugixml/LICENSE.md) | Analyseur XML du module optionnel OfficeIO pour ODF et OOXML. |
 | [markdown-it-py](https://github.com/executablebooks/markdown-it-py), [linkify-it-py](https://github.com/tsutsu3/linkify-it-py) | MIT | Dépendances Python pures du parsing des documents. |
 | [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) | [MIT](https://github.com/CedricGuillemet/ImGuizmo/blob/master/LICENSE) | Dépendance optionnelle de manipulateurs de transformation fournie par l’hôte. |
 | [CEF / Chromium](https://bitbucket.org/chromiumembedded/cef) | [Licence de type BSD et notices des composants](https://bitbucket.org/chromiumembedded/cef/src/master/LICENSE.txt) | SDK/runtime WebCEF optionnel ; conserver licence, crédits et notices de la distribution choisie. |

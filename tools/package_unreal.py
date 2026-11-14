@@ -16,8 +16,9 @@ DEPENDENCIES = {
     'Nodes': ['Canvas'], 'Timeline': ['Canvas'], 'AudioViews': ['Plots'],
     'Code': [], 'Diff': ['Code'], 'CodeEditor': ['Code'], 'Inspector': [],
     'Assets': [], 'Images': ['Canvas'], 'Viewport': ['Images'], 'Commands': [],
-    'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor'],
-    'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [],
+    'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor', 'DataGrid'],
+    'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [], 'DataGrid': [], 'Spreadsheet': ['DataGrid'],
+    'RichDocument': ['DocumentEditor', 'DataGrid'], 'OfficeIO': ['RichDocument', 'Spreadsheet', 'DocumentIO'],
 }
 # Inside the checkout, output may only go to these ignored build folders.
 OUTPUT_FOLDERS = ('build', 'out')
@@ -98,6 +99,8 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
         sources += ['src/modules/DocumentParser.cpp', 'third_party/md4c/md4c.cpp']
     if 'DocumentIO' in selected:
         sources.append('third_party/miniz/miniz_tinfl.cpp')
+    if 'OfficeIO' in selected:
+        sources.append('third_party/pugixml/pugixml.cpp')
     if gallery:
         sources.append('src/Gallery.cpp')
     (library/'src/modules').mkdir(parents=True)
@@ -112,6 +115,8 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
             shutil.copy2(ROOT/'src/modules'/name, library/'src/modules'/name)
     if 'DocumentIO' in selected:
         shutil.copytree(ROOT/'third_party/miniz', library/'third_party/miniz', dirs_exist_ok=True)
+    if 'OfficeIO' in selected:
+        shutil.copytree(ROOT/'third_party/pugixml', library/'third_party/pugixml', dirs_exist_ok=True)
     imgui = library/'third_party/imgui'
     imgui.mkdir(parents=True)
     for name in ('imgui.h', 'imgui_internal.h', 'imconfig.h', 'imstb_rectpack.h', 'imstb_textedit.h', 'imstb_truetype.h', 'LICENSE.txt'):
@@ -187,12 +192,20 @@ def prepare_module(output, modules=('Core',), gallery=False, module_name='CyUI')
             for original, target in sources.items():
                 text = text.replace('../../../ThirdParty/CyUI/'+original, '../Library/'+target)
             bridge.write_text(text, encoding='utf8')
-        version = library/'third_party/texteditor/VERSION.json'
-        if version.exists():
-            data = json.loads(version.read_text(encoding='utf8'))
-            data['files']['TextEditor.inl'] = data['files'].pop('TextEditor.cpp')
-            data['packaged_paths'] = {'TextEditor.cpp': 'TextEditor.inl'}
-            version.write_text(json.dumps(data, indent=2)+'\n', encoding='utf8')
+        for dependency in ('texteditor', 'pugixml'):
+            version = library/'third_party'/dependency/'VERSION.json'
+            if version.exists():
+                data = json.loads(version.read_text(encoding='utf8'))
+                renamed = {}
+                for name in list(data['files']):
+                    original = f'third_party/{dependency}/{name}'
+                    if original in sources:
+                        packaged = Path(sources[original]).name
+                        data['files'][packaged] = data['files'].pop(name)
+                        renamed[name] = packaged
+                if renamed:
+                    data['packaged_paths'] = renamed
+                    version.write_text(json.dumps(data, indent=2)+'\n', encoding='utf8')
         (library/'SOURCE_LAYOUT.json').write_text(json.dumps(sources, indent=2)+'\n', encoding='utf8')
         for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
             shutil.copy2(ROOT/name, output/name)

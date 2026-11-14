@@ -16,16 +16,40 @@
       "expectedRevision": "20177f058721"
     },
     {
+      "id": "api-data-grid",
+      "title": "Editable cell grids",
+      "locale": "fr",
+      "expectedRevision": "624da2e7cbbf"
+    },
+    {
       "id": "api-diff-viewer",
       "title": "diffViewer",
       "locale": "fr",
       "expectedRevision": "04e66b98328b"
     },
     {
+      "id": "api-office-io",
+      "title": "Office document exchange",
+      "locale": "fr",
+      "expectedRevision": "361362958bc1"
+    },
+    {
       "id": "api-paged-code-editor",
       "title": "PagedCodeEditor",
       "locale": "fr",
       "expectedRevision": "2e586714ba60"
+    },
+    {
+      "id": "api-rich-document",
+      "title": "Paginated native documents",
+      "locale": "fr",
+      "expectedRevision": "267887e9682f"
+    },
+    {
+      "id": "api-spreadsheet",
+      "title": "Worksheets and formulas",
+      "locale": "fr",
+      "expectedRevision": "bbe2cc70e4dd"
     },
     {
       "id": "source-include-cyui-core-h",
@@ -43,7 +67,7 @@
       "id": "source-include-cyui-cyui-h",
       "title": "CyUI.h",
       "locale": "fr",
-      "expectedRevision": "6d4020f4741f"
+      "expectedRevision": "23df3a629974"
     },
     {
       "id": "source-include-cyui-export-h",
@@ -172,6 +196,12 @@
       "expectedRevision": "d9deaf5e7af3"
     },
     {
+      "id": "source-include-cyui-modules-datagrid-h",
+      "title": "DataGrid.h",
+      "locale": "fr",
+      "expectedRevision": "17a08099ae25"
+    },
+    {
       "id": "source-include-cyui-modules-diagnostics-h",
       "title": "Diagnostics.h",
       "locale": "fr",
@@ -232,6 +262,12 @@
       "expectedRevision": "10f0779d4252"
     },
     {
+      "id": "source-include-cyui-modules-officeio-h",
+      "title": "OfficeIO.h",
+      "locale": "fr",
+      "expectedRevision": "9835997e010c"
+    },
+    {
       "id": "source-include-cyui-modules-pagedcodeeditor-h",
       "title": "PagedCodeEditor.h",
       "locale": "fr",
@@ -242,6 +278,18 @@
       "title": "Plots.h",
       "locale": "fr",
       "expectedRevision": "7e09aaa4b708"
+    },
+    {
+      "id": "source-include-cyui-modules-richdocument-h",
+      "title": "RichDocument.h",
+      "locale": "fr",
+      "expectedRevision": "44487bb12b56"
+    },
+    {
+      "id": "source-include-cyui-modules-spreadsheet-h",
+      "title": "Spreadsheet.h",
+      "locale": "fr",
+      "expectedRevision": "5a9dc87911ba"
     },
     {
       "id": "source-include-cyui-modules-timeline-h",
@@ -262,5 +310,5 @@
       "expectedRevision": "c3ae0abe47aa"
     }
   ],
-  "current": 19
+  "current": 20
 }

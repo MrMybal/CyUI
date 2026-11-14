@@ -1,5 +1,5 @@
 {
-  "source_revision": "7a793e9281e78572818d85e9cf856d779a7792a1",
+  "source_revision": "a8ebe485f20b39cf19e33ed965dac5592873f545",
   "source_dirty": true,
   "images": [
     {
@@ -322,6 +322,28 @@
       "sha256": "a0c5c4dc0e3672248ada123972c14a0f332b492ba983b6ee2be03715678d2f5d"
     },
     {
+      "file": "markdown-zoom.webp",
+      "theme": "violet",
+      "tab": 18,
+      "locale": "en",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "5da31c4736936bcb65404f348fdedc1c1fd7f3207f192de1e0f51152d4e71030"
+    },
+    {
+      "file": "markdown-zoom-fr.webp",
+      "theme": "violet",
+      "tab": 18,
+      "locale": "fr",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "38b68f272e87dde60c79bdfd2c53f403d03ba882ea2ce28e0930de8e034807d0"
+    },
+    {
       "file": "markdown-live.webp",
       "theme": "mid-grey",
       "tab": 24,
@@ -330,7 +352,7 @@
         1424,
         721
       ],
-      "sha256": "fe99750d28c070473ec3e29683803c93cab5972675d4c083950aa9980311b9e7"
+      "sha256": "d4ceb756e0ba6233e6089470a4588f36369b9be67e63e82a4e19d914b22f9259"
     },
     {
       "file": "markdown-live-fr.webp",
@@ -341,7 +363,7 @@
         1424,
         721
       ],
-      "sha256": "e651ae6d106a7fd0b92d06836a8fa435bad59bf669e58483739c44978d295447"
+      "sha256": "78719992f4b4d851a025e6fba4ea0244c350c9233427264ca802af8612b2bfab"
     },
     {
       "file": "markdown-split.webp",
@@ -363,29 +385,73 @@
         1424,
         721
       ],
-      "sha256": "3fafd5faa32afa2ccc7c610fcadc95d52636821e8478011766ae381339ab4c07"
+      "sha256": "e8197541705238c904aee5be25f6110c79e74afda29bc0d29c49fc961a947971"
     },
     {
-      "file": "markdown-zoom.webp",
-      "theme": "violet",
-      "tab": 18,
+      "file": "office-grid.webp",
+      "theme": "mid-grey",
+      "tab": 28,
       "locale": "en",
       "size": [
         1424,
         721
       ],
-      "sha256": "5da31c4736936bcb65404f348fdedc1c1fd7f3207f192de1e0f51152d4e71030"
+      "sha256": "c141840f23a9deff1cf376d26312b5948a8fe0d82845d587221f89a4876f9b95"
     },
     {
-      "file": "markdown-zoom-fr.webp",
-      "theme": "violet",
-      "tab": 18,
+      "file": "office-grid-fr.webp",
+      "theme": "mid-grey",
+      "tab": 28,
       "locale": "fr",
       "size": [
         1424,
         721
       ],
-      "sha256": "38b68f272e87dde60c79bdfd2c53f403d03ba882ea2ce28e0930de8e034807d0"
+      "sha256": "444daa24cf10f7ff0f7f8790eeb88843673ed5fba1d6eec3e6e71f042405a3f4"
+    },
+    {
+      "file": "office-spreadsheet.webp",
+      "theme": "navy",
+      "tab": 26,
+      "locale": "en",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "3b7881bc582ec81adc7e02e84f39fff873b9a66b44277309dc9cffdf4095361c"
+    },
+    {
+      "file": "office-spreadsheet-fr.webp",
+      "theme": "navy",
+      "tab": 26,
+      "locale": "fr",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "4788f2e0f7fe7397a230918986986bb5d1912053066e1670205cf5d6208dc0e2"
+    },
+    {
+      "file": "office-writer.webp",
+      "theme": "mid-grey",
+      "tab": 27,
+      "locale": "en",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "296835d69172993f0d133ab50cd23901e8df52ab5c1424509aca9a68c3c206ff"
+    },
+    {
+      "file": "office-writer-fr.webp",
+      "theme": "mid-grey",
+      "tab": 27,
+      "locale": "fr",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "5c16fe38519ca4e021a910d2f06a4a87f7cd8e29d24e12ecdeea73b1c978d959"
     }
   ]
 }

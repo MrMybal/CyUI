@@ -5,6 +5,8 @@
 #include <unordered_set>
 
 namespace cyui {
+
+struct DocumentAsset { std::string path; std::vector<unsigned char> bytes; };
 enum class DocumentBlockKind { paragraph, heading, quote, list, code, rule, table };
 enum class DocumentInlineKind { text, code, strong, emphasis, link, image, softBreak };
 enum DocumentStyle : unsigned {

@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 5
+revision: 6
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -46,11 +46,15 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | `CyUI::Commands` | `modules/Commands.h` | Searchable keyboard command palette | Core |
 | `CyUI::Diagnostics` | `modules/Diagnostics.h` | Bounded thread-safe logs, filters, diagnostic navigation | Core + system threads |
 | `CyUI::DocumentViews` | `modules/DocumentViews.h` | Native Markdown/GFM, images, tasks, spoilers, tables and transcripts | Code, Images, MIT MD4C |
-| `CyUI::DocumentEditor` | `modules/DocumentEditor.h` | Live/source/split/reading editor | DocumentViews, CodeEditor |
+| `CyUI::DocumentEditor` | `modules/DocumentEditor.h` | Live/source/split/reading editor | DocumentViews, CodeEditor, DataGrid |
 | `CyUI::DocumentIO` | `modules/DocumentIO.h` | Markdown/CyMD buffers, HTML clipboard | DocumentViews, miniz |
 | `CyUI::DocumentWeb` | `modules/DocumentWeb.h` | Optional existing web backend adapter | DocumentViews, Web |
 | `CyUI::Media` | `modules/Media.h` | Native playback controls with a host engine | Images |
 | `CyUI::Web` | `modules/Web.h` | Browser panel, texture/input contract, origin policy, messages, theme bridge | Core |
+| `CyUI::DataGrid` | `modules/DataGrid.h` | Editable cells, rectangular ranges, clipboard, row/column structure, formats and undo | Core |
+| `CyUI::Spreadsheet` | `modules/Spreadsheet.h` | Worksheets, formula bar, bounded calculation and workbook undo | DataGrid |
+| `CyUI::RichDocument` | `modules/RichDocument.h` | Paginated document editor, rich paragraphs, tables, images and page settings | DocumentEditor, DataGrid |
+| `CyUI::OfficeIO` | `modules/OfficeIO.h` | ODT/ODS, DOCX/XLSX and flat ODF imports/exports with issues | RichDocument, Spreadsheet, DocumentIO, MIT pugixml |
 | `CyUI::Gallery` | `Gallery.h` | Examples and theme editor | Enabled modules only |
 
 Header paths are relative to `include/cyui/`. `CyUI::Code::Diff` is an alias for

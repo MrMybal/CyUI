@@ -33,6 +33,7 @@ enum class DocumentCommand {
     quote,
     indent,
     outdent,
+    table,
     undo,
     redo,
     find
