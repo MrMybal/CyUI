@@ -4,7 +4,7 @@ title: Editor tools
 description: Typed details, hierarchies, tables, file selection and shared commands.
 section: Guides
 order: 11
-revision: 2
+revision: 3
 ---
 
 The reusable editor modules build on Core. Select `Inspector`, `Hierarchy`,
@@ -14,7 +14,8 @@ ownership, resource access and Undo transactions stay in the application.
 ## Details inspector {#inspector}
 
 Inspector supports bool, exact int64, double, float, vector2/3/4, RGBA color,
-typed asset references, recursive homogeneous arrays, typed records and custom JSON values.
+typed asset references, recursive arrays, Sets, Maps, optional values, enums/flags,
+typed records and custom JSON values.
 Assign a stable nonzero ID and an untranslated `key` to each property. `category`
 adds a category header. `defaultValue` enables reset; `readOnly`, bounds, choices
 and the host validator apply to committed changes.
@@ -97,6 +98,49 @@ elements accept expressions directly with Enter. Its callback returns `Edit` and
 receives the same root ID/path. The JSON schema remains version 1 with optional
 array `element` templates and `object`/`objectType`, `custom`/`customType` entries.
 
+### Sets, Maps and bulk editing {#collections}
+
+`makePropertySet(elementTemplate)` and `makePropertyMap(keyTemplate,valueTemplate)`
+keep their schema when empty. A Set stores unique typed elements in `values`; a Map
+stores `{key,value}` entries in `entries`. Every property type can be an element,
+key or value, including recursive records and custom types. Their meaning ignores
+entry order while the view keeps insertion order. Uniqueness is checked after
+normalization/clamping; collisions reject the complete edit or paste. Add opens a
+draft editor so users can supply a unique element/key before insertion.
+
+```cpp
+auto tags = cyui::makePropertySet(std::string("Tag"));
+tags.values = {std::string("Player"), std::string("Visible")};
+auto weights = cyui::makePropertyMap(std::string("Key"), .5f);
+weights.entries = {{std::string("Walk"), .7f}};
+auto optional = cyui::makePropertyOptional(std::int64_t(0)); // absent
+cyui::PropertyEnum quality{"Quality", 1, {{0,"Low"},{1,"Medium"},{2,"High"}}};
+cyui::PropertyEnum flags{"Channels", 3, {{1,"R"},{2,"G"},{4,"B"}}, true};
+```
+
+Arrays, Sets and Maps share virtual rows, search and Ctrl/Shift multiselection.
+Ctrl+A selects filtered rows; Delete removes the selection. **Edit selection**
+applies a numeric expression or typed property JSON atomically; `Value` refers to
+each original element. Map bulk edits affect values. Arrays also duplicate and
+reorder selections by dragging their row indices. `editPropertyCollection` exposes
+these operations without drawing. The Sets/Maps gallery pages support 100000 rows.
+
+`PropertyObject::metadata[fieldKey]` supplies `PropertyMetadata` for each field:
+label/help, read-only, bounds (including exact int64 bounds), choices, password and
+multiline. Metadata belongs to the destination and is never replaced by pasted
+JSON. Array structural edits retain read-only record fields. Optional values keep
+an immutable template and nullable owned value; enum type/items and allowed flag
+bits are checked. `propertyEditor` embeds any editor in another host view with the
+same validation and transaction phases.
+
+JSON version 1 adds `set` with typed elements and an optional `element` template;
+`map` with `value:[{"key":typed,"value":typed}]`, `keyTemplate` and `valueTemplate`;
+`optional` with a null or typed `value` and `element`; and `enum`/`flags` with
+`enumType`, int64 `value` and `{value,label}` items. Clipboard budgets are unchanged.
+Python mirrors these types/factories and `edit_property_collection`; Map entries
+are `(key,value)` pairs, and metadata bounds use `minimum`/`maximum` or `None`.
+The standalone editor is `property_value_editor`.
+
 ## Numeric expressions {#expressions}
 
 Double-click a number, focus it and press Enter, or select **Edit expression...**
@@ -123,11 +167,20 @@ remove, visibility and locking. Drop onto a row to reparent; Shift-drop inserts
 before it; the root zone moves to root. Cyclic or locked moves and host vetoes are
 rejected. Requests leave the application model untouched until the host applies them.
 
+Arrow keys navigate visible rows: Right expands/enters children and Left
+collapses/selects the parent. Home/End/PageUp/PageDown, Ctrl/Shift selection,
+Space and Ctrl+A work with filtering. F2/Enter requests rename; Delete requests
+removal. `navigateHierarchy` is available without a renderer.
+
 DataView adds numeric multi-column sorting, filters, resizable/reorderable/hideable
-columns and clipped rows. Cell types are text, int64, double and bool. Double-click
-to edit; Enter commits and Escape cancels. Shift-click selects a cell rectangle;
-Ctrl+C/V exchanges quoted TSV with tabs/newlines preserved. Numeric doubles accept
-expressions and bounds. Paste validates all cells before returning a batch,
+columns and clipped rows. `DataCell` is `PropertyValue`, so every Inspector type
+works, including vectors/colors/assets, collections, optionals, enums/flags,
+records and custom types. Double-click opens the corresponding editor.
+`DataColumn::metadata` supplies rules; `DataViewOptions::editors` supplies custom
+and resource callbacks (column ID, with row ID first in the path). Shift-click
+selects a cell rectangle; Ctrl+C/V exchanges quoted TSV with tabs/newlines
+preserved. Rich cells contain typed property JSON; primitives retain plain text.
+Numeric cells accept expressions and bounds. Paste validates all cells before returning a batch,
 including read-only rows/columns and the application's validator. Changing the
 revision cancels an active cell edit.
 
@@ -156,15 +209,23 @@ nodes with internal links and reroutes. Graph JSON uses `cyui.nodes`, version 1.
 Cloning allocates fresh IDs and remaps all internal references; unrelated links
 are excluded. Apply created elements, committed overlays and removals in the host.
 
+Group movement also moves nodes whose anchors were inside its original rectangle
+and their contained reroutes. Apply `groups`, `moved` and `reroutes` commits as one
+transaction. Escape/revision cancels all previews. `moveGroupContents=false`
+disables this behavior; group resizing leaves contents fixed. Python has parity.
+
 Timeline supports split at playhead (**S**), duplicate (**Ctrl+D**), marker editing
 and lane-name drag reordering. The application supplies a fresh-ID allocator;
 locked clips remain untouched and minimum durations are preserved. Markers and
 lane order return separate edit vectors. Escape, read-only or a changed revision
 cancel gestures. Engines and playback remain host responsibilities.
+The context menu adds markers in native and Python views; Python's
+`add_timeline_marker` helper also works without drawing.
 
 ## Integrations and examples {#integrations}
 
-The new Hierarchy, DataView and FilePicker modules depend only on Core and C++17.
+Hierarchy and FilePicker depend on Core; DataView also depends on Inspector to
+reuse its editors. All use C++17.
 Core now compiles `src/Numeric.cpp`; manual builds must also include optional
 support units InspectorData, CommandRegistry, NodeData and TimelineData with their
 modules. CMake and the Unreal packaging script select these sources automatically.
@@ -175,5 +236,12 @@ drawing loads it lazily. Python uses PropertyFloat to distinguish float32 from
 double. Native and Python typed JSON and binding envelopes are interchangeable.
 
 Gallery tabs: Inspector **12**, Nodes **7**, Timeline **8**, Commands **16**,
-Hierarchy **30**, Data view **31**, File picker **32**. Switch between all five
+Hierarchy **30**, Data view **31**, File picker **32**, Virtual arrays **33**,
+Sets **34**, Maps **35**, Rich data view **36**, Editor workspace **37**. Switch between all five
 themes and both densities to check application-specific content.
+
+Editor workspace connects Hierarchy, Inspector, DataView and the asset picker to
+one host model and shared selection, with Ctrl+Z/Ctrl+Y Undo/Redo. The reusable
+`include/cyui/examples/EditorWorkspace.h` host validates an entire change batch
+before updating its model/history. Adapt its snapshots to your application's
+Undo system; resource access remains host-owned.

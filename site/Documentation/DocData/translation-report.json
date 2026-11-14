@@ -130,6 +130,12 @@
       "expectedRevision": "094201a1ca30"
     },
     {
+      "id": "source-include-cyui-examples-editorworkspace-h",
+      "title": "EditorWorkspace.h",
+      "locale": "fr",
+      "expectedRevision": "3f43da8aa24d"
+    },
+    {
       "id": "source-include-cyui-modules-assets-h",
       "title": "Assets.h",
       "locale": "fr",
@@ -187,7 +193,7 @@
       "id": "source-include-cyui-modules-dataview-h",
       "title": "DataView.h",
       "locale": "fr",
-      "expectedRevision": "650f081df81c"
+      "expectedRevision": "1451db27a894"
     },
     {
       "id": "source-include-cyui-modules-diagnostics-h",

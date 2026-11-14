@@ -69,15 +69,25 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
     if (s.overlayMode && (s.revision != o.revision || o.readOnly || ImGui::IsKeyPressed(ImGuiKey_Escape))) {
         if (s.overlayMode == 3)
             result.reroutes.phase = EditPhase::cancel;
-        else
+        else {
             result.groups.phase = EditPhase::cancel;
+            if (s.overlayMode == 1 && o.moveGroupContents) {
+                result.moved.phase = EditPhase::cancel;
+                result.reroutes.phase = EditPhase::cancel;
+            }
+        }
         s.overlayMode = 0;
         s.groupPreview.clear();
         s.routePreview.clear();
+        s.groupNodesPreview.clear();
+        s.groupRoutesPreview.clear();
     }
     const auto groups =
         s.overlayMode == 1 || s.overlayMode == 2 ? ArrayView<NodeGroup>(s.groupPreview) : o.groups;
-    const auto routes = s.overlayMode == 3 ? ArrayView<NodeReroute>(s.routePreview) : o.reroutes;
+    const auto routes = s.overlayMode == 3 ? ArrayView<NodeReroute>(s.routePreview)
+                                           : (s.overlayMode == 1 && o.moveGroupContents
+                                                  ? ArrayView<NodeReroute>(s.groupRoutesPreview)
+                                                  : o.reroutes);
     const NodeGroup *hitGroup = nullptr;
     bool groupResize = false;
     const NodeReroute *hitRoute = nullptr;
@@ -156,6 +166,9 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
     }
     if (s.dragging)
         for (const auto &p : s.preview)
+            moved[p.id] = p.position;
+    if (s.overlayMode == 1 && o.moveGroupContents)
+        for (const auto &p : s.groupNodesPreview)
             moved[p.id] = p.position;
     cards.reserve(nodes.size());
     for (const auto &n : nodes) {
@@ -350,10 +363,52 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
             s.groupPreview = s.groupBefore;
             selectItem(s.selection, hitGroup->id, io.KeyCtrl);
             result.groups = {EditPhase::begin, s.groupPreview};
+            if (!groupResize && o.moveGroupContents) {
+                s.groupNodesBefore.clear();
+                auto inside = [&](Point at) {
+                    return at.x >= hitGroup->position.x && at.y >= hitGroup->position.y &&
+                           at.x <= hitGroup->position.x + hitGroup->size.x &&
+                           at.y <= hitGroup->position.y + hitGroup->size.y;
+                };
+                for (const auto &node : nodes)
+                    if (inside(node.position))
+                        s.groupNodesBefore.push_back({node.id, node.position});
+                s.groupNodesPreview = s.groupNodesBefore;
+                s.groupRoutesBefore.clear();
+                for (std::size_t route = 0; route < o.reroutes.count; ++route)
+                    s.groupRoutesBefore.push_back(o.reroutes[route]);
+                s.groupRoutesPreview = s.groupRoutesBefore;
+                result.moved = {EditPhase::begin, s.groupNodesPreview};
+                result.reroutes = {EditPhase::begin, s.groupRoutesPreview};
+            }
         }
     }
     if (s.overlayMode) {
         const Point delta{f.mouse.x - s.grab.x, f.mouse.y - s.grab.y};
+        if (s.overlayMode == 1 && o.moveGroupContents) {
+            s.groupNodesPreview = s.groupNodesBefore;
+            for (auto &node : s.groupNodesPreview) {
+                node.position.x += delta.x;
+                node.position.y += delta.y;
+            }
+            s.groupRoutesPreview = s.groupRoutesBefore;
+            const auto original = std::find_if(s.groupBefore.begin(), s.groupBefore.end(),
+                                               [&](const auto &g) { return g.id == s.overlay; });
+            if (original != s.groupBefore.end())
+                for (auto &route : s.groupRoutesPreview)
+                    if (route.position.x >= original->position.x &&
+                        route.position.y >= original->position.y &&
+                        route.position.x <= original->position.x + original->size.x &&
+                        route.position.y <= original->position.y + original->size.y) {
+                        route.position.x += delta.x;
+                        route.position.y += delta.y;
+                    }
+            if (result.moved.phase != EditPhase::begin) {
+                const auto phase = ImGui::IsMouseDown(0) ? EditPhase::update : EditPhase::commit;
+                result.moved = {phase, s.groupNodesPreview};
+                result.reroutes = {phase, s.groupRoutesPreview};
+            }
+        }
         if (s.overlayMode == 3) {
             s.routePreview = s.routeBefore;
             for (auto &r : s.routePreview)

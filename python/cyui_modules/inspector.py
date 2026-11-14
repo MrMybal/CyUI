@@ -5,6 +5,9 @@ from .common import Edit, ui, item_id
 from .locale import tr
 from .inspector_data import (PropertyVector, PropertyColor, PropertyAsset, PropertyFloat, PropertyArray,
     PropertyObject, PropertyCustom, make_property_array,
+    PropertySet, PropertyMap, PropertyOptional, PropertyEnum, PropertyMetadata,
+    make_property_set, make_property_map, make_property_optional, property_value_text, property_value_key,
+    property_object_field, edit_property_collection,
     property_type, normalize_property_value, evaluate_property_expression, property_to_json,
     property_from_json, property_category_to_json, property_category_from_json, common_properties)
 
@@ -42,6 +45,8 @@ class InspectorState:
     elements: dict = field(default_factory=dict)
     cached: set = field(default_factory=set)
     active_ids: dict = field(default_factory=dict)
+    pending: dict = field(default_factory=dict)
+    drag_collection: int = 0
 
 
 def property_matches(filter_state, prop, context=''):
@@ -61,7 +66,9 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
         state.errors.clear()
         state.expressions.clear()
         state.expression_before.clear()
-        state.lists.clear(); state.elements.clear(); state.cached.clear()
+        for listing in state.lists.values(): listing.update(active_row=-1, indexed_size=-1, selection=[])
+        state.elements.clear(); state.cached.clear()
+        state.pending.clear()
         state.active_ids.clear()
         state.revision = revision
     present = {p.id for p in properties}
@@ -111,7 +118,7 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
                 if state.active_ids.get(key) == i.internal.get_active_id(): i.internal.clear_active_id()
                 state.active.discard(key); state.drafts[key] = deepcopy(state.before[key]); events.append((key, Edit('cancel', deepcopy(state.before[key]))))
             continue
-        cached = isinstance(prop.value, (PropertyArray, PropertyObject))
+        cached = isinstance(prop.value, (PropertyArray, PropertyObject, PropertySet, PropertyMap, PropertyOptional))
         if key not in state.active and (not cached or key not in state.cached):
             state.drafts[key] = deepcopy(prop.value)
             if cached: state.cached.add(key)
@@ -122,7 +129,7 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
         if prop.help and i.is_item_hovered():
             i.set_tooltip(c.tr(prop.help))
         i.set_next_item_width(-1)
-        i.begin_disabled(prop.read_only)
+        i.begin_disabled(prop.read_only and type(value) in (bool, int, float, str))
         immediate = False
         compound = None
         if isinstance(value, bool):
@@ -149,7 +156,8 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
                 changed, value = i.input_text_multiline('##value', value, (0, c.dp(80)), flags)
             else:
                 changed, value = i.input_text('##value', value, flags)
-        elif isinstance(value, (PropertyVector, PropertyColor, PropertyAsset, PropertyFloat, PropertyArray, PropertyObject, PropertyCustom)):
+        elif isinstance(value, (PropertyVector, PropertyColor, PropertyAsset, PropertyFloat, PropertyArray, PropertyObject, PropertyCustom,
+                                PropertySet, PropertyMap, PropertyOptional, PropertyEnum)):
             from .property_editor import draw_property_value
             compound, value = draw_property_value(value, prop, state, height=array_height, edit_custom=edit_custom,
                                                   browse_asset=browse_asset, full_array=True)
@@ -203,7 +211,7 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
             events.append((key, Edit('cancel')))
         expression_requested = type(prop.value) in (int, float) or isinstance(prop.value, PropertyFloat)
         open_expression = expression_requested and not prop.read_only and i.is_item_hovered() and i.is_mouse_double_clicked(0)
-        if not isinstance(prop.value, PropertyArray) and i.is_item_clicked(1): i.open_popup('##propertyMenu')
+        if not isinstance(prop.value, (PropertyArray, PropertySet, PropertyMap)) and i.is_item_clicked(1): i.open_popup('##propertyMenu')
         if i.begin_popup('##propertyMenu'):
             if i.menu_item(c.tr_label('Copy as JSON'), '', False, not prop.password and not prop.mixed)[0]:
                 try: i.set_clipboard_text(property_to_json(prop))
@@ -256,3 +264,41 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
     if not visible and filter_state is not None and filter_state.active():
         c.text_dim(c.tr('No matching properties'))
     return events
+
+
+def property_value_editor(identifier, state, prop, revision=0, validate=None, edit_custom=None, browse_asset=None, array_height=180):
+    from .property_editor import draw_property_value
+    i, c = ui(); i.push_id(identifier); i.push_id(item_id(prop.id)); key = prop.id
+    if state.revision != revision:
+        state.drafts.clear(); state.active.clear(); state.before.clear(); state.elements.clear(); state.pending.clear(); state.cached.clear(); state.lists.clear(); state.revision = revision
+    cached = isinstance(prop.value, (PropertyArray, PropertyObject, PropertySet, PropertyMap, PropertyOptional))
+    if key not in state.active and (not cached or key not in state.cached):
+        state.drafts[key] = deepcopy(prop.value); state.cached.add(key)
+    value = state.drafts[key]
+    edit, value = draw_property_value(value, prop, state, height=array_height, edit_custom=edit_custom, browse_asset=browse_asset)
+    phase = 'none'
+    if not prop.read_only:
+        if edit.activated and key not in state.active:
+            state.before[key] = deepcopy(prop.value); state.active.add(key); phase = 'begin'
+        if edit.changed:
+            if key not in state.active: state.before[key] = deepcopy(prop.value)
+            state.active.add(key)
+            try:
+                value = normalize_property_value(prop, value); state.errors[key] = ''; phase = 'update'
+            except (ValueError, OverflowError) as error: state.errors[key] = str(error)
+            state.drafts[key] = value
+        if (edit.immediate and edit.changed) or edit.edited:
+            try:
+                value = normalize_property_value(prop, value)
+                error = validate(key, value) if validate else ''
+                if error: raise ValueError(error)
+                state.errors[key] = ''; state.drafts[key] = value; phase = 'commit'; state.active.discard(key); state.cached.discard(key)
+            except (ValueError, OverflowError) as error: state.errors[key] = str(error); phase = 'none'
+        if key in state.active and (edit.cancelled or ((edit.active or edit.deactivated) and i.is_key_pressed(i.Key.escape))):
+            state.drafts[key] = deepcopy(state.before[key]); state.active.discard(key); state.cached.discard(key); state.errors.pop(key, None); phase = 'cancel'
+        elif key in state.active and edit.deactivated and not edit.active and not edit.edited and not edit.changed:
+            state.drafts[key] = deepcopy(state.before[key]); state.active.discard(key); state.cached.discard(key); phase = 'cancel'
+    elif edit.changed: state.drafts[key] = deepcopy(prop.value)
+    if state.errors.get(key) and i.is_item_hovered(): i.set_tooltip(state.errors[key])
+    result = Edit(phase, deepcopy(state.drafts[key])) if phase != 'none' else Edit()
+    i.pop_id(); i.pop_id(); return result

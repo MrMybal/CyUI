@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 5
+revision: 6
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -48,7 +48,7 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | `CyUI::DocumentViews` | `modules/DocumentViews.h` | Markdown subset, fenced code, links, tables, cached transcripts | Code |
 | `CyUI::Web` | `modules/Web.h` | Browser panel, texture/input contract, origin policy, messages, theme bridge | Core |
 | `CyUI::Hierarchy` | `modules/Hierarchy.h` | Scene/layer tree, selection, reparent, rename, visibility/locking | Core |
-| `CyUI::DataView` | `modules/DataView.h` | Sorted/filtered virtual tables, typed editing, atomic TSV paste | Core |
+| `CyUI::DataView` | `modules/DataView.h` | Virtual tables, all Inspector editors, atomic typed TSV paste | Inspector (Core transitively) |
 | `CyUI::FilePicker` | `modules/FilePicker.h` | Host/VFS open/save/directory selection, filters and overwrite confirmation | Core |
 | `CyUI::Gallery` | `Gallery.h` | Examples and theme editor | Enabled modules only |
 

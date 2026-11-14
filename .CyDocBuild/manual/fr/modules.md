@@ -4,7 +4,7 @@ title: Sélectionner les modules
 description: Cibles CMake, dépendances et contrats des composants optionnels.
 section: Guides
 order: 10
-sourceRevision: 5
+sourceRevision: 6
 ---
 
 CyUI 1.2 fournit un socle Dear ImGui et des modules d’interface sélectionnables. Le code CyUI est sous MIT. L’application conserve modèles, moteurs, fichiers, services, validation et historique Undo.
@@ -40,7 +40,7 @@ Les en-têtes ci-dessous sont relatifs à `include/cyui/`. Chaque cible porte le
 | DocumentViews | `modules/DocumentViews.h` | Sous-ensemble Markdown, code, liens, tables et conversations en cache | Code |
 | Web | `modules/Web.h` | Contrat texture/entrée, origines, messages et thème | Core |
 | Hierarchy | `modules/Hierarchy.h` | Scènes/calques, sélection, parents, renommage, visibilité/verrouillage | Core |
-| DataView | `modules/DataView.h` | Tableaux virtuels triés/filtrés, édition typée, collage TSV atomique | Core |
+| DataView | `modules/DataView.h` | Tableaux virtuels, tous les éditeurs Inspector, collage TSV typé atomique | Inspector (Core transitif) |
 | FilePicker | `modules/FilePicker.h` | Sélection hôte/VFS, ouverture/enregistrement, filtres et remplacement | Core |
 | Gallery | `Gallery.h` | Exemples et éditeur de thème | Modules activés uniquement |
 

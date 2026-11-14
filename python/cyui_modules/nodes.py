@@ -49,6 +49,10 @@ class NodeState:
     context: tuple = (None, None, (0, 0))
     context_label: str = ''
     error: str = ''
+    group_nodes_before: dict = field(default_factory=dict)
+    group_nodes_preview: dict = field(default_factory=dict)
+    group_routes_before: list = field(default_factory=list)
+    group_routes_preview: list = field(default_factory=list)
 
 
 def arrange_nodes(nodes, links, spacing=(240, 130)):
@@ -92,15 +96,18 @@ def arrange_nodes(nodes, links, spacing=(240, 130)):
     return result
 
 
-def node_editor(identifier, state, nodes, links, size=(0, 320), revision=0, snap_step=0., read_only=False, can_connect=None, draw_body=None, groups=(), reroutes=(), allocate_id=None):
+def node_editor(identifier, state, nodes, links, size=(0, 320), revision=0, snap_step=0., read_only=False, can_connect=None, draw_body=None, groups=(), reroutes=(), allocate_id=None, move_group_contents=True):
     i, c = ui()
     result = {'moved': Edit(), 'connect': None, 'remove_nodes': [], 'remove_link': None, 'created': NodeFragment(), 'groups': Edit(), 'reroutes': Edit(), 'remove_groups': [], 'remove_reroutes': []}
     with Canvas(identifier, state.canvas, size) as f:
         io, p, d = i.get_io(), c.palette(), f.draw
         if state.overlay and (revision != state.revision or read_only or i.is_key_pressed(i.Key.escape)):
+            if state.overlay[0] == 'group' and move_group_contents:
+                result['moved'] = Edit('cancel'); result['reroutes'] = Edit('cancel')
             result['reroutes' if state.overlay[0] == 'route' else 'groups'] = Edit('cancel'); state.overlay = None
         shown_groups = state.overlay_preview if state.overlay and state.overlay[0] != 'route' else groups
         shown_routes = state.overlay_preview if state.overlay and state.overlay[0] == 'route' else reroutes
+        if state.overlay and state.overlay[0] == 'group' and move_group_contents: shown_routes = state.group_routes_preview
         hit_group, hit_route, resize = None, None, False
         for group in shown_groups:
             a = state.canvas.view.screen(group.position, f.top); b = state.canvas.view.screen(tuple(group.position[k]+group.size[k] for k in (0, 1)), f.top)
@@ -120,7 +127,9 @@ def node_editor(identifier, state, nodes, links, size=(0, 320), revision=0, snap
         width, header, row = c.dp(190)*z, c.dp(28)*z, c.dp(24)*z
         cards, pins = {}, {}
         for node in nodes:
-            a = state.canvas.view.screen(state.preview.get(node.id, node.position) if state.dragging else node.position, f.top)
+            position = state.preview.get(node.id, node.position) if state.dragging else node.position
+            if state.overlay and state.overlay[0] == 'group' and move_group_contents: position = state.group_nodes_preview.get(node.id, position)
+            a = state.canvas.view.screen(position, f.top)
             b = a[0]+width, a[1]+header+row*max(1, len(node.inputs), len(node.outputs))+c.dp(8)*z
             cards[node.id] = a, b
             for output, ports in ((False, node.inputs), (True, node.outputs)):
@@ -201,8 +210,24 @@ def node_editor(identifier, state, nodes, links, size=(0, 320), revision=0, snap
             state.overlay_before = deepcopy(reroutes if hit_route else groups); state.overlay_preview = deepcopy(state.overlay_before)
             result['reroutes' if hit_route else 'groups'] = Edit('begin', deepcopy(state.overlay_preview))
             if hit_group: select(state.selection, hit_group.id, io.key_ctrl)
+            if hit_group and not resize and move_group_contents:
+                inside = lambda at: all(hit_group.position[k] <= at[k] <= hit_group.position[k]+hit_group.size[k] for k in (0, 1))
+                state.group_nodes_before = {node.id: node.position for node in nodes if inside(node.position)}
+                state.group_nodes_preview = dict(state.group_nodes_before)
+                state.group_routes_before = deepcopy(reroutes); state.group_routes_preview = deepcopy(reroutes)
+                result['moved'] = Edit('begin', dict(state.group_nodes_preview)); result['reroutes'] = Edit('begin', deepcopy(state.group_routes_preview))
         if state.overlay:
             kind, key = state.overlay; state.overlay_preview = deepcopy(state.overlay_before)
+            if kind == 'group' and move_group_contents:
+                state.group_nodes_preview = {key: tuple(at[k]+f.mouse[k]-state.grab[k] for k in (0, 1)) for key, at in state.group_nodes_before.items()}
+                state.group_routes_preview = deepcopy(state.group_routes_before)
+                original = next(group for group in state.overlay_before if group.id == key)
+                for route in state.group_routes_preview:
+                    if all(original.position[k] <= route.position[k] <= original.position[k]+original.size[k] for k in (0, 1)):
+                        route.position = tuple(route.position[k]+f.mouse[k]-state.grab[k] for k in (0, 1))
+                if result['moved'].phase != 'begin':
+                    phase = 'update' if i.is_mouse_down(0) else 'commit'
+                    result['moved'] = Edit(phase, dict(state.group_nodes_preview)); result['reroutes'] = Edit(phase, deepcopy(state.group_routes_preview))
             for overlay in state.overlay_preview:
                 if overlay.id == key:
                     if kind == 'resize': overlay.size = tuple(max(80 if k == 0 else 50, overlay.size[k]+f.mouse[k]-state.grab[k]) for k in (0, 1))

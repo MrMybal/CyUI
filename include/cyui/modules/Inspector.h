@@ -34,6 +34,27 @@ struct PropertyAsset {
 };
 struct PropertyArray;
 struct PropertyObject;
+struct PropertySet;
+struct PropertyMap;
+struct PropertyMapEntry;
+struct PropertyOptional;
+struct PropertyEnum {
+    std::string type;
+    std::int64_t value = 0;
+    std::vector<std::pair<std::int64_t, std::string>> items;
+    bool flags = false;
+    bool operator==(const PropertyEnum &b) const {
+        return type == b.type && flags == b.flags && value == b.value;
+    }
+};
+struct PropertyMetadata {
+    std::string label, help;
+    bool readOnly = false, password = false, multiline = false, bounded = false;
+    double minimum = 0, maximum = 1;
+    std::int64_t integerMinimum = std::numeric_limits<std::int64_t>::lowest(),
+                 integerMaximum = std::numeric_limits<std::int64_t>::max();
+    std::vector<std::string> choices;
+};
 // A host-defined value with a stable type identifier and a JSON payload.
 struct PropertyCustom {
     std::string type, json = "null";
@@ -42,9 +63,9 @@ struct PropertyCustom {
     }
 };
 // Recursive containers have value semantics. Existing scalar alternative indices are preserved.
-using PropertyValue =
-    std::variant<bool, std::int64_t, double, std::string, float, PropertyVector, PropertyColor, PropertyAsset,
-                 PropertyArray, PropertyObject, PropertyCustom>;
+using PropertyValue = std::variant<bool, std::int64_t, double, std::string, float, PropertyVector,
+                                   PropertyColor, PropertyAsset, PropertyArray, PropertyObject,
+                                   PropertyCustom, PropertySet, PropertyMap, PropertyOptional, PropertyEnum>;
 using PropertyAtom = PropertyValue; // source-compatible name; elements may now be recursive
 struct PropertyArray {
     std::vector<PropertyValue> values;
@@ -56,7 +77,53 @@ struct PropertyObject {
     std::string type;
     std::map<std::string, PropertyValue> fields; // stable, untranslated field keys
     bool operator==(const PropertyObject &b) const;
+    std::map<std::string, PropertyMetadata>
+        metadata; // destination-owned field constraints, never imported from clipboard
 };
+struct PropertySet {
+    std::vector<PropertyValue> values; // presentation order; identity is unordered
+    std::shared_ptr<const PropertyValue> elementTemplate;
+    CYUI_API bool operator==(const PropertySet &) const;
+};
+struct PropertyMap {
+    std::vector<PropertyMapEntry> entries; // stable presentation order, unique typed keys
+    std::shared_ptr<const PropertyValue> keyTemplate, valueTemplate;
+    CYUI_API bool operator==(const PropertyMap &) const;
+};
+struct PropertyOptional {
+    std::unique_ptr<PropertyValue> value;
+    std::shared_ptr<const PropertyValue> elementTemplate;
+    PropertyOptional();
+    PropertyOptional(const PropertyOptional &);
+    PropertyOptional &operator=(const PropertyOptional &);
+    PropertyOptional(PropertyOptional &&) noexcept;
+    PropertyOptional &operator=(PropertyOptional &&) noexcept;
+    ~PropertyOptional();
+    bool operator==(const PropertyOptional &) const;
+};
+struct PropertyMapEntry {
+    PropertyValue key, value;
+    bool operator==(const PropertyMapEntry &b) const {
+        return key == b.key && value == b.value;
+    }
+};
+inline PropertyOptional::PropertyOptional() = default;
+inline PropertyOptional::~PropertyOptional() = default;
+inline PropertyOptional::PropertyOptional(PropertyOptional &&) noexcept = default;
+inline PropertyOptional &PropertyOptional::operator=(PropertyOptional &&) noexcept = default;
+inline PropertyOptional::PropertyOptional(const PropertyOptional &b)
+    : value(b.value ? std::make_unique<PropertyValue>(*b.value) : nullptr),
+      elementTemplate(b.elementTemplate) {}
+inline PropertyOptional &PropertyOptional::operator=(const PropertyOptional &b) {
+    if (this != &b) {
+        value = b.value ? std::make_unique<PropertyValue>(*b.value) : nullptr;
+        elementTemplate = b.elementTemplate;
+    }
+    return *this;
+}
+inline bool PropertyOptional::operator==(const PropertyOptional &b) const {
+    return bool(value) == bool(b.value) && (!value || *value == *b.value);
+}
 inline bool PropertyArray::operator==(const PropertyArray &b) const {
     return values == b.values && bool(elementTemplate) == bool(b.elementTemplate) &&
            (!elementTemplate || *elementTemplate == *b.elementTemplate);
@@ -65,6 +132,9 @@ inline bool PropertyObject::operator==(const PropertyObject &b) const {
     return type == b.type && fields == b.fields;
 }
 CYUI_API PropertyArray makePropertyArray(PropertyValue elementTemplate, std::size_t count = 0);
+CYUI_API PropertySet makePropertySet(PropertyValue elementTemplate);
+CYUI_API PropertyMap makePropertyMap(PropertyValue keyTemplate, PropertyValue valueTemplate);
+CYUI_API PropertyOptional makePropertyOptional(PropertyValue elementTemplate, bool present = false);
 struct Property {
     ItemId id = 0;
     std::string label, help;
@@ -95,6 +165,9 @@ struct PropertyDraft {
 struct PropertyListState {
     int activeRow = -1;
     std::size_t renderedRows = 0; // last frame; useful for profiling large collections
+    std::vector<std::size_t> selection, visible;
+    std::size_t anchor = 0, indexedSize = std::size_t(-1);
+    std::string query, indexedQuery, bulkText, error;
 };
 struct InspectorState {
     std::unordered_map<ItemId, PropertyDraft> drafts;
@@ -103,6 +176,7 @@ struct InspectorState {
     std::unordered_set<std::string> collapsedCategories;
     std::unordered_map<ImGuiID, PropertyListState> lists;
     std::unordered_map<ImGuiID, PropertyDraft> elements;
+    std::unordered_map<ImGuiID, PropertyValue> pending;
 };
 using PropertyValidator = std::function<std::string(ItemId, const PropertyValue &)>;
 struct InspectorOptions {
@@ -126,6 +200,19 @@ struct PropertyPasteResult {
     }
 };
 CYUI_API std::string propertyType(const PropertyValue &);
+CYUI_API std::string propertyValueText(const PropertyValue &);
+CYUI_API std::string
+propertyValueKey(const PropertyValue &); // canonical, typed identity for Set elements / Map keys
+CYUI_API Property propertyObjectField(const Property &, const PropertyObject &, const std::string &key);
+enum class PropertyCollectionAction { remove, duplicate, move, assign, expression };
+CYUI_API PropertyPasteResult editPropertyCollection(const Property &,
+                                                    const std::vector<std::size_t> &selection,
+                                                    PropertyCollectionAction, const std::string &text = {},
+                                                    std::size_t before = std::size_t(-1),
+                                                    const PropertyValidator & = {});
+CYUI_API Edit<PropertyValue> propertyEditor(const char *id, InspectorState &, const Property &,
+                                            std::uint64_t revision = 0, const PropertyValidator & = {},
+                                            const InspectorOptions & = {});
 CYUI_API std::string propertyToJson(const Property &);
 CYUI_API std::string propertyCategoryToJson(ArrayView<Property>, const std::string &category);
 CYUI_API PropertyPasteResult propertyFromJson(const Property &, const std::string &,

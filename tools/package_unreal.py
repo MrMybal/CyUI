@@ -17,7 +17,7 @@ DEPENDENCIES = {
     'Code': [], 'Diff': ['Code'], 'CodeEditor': ['Code'], 'Inspector': [],
     'Assets': [], 'Images': ['Canvas'], 'Viewport': ['Images'], 'Commands': [],
     'Diagnostics': [], 'DocumentViews': ['Code'], 'Web': [],
-    'Hierarchy': [], 'DataView': [], 'FilePicker': [],
+    'Hierarchy': [], 'DataView': ['Inspector'], 'FilePicker': [],
 }
 # Inside the checkout, output may only go to these ignored build folders.
 OUTPUT_FOLDERS = ('build', 'out')

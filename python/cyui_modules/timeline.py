@@ -86,6 +86,13 @@ def reorder_timeline_lane(lanes, identifier, before=None):
     return result
 
 
+def add_timeline_marker(markers, time, allocate_id, label='Marker'):
+    if not allocate_id or not isfinite(time): raise ValueError('Invalid marker position or allocator')
+    key = allocate_id()
+    if not key or any(marker.id == key for marker in markers): raise ValueError('Allocator returned duplicate or zero ID')
+    return [deepcopy(marker) for marker in markers]+[Marker(key, time, label)]
+
+
 def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhead=0., snap_step=0., revision=0, read_only=False, snap_time=None, format_time=None, draw_clip=None, min_duration=1e-6, allocate_id=None):
     i, c = ui()
     result = {'clips': Edit(), 'seek': None, 'range_changed': False, 'remove': [], 'markers': Edit(), 'lanes': Edit()}
@@ -235,6 +242,7 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
         if f.hovered and i.is_mouse_clicked(1):
             state.context_marker = hit_marker.id if hit_marker else None
             state.marker_label = hit_marker.label if hit_marker else ''
+            state.anchor = snapped(mouse)
             if hit is not None and hit not in state.selected: state.selected = [hit]
             i.open_popup('##timelineMenu')
         split = duplicate = False
@@ -250,6 +258,9 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
             else:
                 split = i.menu_item(c.tr_label('Split at playhead'), 'S', False, not read_only and allocate_id is not None)[0]
                 duplicate = i.menu_item(c.tr_label('Duplicate'), 'Ctrl+D', False, not read_only and allocate_id is not None)[0]
+                if i.menu_item(c.tr_label('Add marker'), '', False, not read_only and allocate_id is not None)[0]:
+                    try: result['markers'] = Edit('commit', add_timeline_marker(markers, state.anchor, allocate_id, c.tr('Marker')))
+                    except ValueError as error: state.error = str(error)
             i.end_popup()
         if state.focused and f.focused and not io.want_text_input and not read_only and allocate_id:
             split |= not io.key_ctrl and i.is_key_pressed(i.Key.s)

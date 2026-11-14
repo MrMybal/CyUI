@@ -47,7 +47,7 @@ std::string numberText(const PropertyValue &value) {
     return std::visit(
         [](const auto &n) -> std::string {
             using T = std::decay_t<decltype(n)>;
-            if constexpr (std::is_arithmetic_v<T>) {
+            if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>) {
                 std::ostringstream text;
                 text.imbue(std::locale::classic());
                 text << std::setprecision(std::numeric_limits<T>::max_digits10) << n;
@@ -59,106 +59,364 @@ std::string numberText(const PropertyValue &value) {
 }
 DrawEdit drawValue(PropertyValue &, const Property &, const InspectorOptions &, InspectorState &,
                    std::vector<std::string> &, bool = false);
-DrawEdit drawArray(PropertyArray &array, const Property &root, const InspectorOptions &options,
-                   InspectorState &state, std::vector<std::string> &path) {
+bool isCollection(const PropertyValue &value) {
+    return std::holds_alternative<PropertyArray>(value) || std::holds_alternative<PropertySet>(value) ||
+           std::holds_alternative<PropertyMap>(value);
+}
+DrawEdit drawCollection(PropertyValue &collection, const Property &root, const InspectorOptions &options,
+                        InspectorState &state, std::vector<std::string> &path) {
     DrawEdit out;
     const auto listId = ImGui::GetID("##array");
     auto &list = state.lists[listId];
     list.renderedRows = 0;
-    int action = 0, selected = -1;
+    auto *array = std::get_if<PropertyArray>(&collection);
+    auto *set = std::get_if<PropertySet>(&collection);
+    auto *map = std::get_if<PropertyMap>(&collection);
+    auto *values = array ? &array->values : set ? &set->values : nullptr;
+    const auto count = values ? values->size() : map->entries.size();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##collectionSearch", tr("Filter collection...").c_str(), list.query.data(),
+                             list.query.capacity() + 1, ImGuiInputTextFlags_CallbackResize,
+                             detail::resizeText, &list.query);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tr("Filter collection...").c_str());
+    if (list.indexedSize != count || list.indexedQuery != list.query) {
+        if (list.indexedQuery != list.query)
+            list.selection.clear();
+        list.visible.clear();
+        const auto query = detail::folded(list.query);
+        for (std::size_t n = 0; n < count; ++n) {
+            bool matches = query.empty();
+            if (!matches) {
+                const auto &value = values ? (*values)[n] : map->entries[n].value;
+                try {
+                    matches = detail::containsFolded(propertyValueKey(value), query) ||
+                              (map && detail::containsFolded(propertyValueKey(map->entries[n].key), query));
+                } catch (const std::exception &) {
+                    matches = detail::containsFolded(propertyValueText(value), query);
+                }
+            }
+            if (matches)
+                list.visible.push_back(n);
+        }
+        list.indexedSize = count;
+        list.indexedQuery = list.query;
+        list.selection.erase(
+            std::remove_if(list.selection.begin(), list.selection.end(), [&](auto n) { return n >= count; }),
+            list.selection.end());
+    }
+    int command = 0;
+    std::size_t before = std::size_t(-1);
+    std::string commandText;
+    auto pick = [&](std::size_t row, bool extend, bool additive) {
+        if (extend) {
+            auto a = std::find(list.visible.begin(), list.visible.end(), list.anchor),
+                 b = std::find(list.visible.begin(), list.visible.end(), row);
+            if (a == list.visible.end())
+                a = b;
+            if (!additive)
+                list.selection.clear();
+            if (a > b)
+                std::swap(a, b);
+            for (; a != list.visible.end() && a <= b; ++a)
+                if (std::find(list.selection.begin(), list.selection.end(), *a) == list.selection.end())
+                    list.selection.push_back(*a);
+        } else {
+            auto found = std::find(list.selection.begin(), list.selection.end(), row);
+            if (!additive)
+                list.selection = {row};
+            else if (found == list.selection.end())
+                list.selection.push_back(row);
+            else
+                list.selection.erase(found);
+            list.anchor = row;
+        }
+    };
+    auto drop = [&](std::size_t row) {
+        if (auto payload = ImGui::AcceptDragDropPayload("CYUI_PROPERTY_ROWS")) {
+            if (payload->DataSize == sizeof(ImGuiID) &&
+                *static_cast<const ImGuiID *>(payload->Data) == listId) {
+                command = 3;
+                before = row;
+            }
+        }
+    };
     if (ImGui::BeginChild("##array", {0, dp(std::max(60.f, options.arrayHeight))}, ImGuiChildFlags_Borders)) {
-        const auto count = int(std::min(array.values.size(), std::size_t(INT_MAX)));
         const auto pitch = ImGui::GetFrameHeightWithSpacing();
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::GetIO().WantTextInput) {
+            if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A))
+                list.selection = list.visible;
+            if (!root.readOnly && ImGui::IsKeyPressed(ImGuiKey_Delete) && !list.selection.empty())
+                command = 1;
+        }
         ImGuiListClipper clip;
-        clip.Begin(count, pitch);
-        if (list.activeRow >= 0 && list.activeRow < count)
-            clip.IncludeItemByIndex(list.activeRow);
+        clip.Begin(int(list.visible.size()), pitch);
+        if (list.activeRow >= 0) {
+            const auto active =
+                std::find(list.visible.begin(), list.visible.end(), std::size_t(list.activeRow));
+            if (active != list.visible.end())
+                clip.IncludeItemByIndex(int(active - list.visible.begin()));
+        }
         while (clip.Step())
-            for (int row = clip.DisplayStart; row < clip.DisplayEnd; ++row) {
+            for (int at = clip.DisplayStart; at < clip.DisplayEnd; ++at) {
+                const auto row = list.visible[std::size_t(at)];
                 ++list.renderedRows;
-                ScopedID scope(row);
+                ScopedID scope{int(row)};
                 const float y = ImGui::GetCursorPosY();
-                ImGui::AlignTextToFramePadding();
-                textDim("%d", row);
+                const bool selected =
+                    std::find(list.selection.begin(), list.selection.end(), row) != list.selection.end();
+                if (ImGui::Selectable(std::to_string(row).c_str(), selected, 0,
+                                      {dp(44), ImGui::GetFrameHeight()}))
+                    pick(row, ImGui::GetIO().KeyShift, ImGui::GetIO().KeyCtrl);
+                bool context = ImGui::IsItemClicked(ImGuiMouseButton_Right);
+                if (array && !root.readOnly && ImGui::BeginDragDropSource()) {
+                    if (!selected)
+                        list.selection = {row};
+                    ImGui::SetDragDropPayload("CYUI_PROPERTY_ROWS", &listId, sizeof(listId));
+                    textDim("%zu", list.selection.size());
+                    ImGui::EndDragDropSource();
+                }
+                if (array && !root.readOnly && ImGui::BeginDragDropTarget()) {
+                    drop(row);
+                    ImGui::EndDragDropTarget();
+                }
                 ImGui::SameLine(dp(52));
-                ImGui::SetNextItemWidth(-dp(30));
+                const float width = std::max(dp(40), ImGui::GetContentRegionAvail().x - dp(30));
                 path.push_back(std::to_string(row));
-                auto edit = drawValue(array.values[row], root, options, state, path);
+                DrawEdit edit;
+                if (map) {
+                    ImGui::SetNextItemWidth((width - ImGui::GetStyle().ItemInnerSpacing.x) * .5f);
+                    {
+                        ScopedID key("key");
+                        path.push_back("key");
+                        edit.merge(drawValue(map->entries[row].key, root, options, state, path));
+                        path.pop_back();
+                    }
+                    ImGui::SameLine(0, ImGui::GetStyle().ItemInnerSpacing.x);
+                    ImGui::SetNextItemWidth((width - ImGui::GetStyle().ItemInnerSpacing.x) * .5f);
+                    {
+                        ScopedID key("value");
+                        path.push_back("value");
+                        edit.merge(drawValue(map->entries[row].value, root, options, state, path));
+                        path.pop_back();
+                    }
+                } else {
+                    ImGui::SetNextItemWidth(width);
+                    edit = drawValue((*values)[row], root, options, state, path);
+                }
                 path.pop_back();
                 out.merge(edit);
+                if (edit.changed)
+                    list.indexedSize = std::size_t(-1);
                 if (edit.active || edit.activated)
-                    list.activeRow = row;
-                else if (list.activeRow == row)
+                    list.activeRow = int(row);
+                else if (list.activeRow == int(row))
                     list.activeRow = -1;
-                if (options.clipboard && ImGui::BeginPopupContextItem("##elementMenu")) {
-                    const auto field = childField(root, array.values[row]);
+                auto &value = values ? (*values)[row] : map->entries[row].value;
+                context |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) &&
+                           ImGui::IsMouseReleased(ImGuiMouseButton_Right);
+                if (options.clipboard && context)
+                    ImGui::OpenPopup("##elementMenu");
+                if (options.clipboard && ImGui::BeginPopup("##elementMenu")) {
+                    if (!selected)
+                        list.selection = {row};
                     if (ImGui::MenuItem(trLabel("Copy as JSON").c_str(), nullptr, false, !root.password)) {
                         try {
-                            ImGui::SetClipboardText(propertyToJson(field).c_str());
+                            ImGui::SetClipboardText(propertyToJson(childField(root, value)).c_str());
                         } catch (const std::exception &e) {
                             state.clipboardError = e.what();
                         }
                     }
-                    if (ImGui::MenuItem(trLabel("Paste value").c_str(), nullptr, false, !root.readOnly)) {
+                    if (ImGui::MenuItem(trLabel("Paste to selection").c_str(), nullptr, false,
+                                        !root.readOnly)) {
+                        command = 4;
                         const auto text = ImGui::GetClipboardText();
-                        auto paste = propertyFromJson(field, text ? text : "");
-                        state.clipboardError = paste.error;
-                        if (paste) {
-                            array.values[row] = paste.edits.front().edit.value;
-                            out.changed = out.immediate = true;
-                        }
+                        commandText = text ? text : "";
                     }
-                    const char *labels[]{"Duplicate", "Move up", "Move down", "Remove"};
-                    for (int n = 0; n < 4; ++n)
-                        if (ImGui::MenuItem(trLabel(labels[n]).c_str(), nullptr, false,
-                                            !root.readOnly && (n != 1 || row > 0) &&
-                                                (n != 2 || row + 1 < count))) {
-                            action = n + 1;
-                            selected = row;
-                        }
+                    if (ImGui::MenuItem(trLabel("Duplicate selection").c_str(), nullptr, false,
+                                        !root.readOnly && array))
+                        command = 2;
+                    if (ImGui::MenuItem(trLabel("Move up").c_str(), nullptr, false,
+                                        !root.readOnly && array && row > 0)) {
+                        command = 3;
+                        before = row - 1;
+                    }
+                    if (ImGui::MenuItem(trLabel("Move down").c_str(), nullptr, false,
+                                        !root.readOnly && array && row + 1 < count)) {
+                        command = 3;
+                        before = row + 2;
+                    }
+                    if (ImGui::MenuItem(trLabel("Remove selection").c_str(), nullptr, false, !root.readOnly))
+                        command = 1;
                     ImGui::EndPopup();
                 }
                 ImGui::SameLine();
-                if (ghostButton("-")) {
-                    action = 4;
-                    selected = row;
+                {
+                    ScopedDisabled disabled(root.readOnly);
+                    if (ghostButton("-")) {
+                        list.selection = {row};
+                        command = 1;
+                    }
                 }
                 ImGui::SetCursorPosY(y + pitch - ImGui::GetStyle().ItemSpacing.y);
                 ImGui::Dummy({0, 0});
             }
+        if (array && ImGui::GetDragDropPayload()) {
+            ImGui::Selectable(trLabel("Drop at end").c_str());
+            if (ImGui::BeginDragDropTarget()) {
+                drop(count);
+                ImGui::EndDragDropTarget();
+            }
+        }
     }
     ImGui::EndChild();
-    if (action && selected >= 0) {
-        auto at = array.values.begin() + selected;
-        if (action == 1 && array.values.size() < std::size_t(INT_MAX)) {
-            auto value = *at;
-            array.values.insert(at + 1, std::move(value));
-        } else if (action == 2)
-            std::swap(*at, *(at - 1));
-        else if (action == 3)
-            std::swap(*at, *(at + 1));
-        else if (action == 4)
-            array.values.erase(at);
-        state.elements.clear();
-        list.activeRow = -1;
-        ImGui::ClearActiveID();
-        out.changed = out.immediate = true;
+    bool add = false;
+    {
+        ScopedDisabled disabled(root.readOnly);
+        add = ghostButton(trLabel("Add element").c_str());
     }
-    if (ghostButton(trLabel("Add element").c_str()) && array.values.size() < std::size_t(INT_MAX)) {
-        // Copy before insertion: the source may point into the vector being reallocated.
-        PropertyValue added = array.elementTemplate ? *array.elementTemplate
-                                                    : (array.values.empty() ? PropertyValue{std::string{}}
-                                                                            : array.values.back());
-        array.values.push_back(std::move(added));
-        out.changed = out.immediate = true;
+    if (add && count < std::size_t(INT_MAX)) {
+        if (array) {
+            PropertyValue added =
+                array->elementTemplate
+                    ? *array->elementTemplate
+                    : (array->values.empty() ? PropertyValue{std::string{}} : array->values.back());
+            array->values.push_back(std::move(added));
+            out.changed = out.immediate = true;
+            list.indexedSize = std::size_t(-1);
+        } else {
+            PropertyValue key = map ? (map->keyTemplate       ? *map->keyTemplate
+                                       : map->entries.empty() ? PropertyValue{std::string{}}
+                                                              : map->entries.back().key)
+                                    : PropertyValue{};
+            PropertyValue value = map ? (map->valueTemplate     ? *map->valueTemplate
+                                         : map->entries.empty() ? PropertyValue{std::string{}}
+                                                                : map->entries.back().value)
+                                      : (set->elementTemplate  ? *set->elementTemplate
+                                         : set->values.empty() ? PropertyValue{std::string{}}
+                                                               : set->values.back());
+            state.pending[listId] =
+                map ? PropertyValue{PropertyObject{"MapEntry",
+                                                   {{"Key", std::move(key)}, {"Value", std::move(value)}}}}
+                    : std::move(value);
+            list.error.clear();
+            ImGui::OpenPopup("##addElement");
+        }
     }
     ImGui::SameLine();
-    textDim("%zu", array.values.size());
+    {
+        ScopedDisabled disabled(root.readOnly || list.selection.empty());
+        if (ghostButton(trLabel("Edit selection...").c_str())) {
+            const auto row = list.selection.front();
+            const auto &value = values ? (*values)[row] : map->entries[row].value;
+            list.bulkText = numberText(value);
+            if (list.bulkText.empty()) {
+                try {
+                    list.bulkText = propertyToJson(childField(root, value));
+                } catch (const std::exception &e) {
+                    list.error = e.what();
+                }
+            }
+            ImGui::OpenPopup("##bulk");
+        }
+    }
+    ImGui::SameLine();
+    textDim("%zu / %zu", list.selection.size(), count);
+    ImGui::SetNextWindowSize(dp(520, 0), ImGuiCond_Appearing);
+    if (ImGui::BeginPopup("##addElement")) {
+        auto found = state.pending.find(listId);
+        if (found == state.pending.end())
+            ImGui::CloseCurrentPopup();
+        else {
+            auto &pending = found->second;
+            if (map) {
+                for (auto &field : std::get<PropertyObject>(pending).fields) {
+                    ScopedID key(field.first.c_str());
+                    textDim("%s", tr(field.first.c_str()).c_str());
+                    ImGui::SetNextItemWidth(-1);
+                    path.push_back("new");
+                    path.push_back(field.first == "Key" ? "key" : "value");
+                    drawValue(field.second, root, options, state, path);
+                    path.pop_back();
+                    path.pop_back();
+                }
+            } else {
+                ImGui::SetNextItemWidth(-1);
+                path.push_back("new");
+                drawValue(pending, root, options, state, path);
+                path.pop_back();
+            }
+            if (button(trLabel("Apply").c_str()) && !root.readOnly) {
+                auto candidate = collection;
+                if (map) {
+                    const auto &entry = std::get<PropertyObject>(pending);
+                    std::get<PropertyMap>(candidate).entries.push_back(
+                        {entry.fields.at("Key"), entry.fields.at("Value")});
+                } else
+                    std::get<PropertySet>(candidate).values.push_back(pending);
+                if (normalizePropertyValue(childField(root, collection), candidate, list.error)) {
+                    collection = std::move(candidate);
+                    out.changed = out.immediate = true;
+                    list.indexedSize = std::size_t(-1);
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            out.active |= !out.immediate;
+        }
+        if (!list.error.empty())
+            textColoured(palette().error, "%s", tr(list.error.c_str()).c_str());
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("##bulk")) {
+        if (list.selection.empty())
+            ImGui::CloseCurrentPopup();
+        textDim("%s", tr("Enter an expression or typed property JSON.").c_str());
+        ImGui::SetNextItemWidth(dp(420));
+        const bool accepted =
+            detail::inputText("##bulkText", list.bulkText, ImGuiInputTextFlags_EnterReturnsTrue);
+        if ((accepted || button(trLabel("Apply").c_str())) && !root.readOnly && !list.selection.empty()) {
+            const auto row = list.selection.front();
+            const auto &value = values ? (*values)[row] : map->entries[row].value;
+            const auto first = list.bulkText.find_first_not_of(" \t\r\n");
+            const bool json = first != std::string::npos && list.bulkText[first] == '{';
+            command = json || numberText(value).empty() ? 4 : 5;
+            commandText = list.bulkText;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        out.active |= !out.immediate;
+        ImGui::EndPopup();
+    }
+    if (command) {
+        const PropertyCollectionAction actions[]{
+            PropertyCollectionAction::remove, PropertyCollectionAction::duplicate,
+            PropertyCollectionAction::move, PropertyCollectionAction::assign,
+            PropertyCollectionAction::expression};
+        auto change = editPropertyCollection(childField(root, collection), list.selection,
+                                             actions[command - 1], commandText, before);
+        list.error = change.error;
+        if (change) {
+            collection = std::move(change.edits.front().edit.value);
+            out.changed = out.immediate = true;
+            list.indexedSize = std::size_t(-1);
+            list.activeRow = -1;
+            list.selection.clear();
+            state.elements.clear();
+            ImGui::ClearActiveID();
+        }
+    }
+    if (!list.error.empty())
+        textColoured(palette().error, "%s", tr(list.error.c_str()).c_str());
     return out;
 }
 DrawEdit drawValue(PropertyValue &value, const Property &root, const InspectorOptions &options,
                    InspectorState &state, std::vector<std::string> &path, bool fullArray) {
     DrawEdit out;
+    ScopedDisabled disabled(root.readOnly && !isCollection(value) &&
+                            !std::holds_alternative<PropertyObject>(value) &&
+                            !std::holds_alternative<PropertyOptional>(value));
     const bool numeric = std::holds_alternative<std::int64_t>(value) ||
                          std::holds_alternative<float>(value) || std::holds_alternative<double>(value);
     ImGui::BeginGroup();
@@ -276,26 +534,71 @@ DrawEdit drawValue(PropertyValue &value, const Property &root, const InspectorOp
                 ImGui::EndPopup();
             }
         }
-    } else if (auto array = std::get_if<PropertyArray>(&value); array && fullArray)
-        out.merge(drawArray(*array, root, options, state, path));
+    } else if (auto enumeration = std::get_if<PropertyEnum>(&value)) {
+        if (ImGui::BeginCombo("##value", propertyValueText(value).c_str())) {
+            for (const auto &item : enumeration->items) {
+                const bool selected = enumeration->flags
+                                          ? (item.first ? (enumeration->value & item.first) == item.first
+                                                        : enumeration->value == 0)
+                                          : enumeration->value == item.first;
+                if (ImGui::Selectable(trLabel(item.second.c_str()).c_str(), selected,
+                                      enumeration->flags ? ImGuiSelectableFlags_NoAutoClosePopups : 0)) {
+                    enumeration->value =
+                        enumeration->flags && item.first
+                            ? (selected ? enumeration->value & ~item.first : enumeration->value | item.first)
+                            : item.first;
+                    out.changed = out.immediate = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        out.observe();
+    } else if (auto optional = std::get_if<PropertyOptional>(&value)) {
+        bool present = bool(optional->value);
+        const float width = ImGui::CalcItemWidth();
+        {
+            ScopedDisabled readonly(root.readOnly);
+            if (ImGui::Checkbox("##present", &present)) {
+                if (present)
+                    optional->value = std::make_unique<PropertyValue>(optional->elementTemplate
+                                                                          ? *optional->elementTemplate
+                                                                          : PropertyValue{std::string{}});
+                else
+                    optional->value.reset();
+                out.changed = out.immediate = true;
+            }
+            out.observe();
+        }
+        ImGui::SameLine();
+        if (optional->value) {
+            ImGui::SetNextItemWidth(std::max(dp(30), width - ImGui::GetFrameHeightWithSpacing()));
+            ScopedID scope("optional");
+            path.push_back("value");
+            out.merge(drawValue(*optional->value, root, options, state, path));
+            path.pop_back();
+        } else
+            textDim("null");
+    } else if (isCollection(value) && fullArray)
+        out.merge(drawCollection(value, root, options, state, path));
     else {
-        const std::string label =
-            std::holds_alternative<PropertyArray>(value)
-                ? tr("Array") + " (" + std::to_string(std::get<PropertyArray>(value).values.size()) + ")"
-                : std::get<PropertyObject>(value).type;
+        const std::string label = propertyValueText(value);
         if (button((label + "###details").c_str()))
             ImGui::OpenPopup("##details");
         ImGui::SetNextWindowSize(dp(520, 0), ImGuiCond_Appearing);
         if (ImGui::BeginPopup("##details")) {
-            if (auto nested = std::get_if<PropertyArray>(&value))
-                out.merge(drawArray(*nested, root, options, state, path));
+            if (isCollection(value))
+                out.merge(drawCollection(value, root, options, state, path));
             else {
-                for (auto &field : std::get<PropertyObject>(value).fields) {
+                auto &object = std::get<PropertyObject>(value);
+                for (auto &field : object.fields) {
                     ScopedID scope(field.first.c_str());
-                    textDim("%s", tr(field.first.c_str()).c_str());
+                    const auto definition = propertyObjectField(root, object, field.first);
+                    textDim("%s", tr(definition.label.c_str()).c_str());
+                    if (!definition.help.empty() && ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", tr(definition.help.c_str()).c_str());
                     ImGui::SetNextItemWidth(-1);
                     path.push_back(field.first);
-                    out.merge(drawValue(field.second, root, options, state, path));
+                    out.merge(drawValue(field.second, definition, options, state, path));
                     path.pop_back();
                 }
             }
@@ -348,6 +651,72 @@ DrawEdit drawValue(PropertyValue &value, const Property &root, const InspectorOp
     return out;
 }
 } // namespace
+Edit<PropertyValue> propertyEditor(const char *id, InspectorState &s, const Property &p,
+                                   std::uint64_t revision, const PropertyValidator &validate,
+                                   const InspectorOptions &options) {
+    ScopedID scope(id);
+    ItemScope key(p.id);
+    bool cancelled = false;
+    if (s.revision != revision) {
+        const auto found = s.drafts.find(p.id);
+        cancelled = found != s.drafts.end() && found->second.active;
+        s.drafts.clear();
+        s.elements.clear();
+        s.pending.clear();
+        s.lists.clear();
+        s.revision = revision;
+    }
+    auto &draft = s.drafts[p.id];
+    const bool cached = isCollection(p.value) || std::holds_alternative<PropertyObject>(p.value) ||
+                        std::holds_alternative<PropertyOptional>(p.value);
+    if (!draft.active && (!cached || !draft.initialized)) {
+        draft.value = draft.before = p.value;
+        draft.initialized = true;
+    }
+    std::vector<std::string> path;
+    auto edit = drawValue(draft.value, p, options, s, path);
+    if (p.readOnly) {
+        if (edit.changed)
+            draft.value = p.value;
+        return {};
+    }
+    EditPhase phase = cancelled ? EditPhase::cancel : EditPhase::none;
+    if (edit.activated && !draft.active) {
+        draft.before = p.value;
+        draft.active = true;
+        phase = EditPhase::begin;
+    }
+    if (edit.changed) {
+        if (!draft.active)
+            draft.before = p.value;
+        draft.active = true;
+        if (normalizePropertyValue(p, draft.value, draft.error))
+            phase = EditPhase::update;
+    }
+    if ((edit.immediate && edit.changed) || edit.edited) {
+        if (normalizePropertyValue(p, draft.value, draft.error) && validate)
+            draft.error = validate(p.id, draft.value);
+        if (draft.error.empty()) {
+            phase = EditPhase::commit;
+            draft.active = draft.initialized = false;
+        } else
+            phase = EditPhase::none;
+    }
+    if (draft.active &&
+        (edit.cancelled || ((edit.active || edit.deactivated) && ImGui::IsKeyPressed(ImGuiKey_Escape)))) {
+        draft.value = draft.before;
+        draft.active = draft.initialized = false;
+        draft.error.clear();
+        phase = EditPhase::cancel;
+    } else if (draft.active && edit.deactivated && !edit.active && !edit.edited && !edit.changed) {
+        draft.value = draft.before;
+        draft.active = draft.initialized = false;
+        phase = EditPhase::cancel;
+    }
+    if (!draft.error.empty() && ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tr(draft.error.c_str()).c_str());
+    return phase == EditPhase::none ? Edit<PropertyValue>{} : Edit<PropertyValue>{phase, draft.value};
+}
 bool propertyMatches(const TextFilter &filter, const Property &property, const char *context) {
     if (!filter.active())
         return true;
@@ -376,7 +745,12 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
             }
         s.drafts.clear();
         s.elements.clear();
-        s.lists.clear();
+        s.pending.clear();
+        for (auto &entry : s.lists) {
+            entry.second.activeRow = -1;
+            entry.second.indexedSize = std::size_t(-1);
+            entry.second.selection.clear();
+        }
         s.revision = revision;
     }
     if (!beginProperties("##properties"))
@@ -449,8 +823,8 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
             continue;
         }
         auto &draft = s.drafts[p.id];
-        const bool cached =
-            std::holds_alternative<PropertyArray>(p.value) || std::holds_alternative<PropertyObject>(p.value);
+        const bool cached = isCollection(p.value) || std::holds_alternative<PropertyObject>(p.value) ||
+                            std::holds_alternative<PropertyOptional>(p.value);
         if (!draft.active && (!cached || !draft.initialized)) {
             draft.value = p.value;
             draft.before = p.value;
@@ -464,7 +838,7 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
         DrawEdit compound;
         bool compoundDrawn = false;
         {
-            ScopedDisabled disabled(p.readOnly);
+            ScopedDisabled disabled(p.readOnly && p.value.index() <= 4);
             if (auto *boolValue = std::get_if<bool>(&draft.value)) {
                 changed = toggleSwitch("##value", boolValue);
                 immediate = true;
@@ -576,8 +950,7 @@ std::vector<PropertyEdit> inspector(const char *id, InspectorState &s, ArrayView
         if (phase != EditPhase::none)
             result.push_back({p.id, {phase, draft.value}});
         bool openExpression = expressionRequested;
-        if (options.clipboard && !std::holds_alternative<PropertyArray>(p.value) &&
-            ImGui::IsItemClicked(ImGuiMouseButton_Right))
+        if (options.clipboard && !isCollection(p.value) && ImGui::IsItemClicked(ImGuiMouseButton_Right))
             ImGui::OpenPopup("##propertyMenu");
         if (ImGui::BeginPopup("##propertyMenu")) {
             if (ImGui::MenuItem(trLabel("Copy as JSON").c_str(), nullptr, false, !p.password && !p.mixed))

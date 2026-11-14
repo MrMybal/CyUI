@@ -14,6 +14,9 @@
 
 #include <imgui.h>
 #include "cyui/CyUI.h"
+#if defined(CYUI_HAS_INSPECTOR)
+#include "cyui/examples/EditorWorkspace.h"
+#endif
 #include <cstdint>
 
 #include <algorithm>
@@ -820,10 +823,10 @@ void virtualArraysPage() {
                 .c_str());
     static int kind = 6, count = 1, builtKind = -1, builtCount = -1;
     const char *kinds[]{"Bool",    "Int64", "Float", "Double",        "Text",    "Vector2",    "Vector3",
-                        "Vector4", "Color", "Asset", "Nested arrays", "Objects", "Custom type"};
+                        "Vector4", "Color", "Asset", "Nested arrays", "Objects", "Custom type", "Set", "Map", "Optional", "Enum", "Flags"};
     const char *counts[]{"100", "10000", "100000"};
     ImGui::SetNextItemWidth(dp(160));
-    combo(trLabel("Element type").c_str(), &kind, kinds, 13);
+    combo(trLabel("Element type").c_str(), &kind, kinds, 18);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(dp(110));
     combo(trLabel("Element count").c_str(), &count, counts, 3);
@@ -846,7 +849,12 @@ void virtualArraysPage() {
                                                              {{"Name", std::string("Spawn")},
                                                               {"Position", PropertyVector{{1, 2, 3}}},
                                                               {"Weights", makePropertyArray(.5f, 3)}}},
-                                              PropertyCustom{"Angle", "45"}};
+                                              PropertyCustom{"Angle", "45"}, makePropertySet(std::int64_t(0)), makePropertyMap(std::string{}, 0.),
+                                              makePropertyOptional(2.56), PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "Medium"}, {2, "High"}}},
+                                              PropertyEnum{"Channels", 3, {{1, "A"}, {2, "B"}, {4, "C"}}, true}};
+        auto &object = std::get<PropertyObject>(prototypes[11]);
+        object.metadata["Name"].readOnly = true;
+        object.metadata["Position"].bounded = true; object.metadata["Position"].minimum = 0; object.metadata["Position"].maximum = 100;
         auto &field = fields[0];
         field.id = 900;
         field.label = "Values";
@@ -878,6 +886,144 @@ void virtualArraysPage() {
             std::get<PropertyArray>(fields[0].value).values.size());
     textDim("%s", tr("Nested arrays and objects open a detail editor. Custom types use a host callback or "
                      "the JSON editor.")
+                      .c_str());
+}
+PropertyValue uniqueExampleValue(PropertyValue value, std::size_t index) {
+    std::visit(
+        [&](auto &element) {
+            using T = std::decay_t<decltype(element)>;
+            if constexpr (std::is_same_v<T, bool>)
+                element = index != 0;
+            else if constexpr (std::is_same_v<T, std::int64_t>)
+                element = std::int64_t(index);
+            else if constexpr (std::is_floating_point_v<T>)
+                element = T(index) + T(.25);
+            else if constexpr (std::is_same_v<T, std::string>)
+                element = "Element " + std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyVector>)
+                element.values.front() = double(index);
+            else if constexpr (std::is_same_v<T, PropertyColor>)
+                element.rgba[0] = float(index) / 100000.f;
+            else if constexpr (std::is_same_v<T, PropertyAsset>)
+                element.path += "/" + std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyCustom>)
+                element.json = std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyObject>)
+                element.fields["Name"] = std::string("Record ") + std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyEnum>)
+                element.value =
+                    element.flags ? std::int64_t(index) : element.items[index % element.items.size()].first;
+            else if constexpr (std::is_same_v<T, PropertyOptional>) {
+                element.value = index ? std::make_unique<PropertyValue>(
+                                            uniqueExampleValue(*element.elementTemplate, index - 1))
+                                      : nullptr;
+            } else if constexpr (std::is_same_v<T, PropertyArray> || std::is_same_v<T, PropertySet>) {
+                auto prototype = element.elementTemplate ? *element.elementTemplate : element.values.front();
+                element.values = {uniqueExampleValue(std::move(prototype), index)};
+            } else if constexpr (std::is_same_v<T, PropertyMap>) {
+                element.entries = {{uniqueExampleValue(*element.keyTemplate, index), *element.valueTemplate}};
+            }
+        },
+        value);
+    return value;
+}
+void associativeCollectionsPage(bool maps) {
+    struct Example {
+        int kind = 1, key = 4, count = 1, builtKind = -1, builtKey = -1, builtCount = -1;
+        std::vector<Property> fields{1};
+        InspectorState state;
+        std::uint64_t revision = 0;
+    };
+    static std::array<Example, 2> examples;
+    auto &example = examples[maps ? 1 : 0];
+    if (maps && example.builtKind < 0)
+        example.kind = 5;
+    textDim("%s",
+            tr("Set elements and Map keys are unique. Conflicting edits and paste are rejected atomically.")
+                .c_str());
+    const char *kinds[]{"Bool",  "Int64",   "Float",         "Double",   "Text", "Vector3", "Color",
+                        "Asset", "Objects", "Nested arrays", "Optional", "Enum", "Flags"};
+    const char *counts[]{"100", "10000", "100000"};
+    ImGui::SetNextItemWidth(dp(150));
+    combo(trLabel(maps ? "Value type" : "Element type").c_str(), &example.kind, kinds, 13);
+    if (maps) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(dp(150));
+        combo(trLabel("Key type").c_str(), &example.key, kinds, 13);
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(100));
+    combo(trLabel("Element count").c_str(), &example.count, counts, 3);
+    if (example.kind != example.builtKind || example.key != example.builtKey ||
+        example.count != example.builtCount) {
+        PropertyMetadata locked;
+        locked.readOnly = true;
+        PropertyMetadata limited;
+        limited.bounded = true;
+        limited.minimum = 0;
+        limited.maximum = 10;
+        std::vector<PropertyValue> prototypes{
+            true,
+            std::int64_t(0),
+            2.56f,
+            2.56,
+            std::string{},
+            PropertyVector{{2.56, 5, 8}},
+            PropertyColor{{.35f, .65f, .8f, 1}},
+            PropertyAsset{"Texture", "/Game/Textures"},
+            PropertyObject{"Record",
+                           {{"Name", std::string("Record")},
+                            {"Strength", 2.56},
+                            {"Tint", PropertyColor{{.35f, .65f, .8f, 1}}}},
+                           {{"Name", locked}, {"Strength", limited}}},
+            makePropertyArray(PropertyVector{{1, 2, 3}}, 2),
+            makePropertyOptional(2.56),
+            PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "Medium"}, {2, "High"}}},
+            PropertyEnum{"Channels", 3, {{1, "A"}, {2, "B"}, {4, "C"}}, true}};
+        auto number = std::size_t(std::stoul(counts[example.count]));
+        const auto uniqueKind = maps ? example.key : example.kind;
+        if (uniqueKind == 0)
+            number = std::min(number, std::size_t(2));
+        if (uniqueKind == 11)
+            number = std::min(number, std::size_t(3));
+        if (uniqueKind == 12)
+            number = std::min(number, std::size_t(8));
+        auto &field = example.fields[0];
+        field.id = 901;
+        field.label = maps ? "Map" : "Set";
+        if (maps) {
+            auto map = makePropertyMap(prototypes[example.key], prototypes[example.kind]);
+            for (std::size_t n = 0; n < number; ++n)
+                map.entries.push_back(
+                    {uniqueExampleValue(prototypes[example.key], n), prototypes[example.kind]});
+            field.value = std::move(map);
+        } else {
+            auto set = makePropertySet(prototypes[example.kind]);
+            for (std::size_t n = 0; n < number; ++n)
+                set.values.push_back(uniqueExampleValue(prototypes[example.kind], n));
+            field.value = std::move(set);
+        }
+        example.builtKind = example.kind;
+        example.builtKey = example.key;
+        example.builtCount = example.count;
+        ++example.revision;
+    }
+    InspectorOptions options;
+    options.arrayHeight = 280;
+    for (const auto &event :
+         inspector("##associative", example.state, example.fields, example.revision, {}, options))
+        if (event.edit.committed()) {
+            example.fields[0].value = event.edit.value;
+            ++example.revision;
+        }
+    std::size_t drawn = 0;
+    for (const auto &list : example.state.lists)
+        drawn += list.second.renderedRows;
+    const auto count = maps ? std::get<PropertyMap>(example.fields[0].value).entries.size()
+                            : std::get<PropertySet>(example.fields[0].value).values.size();
+    textDim(tr("Visible rows: %zu / %zu").c_str(), drawn, count);
+    textDim("%s", tr("Ctrl/Shift select rows. Edit selection applies a formula or typed JSON to the "
+                     "selection. Add validates uniqueness.")
                       .c_str());
 }
 void advancedInspectorPage() {
@@ -1732,9 +1878,192 @@ void commandsPage(const GalleryResources &resources) {
         textColoured(palette().error, "%s", tr(error.c_str()).c_str());
 }
 #endif
-void moduleGallery(int selectedTab,const GalleryResources& resources) {
+#if defined(CYUI_HAS_INSPECTOR) && defined(CYUI_HAS_DATAVIEW) && defined(CYUI_HAS_HIERARCHY) &&              \
+    defined(CYUI_HAS_COMMANDS) && defined(CYUI_HAS_FILEPICKER)
+void editorWorkspacePage() {
+    static examples::EditorWorkspace model;
+    static ItemId selected = 1, shown = 0, pendingObject = 0, pendingProperty = 0;
+    static std::uint64_t inspectorRevision = 0, shownRevision = UINT64_MAX;
+    static InspectorState details;
+    static HierarchyState tree;
+    static DataViewState grid;
+    static CommandRegistry commands;
+    static bool initialized = false, openPicker = false;
+    static FilePickerState picker;
+    if (!initialized) {
+        commands.add({1, "Undo", "Ctrl+Z", "Edit"});
+        commands.add({2, "Redo", "Ctrl+Y", "Edit"});
+        tree.selection = {1};
+        picker.directory = picker.pathText = "/Game/Textures";
+        initialized = true;
+    }
+    commands.find(1)->enabled = model.canUndo();
+    commands.find(2)->enabled = model.canRedo();
+    const auto action = commands.poll();
+    {
+        ScopedDisabled disabled(!model.canUndo());
+        if (button(trLabel("Undo").c_str()) || action == 1)
+            model.undo();
+    }
+    ImGui::SameLine();
+    {
+        ScopedDisabled disabled(!model.canRedo());
+        if (button(trLabel("Redo").c_str()) || action == 2)
+            model.redo();
+    }
+    ImGui::SameLine();
+    textDim("%s", tr("One host model, shared selection and atomic Undo/Redo across Inspector, DataView and "
+                     "asset selection.")
+                      .c_str());
+    if (ImGui::BeginTable("##workspaceLayout", 2,
+                          ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn(trLabel("Hierarchy").c_str(), ImGuiTableColumnFlags_WidthFixed, dp(250));
+        ImGui::TableSetupColumn(trLabel("Inspector").c_str(), ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        std::vector<HierarchyItem> items;
+        for (const auto &object : model.objects())
+            items.push_back({object.id, 0, std::get<std::string>(object.properties[0].value), "Object"});
+        HierarchyOptions readOnlyTree;
+        readOnlyTree.readOnly = true;
+        hierarchy("##workspaceObjects", tree, items, dp(0, 260), readOnlyTree);
+        if (!tree.selection.empty() && selected != tree.selection.back()) {
+            selected = tree.selection.back();
+            grid.active = grid.anchor = selected;
+        }
+        ImGui::TableNextColumn();
+        if (shown != selected || shownRevision != model.revision()) {
+            ++inspectorRevision;
+            shown = selected;
+            shownRevision = model.revision();
+        }
+        if (const auto *object = model.find(selected)) {
+            InspectorOptions options;
+            options.browseAssetAt = [&](ItemId field, const std::vector<std::string> &) {
+                pendingObject = selected;
+                pendingProperty = field;
+                openPicker = true;
+            };
+            std::vector<examples::WorkspaceChange> commits;
+            for (const auto &event :
+                 inspector("##workspaceDetails", details, object->properties, inspectorRevision, {}, options))
+                if (event.edit.committed())
+                    commits.push_back({selected, event.id, event.edit.value});
+            if (!commits.empty())
+                model.apply(commits);
+        }
+        ImGui::EndTable();
+    }
+    std::vector<DataColumn> columns{
+        {1, "Name", true, false, 0, 1, 160},     {2, "Position", true, false, 0, 1, 220},
+        {3, "Tint", true, false, 0, 1, 160},     {4, "Texture", true, false, 0, 1, 270},
+        {5, "Strength", true, true, 0, 10, 120}, {6, "Settings", true, false, 0, 1, 150}};
+    std::vector<DataRow> rows;
+    for (const auto &object : model.objects()) {
+        DataRow row;
+        row.id = object.id;
+        for (const auto &p : object.properties)
+            row.cells.push_back(p.value);
+        rows.push_back(std::move(row));
+    }
+    DataViewOptions table;
+    table.revision = model.revision();
+    table.editors.browseAssetAt = [&](ItemId field, const std::vector<std::string> &path) {
+        pendingObject = path.empty() ? selected : ItemId(std::stoull(path.front()));
+        pendingProperty = field;
+        openPicker = true;
+    };
+    std::vector<examples::WorkspaceChange> commits;
+    for (const auto &event : dataView("##workspaceData", grid, columns, rows, dp(0, 220), table))
+        if (event.edit.committed())
+            commits.push_back({event.row, event.column, event.edit.value});
+    if (!commits.empty())
+        model.apply(commits);
+    if (grid.active && grid.active != selected) {
+        selected = grid.active;
+        tree.selection = {selected};
+    }
+    if (openPicker) {
+        ImGui::OpenPopup("##workspaceAsset");
+        openPicker = false;
+    }
+    ImGui::SetNextWindowSize(dp(640, 410), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("##workspaceAsset", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        textDim("%s", tr("Choose texture").c_str());
+        FileListing listing{"/Game/Textures", {{1, "Terrain.png"}, {2, "Stone.png"}, {3, "Water.png"}}};
+        FilePickerOptions options;
+        options.root = "/Game/Textures";
+        options.filters = {{"Images", {"png"}}};
+        const auto result = filePicker("##workspacePicker", picker, listing, dp(0, 300), options);
+        if (result.accepted && !result.paths.empty()) {
+            model.apply({{pendingObject, pendingProperty, PropertyAsset{"Texture", result.paths.front()}}});
+            ImGui::CloseCurrentPopup();
+        }
+        if (result.cancelled)
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    if (!model.error.empty())
+        textColoured(palette().error, "%s", tr(model.error.c_str()).c_str());
+}
+#endif
+
+#if defined(CYUI_HAS_DATAVIEW)
+void richDataViewPage() {
+    textDim(
+        "%s",
+        tr("Double-click a cell to use the Inspector editor. Rich cells keep their type when copied as TSV.")
+            .c_str());
+    static std::vector<DataColumn> columns{
+        {1, "Name", true, false, 0, 1, 150},      {2, "Position", true, false, 0, 1, 240},
+        {3, "Tint", true, false, 0, 1, 180},      {4, "Texture", true, false, 0, 1, 250},
+        {5, "Quality", true, false, 0, 1, 130},   {6, "Tags", true, false, 0, 1, 140},
+        {7, "Overrides", true, false, 0, 1, 160}, {8, "Optional", true, false, 0, 1, 160},
+        {9, "Angle", true, false, 0, 1, 100}};
+    static std::vector<DataRow> rows;
+    static DataViewState state;
+    if (rows.empty()) {
+        for (int n = 1; n <= 1000; ++n)
+            rows.push_back(
+                {ItemId(n),
+                 {std::string("Object ") + std::to_string(n), PropertyVector{{2.56, double(n), 0}},
+                  PropertyColor{{.35f, .65f, .8f, 1}}, PropertyAsset{"Texture", "/Game/Textures/Terrain"},
+                  PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "Medium"}, {2, "High"}}},
+                  PropertySet{{std::string("Static"), std::string("Outdoor")},
+                              std::make_shared<const PropertyValue>(std::string{})},
+                  PropertyMap{{{std::string("Gain"), 1.}},
+                              std::make_shared<const PropertyValue>(std::string{}),
+                              std::make_shared<const PropertyValue>(0.)},
+                  makePropertyOptional(2.56), PropertyCustom{"Angle", "45"}}});
+        state.editing = 1;
+        state.editingColumn = 1;
+    }
+    DataViewOptions options;
+    options.editors.editCustom = [](ItemId, const std::vector<std::string> &, const PropertyCustom &value) {
+        return button((value.json + " deg").c_str())
+                   ? Edit<PropertyCustom>{EditPhase::commit,
+                                          {value.type,
+                                           std::to_string(std::fmod(std::stod(value.json) + 15, 360))}}
+                   : Edit<PropertyCustom>{};
+    };
+    for (const auto &event : dataView("##richData", state, columns, rows, dp(0, 450), options))
+        if (event.edit.committed())
+            for (auto &row : rows)
+                if (row.id == event.row)
+                    for (std::size_t column = 0; column < columns.size(); ++column)
+                        if (columns[column].id == event.column)
+                            row.cells[column] = event.edit.value;
+}
+#endif
+void moduleGallery(int selectedTab, const GalleryResources &resources) {
     (void)resources;
-    auto page=[&](const char*label,int index,auto body){if(ImGui::BeginTabItem(trLabel(label).c_str(),nullptr,selectedTab==index?ImGuiTabItemFlags_SetSelected:0)){body();ImGui::EndTabItem();}};
+    auto page = [&](const char *label, int index, auto body) {
+        if (ImGui::BeginTabItem(trLabel(label).c_str(), nullptr,
+                                selectedTab == index ? ImGuiTabItemFlags_SetSelected : 0)) {
+            body();
+            ImGui::EndTabItem();
+        }
+    };
 #if defined(CYUI_HAS_CANVAS)
     page("Canvas",4,[]{textDim(tr("Wheel: zoom at pointer. Middle drag: pan. Space + drag: pan.").c_str());static CanvasState state;CanvasScope canvas("##canvas",state,dp(0,320));const auto&f=canvas.frame();auto*d=ImGui::GetWindowDrawList();const auto a=state.view.screen({40,40},f.bounds.min),b=state.view.screen({220,160},f.bounds.min);d->AddRectFilled(a,b,palette().accentDim,dp(4));d->AddText(a,palette().text,"World-space content");});
 #endif
@@ -1764,6 +2093,8 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
 #if defined(CYUI_HAS_INSPECTOR)
     page("Inspector",12,[&]{inspectorPage(resources);});
     page("Virtual arrays", 33, virtualArraysPage);
+    page("Sets", 34, [] { associativeCollectionsPage(false); });
+    page("Maps", 35, [] { associativeCollectionsPage(true); });
 #endif
 #if defined(CYUI_HAS_ASSETS)
     page("Assets",13,[&]{assetsPage(resources);});
@@ -1801,6 +2132,10 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
 #endif
 #if defined(CYUI_HAS_DATAVIEW)
     page("Data view", 31, dataViewPage);
+    page("Rich data view", 36, richDataViewPage);
+#endif
+#if defined(CYUI_HAS_INSPECTOR) && defined(CYUI_HAS_DATAVIEW) && defined(CYUI_HAS_HIERARCHY) && defined(CYUI_HAS_COMMANDS) && defined(CYUI_HAS_FILEPICKER)
+    page("Editor workspace", 37, editorWorkspacePage);
 #endif
 #if defined(CYUI_HAS_FILEPICKER)
     page("File picker", 32, filePickerPage);

@@ -62,6 +62,8 @@ struct NodeState {
     bool wiring = false;
     std::vector<NodeGroup> groupBefore, groupPreview;
     std::vector<NodeReroute> routeBefore, routePreview;
+    std::vector<NodeMove> groupNodesBefore, groupNodesPreview;
+    std::vector<NodeReroute> groupRoutesBefore, groupRoutesPreview;
     ItemId overlay = 0;
     int overlayMode = 0; // 1 group move, 2 group resize, 3 reroute move
     std::string clipboardError;
@@ -81,6 +83,7 @@ struct NodeOptions {
     ArrayView<NodeGroup> groups;
     ArrayView<NodeReroute> reroutes;
     std::function<ItemId()> allocateId; // fresh, nonzero IDs across nodes, pins, links and overlays
+    bool moveGroupContents = true;
 };
 CYUI_API NodeFragment copyNodeSelection(ArrayView<ItemId>, ArrayView<Node>, ArrayView<NodeLink>,
                                         ArrayView<NodeGroup> = {}, ArrayView<NodeReroute> = {});

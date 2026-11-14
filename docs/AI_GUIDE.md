@@ -1038,8 +1038,9 @@ hosts with richer syntax overlays can use `CodeEditor::setSyntaxEnabled(false)`.
 
 ## 10. Editor tools: Inspector, Hierarchy, DataView, FilePicker and Commands
 
-`Hierarchy`, `DataView` and `FilePicker` are optional C++17 targets depending only
-on Core. Select them in `CYUI_MODULES`; include their matching `modules/*.h`.
+`Hierarchy` and `FilePicker` depend on Core; `DataView` also depends on Inspector
+to reuse all typed editors. These optional targets use C++17. Select them in
+`CYUI_MODULES`; include their matching `modules/*.h`.
 Gallery tabs 30, 31 and 32 demonstrate them. Inspector tab 12 defaults to its
 advanced example; Nodes (7), Timeline (8) and Commands (16) demonstrate extensions.
 The maintained [editor tools manual](../Documentation/Documentation.html#/en/editor-tools)
@@ -1150,6 +1151,57 @@ bounds and respects read-only fields. Apply each commit to every matching object
 in one Undo transaction. `defaultValue` enables Reset to default. Advance revision
 when an external replacement makes an active edit stale.
 
+### Sets, maps, optional values and field metadata
+
+`PropertySet` and `PropertyMap` provide Unreal-style Set/Map editing without an
+engine dependency. They share the virtual list and every recursive property editor
+with arrays. Sets contain unique typed values; maps contain unique typed keys and
+typed values. Keys may themselves be vectors, records or other compound values.
+Membership ignores order; presentation retains insertion order. Uniqueness is
+checked after normalization/clamping, including edits, Add and JSON paste. A
+collision rejects the entire edit. Add stages a candidate before inserting it.
+
+```cpp
+auto tags = cyui::makePropertySet(std::string("Tag"));
+tags.values = {std::string("Player"), std::string("Visible")};
+auto weights = cyui::makePropertyMap(std::string("Key"), .5f);
+weights.entries = {{std::string("Walk"), .7f}, {std::string("Run"), .3f}};
+auto maybeCount = cyui::makePropertyOptional(std::int64_t(0)); // initially absent
+cyui::PropertyEnum quality{"Quality", 1, {{0,"Low"},{1,"Medium"},{2,"High"}}};
+cyui::PropertyEnum channels{"Channels", 3, {{1,"R"},{2,"G"},{4,"B"}}, true};
+cyui::PropertyObject point{"Point", {{"ID", std::int64_t(1)}, {"X", 2.56}}};
+point.metadata["ID"].readOnly = true;
+point.metadata["X"].bounded = true;
+point.metadata["X"].minimum = 0;
+point.metadata["X"].maximum = 10;
+```
+
+`PropertyMetadata` also supplies labels, help, exact integer bounds, choices,
+password and multiline settings. It belongs to the destination schema and cannot
+be replaced by clipboard data. Array structural edits preserve read-only record
+fields. `PropertyOptional` owns a nullable value and its immutable element template;
+`PropertyEnum` uses a stable type name and int64 values, with an optional flags mode.
+Unknown enumerators or flag bits are rejected.
+
+Ctrl/Shift selects collection rows; Ctrl+A selects filtered rows and Delete removes
+the selection. Search filters the virtual list. The context menu applies typed JSON
+or a numeric expression to the whole selection atomically. Each expression's
+`Value` is that element's original value. Maps apply bulk edits to values. Arrays
+also duplicate and reorder selections by dragging their row indices; Sets/Maps
+retain unique membership. `editPropertyCollection` exposes these operations without
+drawing. `propertyEditor` embeds the same editor and transaction phases in a host UI.
+
+JSON version 1 adds `set` with typed `value` elements and an optional `element`
+template; `map` with `value:[{"key":typed,"value":typed}]`, `keyTemplate` and
+`valueTemplate`; `optional` with null or a typed `value` and `element`; and
+`enum`/`flags` with `enumType`, an int64 `value` and `{value,label}` items.
+Clipboard budgets remain independent of collection display size.
+
+Python mirrors these models and helpers with snake_case names. Map `entries` are
+`(key,value)` pairs, allowing compound keys; metadata bounds use `minimum`/`maximum`
+or `None`. `property_value_editor` is the standalone editor. Galleries **33–35**
+demonstrate arrays, Sets and Maps with up to 100000 entries and all property types.
+
 ### Hierarchy and tables
 
 `hierarchy(id,state,items,size,options)` renders scenes/layers supplied as flat
@@ -1160,11 +1212,20 @@ Shift-drop inserts before it; the root drop zone detaches to root. Cycles, locke
 sources/targets and host `canReparent` vetoes are enforced. The host applies edits,
 allocates IDs and decides subtree duplication/deletion semantics.
 
+Arrow keys navigate visible rows: Right expands or enters a child; Left collapses
+or selects the parent. Home/End/PageUp/PageDown, Ctrl/Shift selection, Space and
+Ctrl+A are supported. F2/Enter requests rename and Delete requests removal.
+`navigateHierarchy` exposes the navigation model without rendering.
+
 `dataView` uses ImGui tables with reorderable/hideable/resizable columns,
-multi-column numeric sorting, per-column filters and clipped rows. Cells are
-string/int64/double/bool. Shift-click selects a rectangle; Ctrl+C/V exchanges
-quoted TSV. Double-click edits a cell; Enter commits, Escape cancels. Double
-cells accept arithmetic and bounds. Paste is validated atomically, including
+multi-column numeric sorting, per-column filters and clipped rows. `DataCell` is
+`PropertyValue`: every Inspector type works, including vectors, colors, assets,
+arrays, Sets, Maps, optionals, enums, flags, records and custom types. Double-click
+opens the corresponding editor. `DataColumn::metadata` supplies field rules and
+`DataViewOptions::editors` supplies custom/resource callbacks; callback IDs are
+column IDs and paths begin with the row ID. Shift-click selects a rectangle;
+Ctrl+C/V exchanges quoted TSV. Rich cells contain typed property JSON; primitive
+cells retain plain text. Numeric cells accept arithmetic and bounds. Paste is validated atomically, including
 read-only rows/columns and the host callback. State/options revision cancels stale
 cell editing. `copyDataCells` and `pasteDataCells` expose the same model contract.
 
@@ -1203,6 +1264,19 @@ drag reordering return separate markers/lanes Edit vectors. splitTimelineClips,
 duplicateTimelineClips and reorderTimelineLane are usable without drawing. IDs,
 locked clips and minimum durations are preserved. Host revision/read-only/Escape
 cancel stale gestures; the host owns each Undo transaction.
+
+Moving a comment group also moves nodes whose anchors were inside it at gesture
+start and their contained reroutes. Apply all returned `groups`, `moved` and
+`reroutes` commits together. Escape/revision cancels the entire gesture. Set
+`NodeOptions::moveGroupContents=false` for overlay-only movement; resizing keeps
+contents fixed. Python provides the same behavior and Timeline's **Add marker**
+context action (`add_timeline_marker` is also usable without drawing).
+
+The **Rich data view** gallery (36) embeds all typed cell editors. **Editor
+workspace** (37) shares one model/selection across Hierarchy, Inspector, DataView
+and FilePicker, with Ctrl+Z/Ctrl+Y and atomic Undo/Redo. The reusable host example
+is `include/cyui/examples/EditorWorkspace.h`; adapt its snapshots to the application's
+history system. It validates the whole batch before changing the model or history.
 
 ### Python
 

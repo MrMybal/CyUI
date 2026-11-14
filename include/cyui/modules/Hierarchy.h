@@ -29,6 +29,8 @@ struct HierarchyState {
     std::unordered_set<ItemId> collapsed;
     ItemId anchor = 0, renaming = 0;
     bool renameFocus = false;
+    ItemId focused = 0;
+    bool scrollToFocus = false;
 };
 struct HierarchyOptions {
     bool readOnly = false, visibility = true, locking = true;
@@ -37,6 +39,9 @@ struct HierarchyOptions {
 // Nonzero unique IDs. Missing parents become roots; invalid cycles are shown once.
 CYUI_API std::vector<HierarchyRow> hierarchyRows(ArrayView<HierarchyItem>, const HierarchyState &);
 CYUI_API bool canReparentHierarchy(ArrayView<HierarchyItem>, ArrayView<ItemId>, ItemId parent);
+enum class HierarchyNavigation { up, down, left, right, home, end, pageUp, pageDown, toggle, selectAll };
+CYUI_API void navigateHierarchy(ArrayView<HierarchyItem>, HierarchyState &, HierarchyNavigation,
+                                bool extend = false, bool additive = false, std::size_t page = 10);
 CYUI_API std::vector<HierarchyRequest> hierarchy(const char *id, HierarchyState &, ArrayView<HierarchyItem>,
                                                  ImVec2 size = {}, const HierarchyOptions & = {});
 } // namespace cyui

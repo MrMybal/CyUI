@@ -4,7 +4,8 @@ from dataclasses import dataclass, replace
 from .common import ui
 from .inspector_data import (PropertyArray, PropertyObject, PropertyCustom, PropertyVector,
     PropertyColor, PropertyAsset, PropertyFloat, property_to_json, property_from_json,
-    normalize_property_value, evaluate_property_expression)
+    normalize_property_value, evaluate_property_expression, PropertySet, PropertyMap, PropertyOptional, PropertyEnum,
+    property_value_text, property_object_field)
 
 
 @dataclass
@@ -27,67 +28,11 @@ class DrawEdit:
         for name in self.__dataclass_fields__: setattr(self, name, getattr(self, name) or getattr(other, name))
 
 
-def _array(array, root, state, path, height, edit_custom, browse_asset):
-    i, c = ui()
-    out = DrawEdit()
-    listing = state.lists.setdefault(i.get_id('##array'), {'active_row': -1, 'rendered_rows': 0})
-    listing['rendered_rows'] = 0
-    action = None
-    if i.begin_child('##array', (0, c.dp(max(60, height))), i.ChildFlags_.borders):
-        pitch = i.get_frame_height_with_spacing()
-        clip = i.ListClipper()
-        clip.begin(len(array.values), pitch)
-        if 0 <= listing['active_row'] < len(array.values): clip.include_item_by_index(listing['active_row'])
-        while clip.step():
-            for index in range(clip.display_start, clip.display_end):
-                listing['rendered_rows'] += 1
-                i.push_id(index)
-                y = i.get_cursor_pos_y()
-                i.align_text_to_frame_padding(); c.text_dim(str(index)); i.same_line(c.dp(52))
-                i.set_next_item_width(-c.dp(30))
-                edit, array.values[index] = draw_property_value(array.values[index], root, state, path+(str(index),), height, edit_custom, browse_asset)
-                out.merge(edit)
-                if edit.active or edit.activated: listing['active_row'] = index
-                elif listing['active_row'] == index: listing['active_row'] = -1
-                if i.begin_popup_context_item('##elementMenu'):
-                    field = replace(root, value=array.values[index])
-                    if i.menu_item(c.tr_label('Copy as JSON'), '', False, not root.password)[0]:
-                        try: i.set_clipboard_text(property_to_json(field))
-                        except ValueError as error: state.clipboard_error = str(error)
-                    if i.menu_item(c.tr_label('Paste value'), '', False, not root.read_only)[0]:
-                        try:
-                            array.values[index] = property_from_json(field, i.get_clipboard_text())[0][1].value
-                            out.changed = out.immediate = True; state.clipboard_error = ''
-                        except (ValueError, KeyError, TypeError) as error: state.clipboard_error = str(error)
-                    for name, enabled in [('Duplicate', True), ('Move up', index > 0), ('Move down', index+1 < len(array.values)), ('Remove', True)]:
-                        if i.menu_item(c.tr_label(name), '', False, enabled and not root.read_only)[0]: action = name, index
-                    i.end_popup()
-                i.same_line()
-                if c.ghost_button('-'): action = 'Remove', index
-                i.set_cursor_pos_y(y+pitch-i.get_style().item_spacing.y)
-                i.dummy((0, 0))
-                i.pop_id()
-    i.end_child()
-    if action:
-        name, index = action
-        if name == 'Duplicate': array.values.insert(index+1, deepcopy(array.values[index]))
-        elif name == 'Remove': array.values.pop(index)
-        else:
-            target = index-1 if name == 'Move up' else index+1
-            array.values[index], array.values[target] = array.values[target], array.values[index]
-        state.elements.clear(); listing['active_row'] = -1; i.internal.clear_active_id()
-        out.changed = out.immediate = True
-    if c.ghost_button(c.tr_label('Add element')):
-        source = array.element_template if array.element_template is not None else (array.values[-1] if array.values else '')
-        array.values.append(deepcopy(source)); out.changed = out.immediate = True
-    i.same_line(); c.text_dim(str(len(array.values)))
-    return out
-
-
 def draw_property_value(value, root, state, path=(), height=180, edit_custom=None, browse_asset=None, full_array=False):
     i, c = ui()
     out = DrawEdit()
     i.begin_group()
+    i.begin_disabled(root.read_only and not isinstance(value, (PropertyArray, PropertySet, PropertyMap, PropertyObject, PropertyOptional)))
     if type(value) is bool:
         out.changed, value = i.checkbox('##value', value)
         out.immediate = True; out.observe(i)
@@ -149,21 +94,48 @@ def draw_property_value(value, root, state, path=(), height=180, edit_custom=Non
                 if editor.get('error'): c.text_coloured(c.palette().error, editor['error'])
                 if i.is_key_pressed(i.Key.escape): i.close_current_popup()
                 out.active |= not out.immediate; i.end_popup()
-    elif isinstance(value, PropertyArray) and full_array:
-        out.merge(_array(value, root, state, path, height, edit_custom, browse_asset))
-    elif isinstance(value, (PropertyArray, PropertyObject)):
-        label = c.tr('Array')+' ('+str(len(value.values))+')' if isinstance(value, PropertyArray) else value.type
+    elif isinstance(value, PropertyEnum):
+        if i.begin_combo('##value', property_value_text(value)):
+            for key, label in value.items:
+                selected = (value.value & key == key if key else value.value == 0) if value.flags else value.value == key
+                clicked, _ = i.selectable(c.tr_label(label), selected, i.SelectableFlags_.no_auto_close_popups if value.flags else 0)
+                if clicked:
+                    value.value = (value.value & ~key if selected else value.value | key) if value.flags and key else key
+                    out.changed = out.immediate = True
+            i.end_combo()
+        out.observe(i)
+    elif isinstance(value, PropertyOptional):
+        present = value.value is not None; width = i.calc_item_width(); i.begin_disabled(root.read_only)
+        changed, present = i.checkbox('##present', present); out.observe(i); i.end_disabled()
+        if changed:
+            value.value = deepcopy(value.element_template) if present else None
+            out.changed = out.immediate = True
+        i.same_line()
+        if value.value is not None:
+            i.set_next_item_width(max(c.dp(30), width-i.get_frame_height_with_spacing())); i.push_id('optional')
+            edit, value.value = draw_property_value(value.value, root, state, path+('value',), height, edit_custom, browse_asset)
+            out.merge(edit); i.pop_id()
+        else: c.text_dim('null')
+    elif isinstance(value, (PropertyArray, PropertySet, PropertyMap)) and full_array:
+        from .collection_editor import draw_collection
+        edit, value = draw_collection(value, root, state, path, height, edit_custom, browse_asset); out.merge(edit)
+    elif isinstance(value, (PropertyArray, PropertySet, PropertyMap, PropertyObject)):
+        label = property_value_text(value)
         if c.button(label+'###details'): i.open_popup('##details')
         i.set_next_window_size((c.dp(520), 0), i.Cond_.appearing)
         if i.begin_popup('##details'):
-            if isinstance(value, PropertyArray): out.merge(_array(value, root, state, path, height, edit_custom, browse_asset))
+            if isinstance(value, (PropertyArray, PropertySet, PropertyMap)):
+                from .collection_editor import draw_collection
+                edit, value = draw_collection(value, root, state, path, height, edit_custom, browse_asset); out.merge(edit)
             else:
                 for key in value.fields:
-                    i.push_id(key); c.text_dim(c.tr(key)); i.set_next_item_width(-1)
-                    edit, value.fields[key] = draw_property_value(value.fields[key], root, state, path+(key,), height, edit_custom, browse_asset)
+                    child = property_object_field(root, value, key)
+                    i.push_id(key); c.text_dim(c.tr(child.label)); i.set_next_item_width(-1)
+                    if child.help and i.is_item_hovered(): i.set_tooltip(c.tr(child.help))
+                    edit, value.fields[key] = draw_property_value(value.fields[key], child, state, path+(key,), height, edit_custom, browse_asset)
                     out.merge(edit); i.pop_id()
             if i.is_key_pressed(i.Key.escape): i.close_current_popup()
             out.active |= not out.immediate; i.end_popup()
     else: raise ValueError('Unsupported property type')
-    i.end_group()
+    i.end_disabled(); i.end_group()
     return out, value

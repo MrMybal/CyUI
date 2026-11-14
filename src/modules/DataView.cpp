@@ -9,7 +9,7 @@
 namespace cyui {
 std::string dataCellText(const DataCell &v) {
     return std::visit(
-        [](const auto &n) -> std::string {
+        [&](const auto &n) -> std::string {
             using T = std::decay_t<decltype(n)>;
             if constexpr (std::is_same_v<T, std::string>)
                 return n;
@@ -17,11 +17,12 @@ std::string dataCellText(const DataCell &v) {
                 return n ? "true" : "false";
             else if constexpr (std::is_same_v<T, std::int64_t>)
                 return std::to_string(n);
-            else {
+            else if constexpr (std::is_arithmetic_v<T>) {
                 char buffer[64];
                 const auto text = std::to_chars(buffer, buffer + sizeof(buffer), n);
                 return text.ec == std::errc() ? std::string(buffer, text.ptr) : std::string{};
-            }
+            } else
+                return propertyValueText(v);
         },
         v);
 }
@@ -62,7 +63,18 @@ std::vector<std::size_t> dataViewRows(ArrayView<DataRow> rows, const DataViewSta
                             if (std::isnan(n) || std::isnan(m))
                                 return std::isnan(n) == std::isnan(m) ? 0 : std::isnan(n) ? 1 : -1;
                         }
-                        return n < m ? -1 : m < n ? 1 : 0;
+                        if constexpr (std::is_arithmetic_v<T> || std::is_same_v<T, std::string>)
+                            return n < m ? -1 : m < n ? 1 : 0;
+                        else if constexpr (std::is_same_v<T, PropertyEnum>)
+                            return n.value < m.value ? -1 : m.value < n.value ? 1 : 0;
+                        else if constexpr (std::is_same_v<T, PropertyVector>)
+                            return n.values < m.values ? -1 : m.values < n.values ? 1 : 0;
+                        else if constexpr (std::is_same_v<T, PropertyColor>)
+                            return n.rgba < m.rgba ? -1 : m.rgba < n.rgba ? 1 : 0;
+                        else {
+                            const auto leftKey = propertyValueKey(x), rightKey = propertyValueKey(y);
+                            return leftKey < rightKey ? -1 : rightKey < leftKey ? 1 : 0;
+                        }
                     },
                     x);
             if (compare)
@@ -147,50 +159,60 @@ std::vector<std::vector<std::string>> parseTsv(const std::string &text) {
         rows.pop_back();
     return rows;
 }
+Property columnProperty(const DataColumn &column, const DataCell &original) {
+    Property p;
+    p.id = column.id;
+    p.label = column.label;
+    p.value = original;
+    const auto &m = column.metadata;
+    p.readOnly = !column.editable || m.readOnly;
+    p.password = m.password;
+    p.choices = m.choices;
+    p.bounded = column.bounded || m.bounded;
+    p.minimum = m.bounded ? m.minimum : column.minimum;
+    p.maximum = m.bounded ? m.maximum : column.maximum;
+    if (m.bounded) {
+        p.integerMinimum = m.integerMinimum;
+        p.integerMaximum = m.integerMaximum;
+    } else if (column.bounded && std::holds_alternative<std::int64_t>(original)) {
+        if (!std::isfinite(column.minimum) || !std::isfinite(column.maximum) ||
+            std::ceil(column.minimum) > std::floor(column.maximum) || column.minimum < -9007199254740991. ||
+            column.maximum > 9007199254740991.)
+            throw std::invalid_argument("Invalid integer bounds");
+        p.integerMinimum = static_cast<std::int64_t>(std::ceil(column.minimum));
+        p.integerMaximum = static_cast<std::int64_t>(std::floor(column.maximum));
+    }
+    return p;
+}
 DataCell convert(const DataColumn &column, const DataCell &original, const std::string &text) {
-    return std::visit(
-        [&](const auto &n) -> DataCell {
-            using T = std::decay_t<decltype(n)>;
-            if constexpr (std::is_same_v<T, std::string>)
-                return text;
-            else if constexpr (std::is_same_v<T, bool>) {
-                if (text == "true" || text == "1")
-                    return true;
-                if (text == "false" || text == "0")
-                    return false;
-                throw std::invalid_argument("Expected true or false");
-            } else if constexpr (std::is_same_v<T, std::int64_t>) {
-                std::int64_t value = 0;
-                auto r = std::from_chars(text.data(), text.data() + text.size(), value);
-                if (r.ec != std::errc() || r.ptr != text.data() + text.size())
-                    throw std::invalid_argument("Expected an exact integer");
-                if (column.bounded) {
-                    if (!std::isfinite(column.minimum) || !std::isfinite(column.maximum) ||
-                        std::ceil(column.minimum) > std::floor(column.maximum) ||
-                        column.minimum < -9007199254740991. || column.maximum > 9007199254740991.)
-                        throw std::invalid_argument("Invalid integer bounds");
-                    value = std::clamp(value, static_cast<std::int64_t>(std::ceil(column.minimum)),
-                                       static_cast<std::int64_t>(std::floor(column.maximum)));
-                }
-                return value;
-            } else {
-                auto e = evaluateNumericExpression(text, n);
-                if (!e.valid)
-                    throw std::invalid_argument(e.error);
-                if (column.bounded) {
-                    if (!std::isfinite(column.minimum) || !std::isfinite(column.maximum) ||
-                        column.minimum > column.maximum)
-                        throw std::invalid_argument("Invalid numeric bounds");
-                    e.value = std::clamp(e.value, static_cast<long double>(column.minimum),
-                                         static_cast<long double>(column.maximum));
-                }
-                double value = double(e.value);
-                if (!std::isfinite(value))
-                    throw std::invalid_argument("Number exceeds double range");
-                return value;
-            }
-        },
-        original);
+    auto p = columnProperty(column, original);
+    if (p.readOnly)
+        throw std::invalid_argument("Column is read-only");
+    DataCell value;
+    if (std::holds_alternative<std::string>(original))
+        value = text;
+    else if (std::holds_alternative<bool>(original)) {
+        if (text == "true" || text == "1")
+            value = true;
+        else if (text == "false" || text == "0")
+            value = false;
+        else
+            throw std::invalid_argument("Expected true or false");
+    } else if (std::holds_alternative<double>(original) || std::holds_alternative<float>(original) ||
+               std::holds_alternative<std::int64_t>(original)) {
+        std::string error;
+        if (!evaluatePropertyExpression(p, text, value, error))
+            throw std::invalid_argument(error);
+    } else {
+        auto paste = propertyFromJson(p, text);
+        if (!paste)
+            throw std::invalid_argument(paste.error);
+        return paste.edits.front().edit.value;
+    }
+    std::string error;
+    if (!normalizePropertyValue(p, value, error))
+        throw std::invalid_argument(error);
+    return value;
 }
 } // namespace
 std::string copyDataCells(ArrayView<DataRow> rows, const DataViewState &s) {
@@ -215,7 +237,10 @@ std::string copyDataCells(ArrayView<DataRow> rows, const DataViewState &s) {
             const auto column = columns[c];
             if (column >= rows[order[i]].cells.size())
                 continue;
-            auto text = dataCellText(rows[order[i]].cells[column]);
+            const auto &cell = rows[order[i]].cells[column];
+            Property field;
+            field.value = cell;
+            auto text = cell.index() <= 4 ? dataCellText(cell) : propertyToJson(field);
             if (text.find_first_of("\t\r\n\"") != std::string::npos) {
                 out += '"';
                 for (char x : text) {
@@ -286,6 +311,8 @@ std::vector<DataCellEdit> dataView(const char *id, DataViewState &s, ArrayView<D
         s.draft.clear();
         s.error.clear();
         s.revision = o.revision;
+        s.editors = {};
+        s.richProperty.reset();
     }
     const auto flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable |
                        ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable |
@@ -328,6 +355,11 @@ std::vector<DataCellEdit> dataView(const char *id, DataViewState &s, ArrayView<D
         // Tables add cell padding to a selectable's height. Let the clipper
         // measure the real table row pitch instead of assuming a widget pitch.
         clip.Begin(int(order.size()));
+        for (std::size_t n = 0; n < order.size(); ++n)
+            if (rows[order[n]].id == s.editing && s.editing) {
+                clip.IncludeItemByIndex(int(n));
+                break;
+            }
         auto [a, b] = range(order, rows, s);
         while (clip.Step())
             for (int i = clip.DisplayStart; i < clip.DisplayEnd; ++i) {
@@ -342,6 +374,53 @@ std::vector<DataCellEdit> dataView(const char *id, DataViewState &s, ArrayView<D
                                         firstColumn < s.columnOrder.size() &&
                                         columnPositions[c] >= firstColumn && columnPositions[c] <= lastColumn;
                     if (s.editing == row.id && s.editingColumn == c) {
+                        if (row.cells[c].index() > 4 || !columns[c].metadata.choices.empty()) {
+                            try {
+                                if (!s.richProperty)
+                                    s.richProperty = columnProperty(columns[c], row.cells[c]);
+                                auto &field = *s.richProperty;
+                                field.readOnly = o.readOnly || row.readOnly || !columns[c].editable ||
+                                                 columns[c].metadata.readOnly;
+                                ImGui::SetNextItemWidth(-1);
+                                if (s.editFocus)
+                                    ImGui::SetKeyboardFocusHere();
+                                auto editors = o.editors;
+                                if (o.editors.editCustom)
+                                    editors.editCustom = [&](ItemId owner,
+                                                             const std::vector<std::string> &path,
+                                                             const PropertyCustom &v) {
+                                        auto address = path;
+                                        address.insert(address.begin(), std::to_string(row.id));
+                                        return o.editors.editCustom(owner, address, v);
+                                    };
+                                if (o.editors.browseAssetAt)
+                                    editors.browseAssetAt = [&](ItemId owner,
+                                                                const std::vector<std::string> &path) {
+                                        auto address = path;
+                                        address.insert(address.begin(), std::to_string(row.id));
+                                        o.editors.browseAssetAt(owner, address);
+                                    };
+                                const auto edit = propertyEditor(
+                                    "##richCell", s.editors, field, o.revision,
+                                    [&](ItemId, const PropertyValue &v) {
+                                        return o.validate ? o.validate(row.id, columns[c].id, v)
+                                                          : std::string{};
+                                    },
+                                    editors);
+                                s.editFocus = false;
+                                const auto found = s.editors.drafts.find(field.id);
+                                if (found != s.editors.drafts.end())
+                                    s.error = found->second.error;
+                                if (edit.phase != EditPhase::none)
+                                    result.push_back({row.id, columns[c].id, edit});
+                                if (edit.committed() || edit.phase == EditPhase::cancel || field.readOnly ||
+                                    ImGui::IsKeyPressed(ImGuiKey_Escape))
+                                    s.editing = 0;
+                            } catch (const std::exception &e) {
+                                s.error = e.what();
+                            }
+                            continue;
+                        }
                         if (s.editFocus) {
                             ImGui::SetKeyboardFocusHere();
                             s.editFocus = false;
@@ -376,12 +455,14 @@ std::vector<DataCellEdit> dataView(const char *id, DataViewState &s, ArrayView<D
                             s.active = row.id;
                             s.activeColumn = c;
                             s.selection = {row.id};
-                            if (ImGui::IsMouseDoubleClicked(0) && columns[c].editable && !o.readOnly &&
-                                !row.readOnly) {
+                            if (ImGui::IsMouseDoubleClicked(0) && columns[c].editable &&
+                                !columns[c].metadata.readOnly && !o.readOnly && !row.readOnly) {
                                 s.editing = row.id;
                                 s.editingColumn = c;
                                 s.draft = text;
                                 s.editFocus = true;
+                                s.editors = {};
+                                s.richProperty.reset();
                             }
                         }
                     }

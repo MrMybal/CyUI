@@ -92,6 +92,85 @@ bool canReparentHierarchy(ArrayView<HierarchyItem> items, ArrayView<ItemId> move
     }
     return true;
 }
+void navigateHierarchy(ArrayView<HierarchyItem> items, HierarchyState &s, HierarchyNavigation key,
+                       bool extend, bool additive, std::size_t page) {
+    const auto rows = hierarchyRows(items, s);
+    if (rows.empty()) {
+        s.focused = 0;
+        return;
+    }
+    if (key == HierarchyNavigation::selectAll) {
+        s.selection.clear();
+        for (const auto &row : rows)
+            s.selection.push_back(items[row.index].id);
+        s.focused = s.selection.front();
+        s.anchor = s.focused;
+        s.scrollToFocus = true;
+        return;
+    }
+    const auto previous = s.focused ? s.focused : (s.selection.empty() ? 0 : s.selection.back());
+    auto found = std::find_if(rows.begin(), rows.end(),
+                              [&](const auto &row) { return items[row.index].id == previous; });
+    std::size_t at = found == rows.end() ? 0 : std::size_t(found - rows.begin());
+    const auto old = at;
+    const auto id = items[rows[at].index].id;
+    if (key == HierarchyNavigation::toggle) {
+        selectItem(s.selection, id, true);
+        s.focused = id;
+        s.anchor = id;
+        return;
+    }
+    if (key == HierarchyNavigation::up)
+        at = at ? at - 1 : 0;
+    else if (key == HierarchyNavigation::down)
+        at = found == rows.end() ? 0 : std::min(at + 1, rows.size() - 1);
+    else if (key == HierarchyNavigation::home)
+        at = 0;
+    else if (key == HierarchyNavigation::end)
+        at = rows.size() - 1;
+    else if (key == HierarchyNavigation::pageUp)
+        at = at > page ? at - page : 0;
+    else if (key == HierarchyNavigation::pageDown)
+        at = std::min(at + page, rows.size() - 1);
+    else if (key == HierarchyNavigation::right) {
+        if (rows[at].children && s.collapsed.erase(id)) {
+            s.focused = id;
+            s.scrollToFocus = true;
+            return;
+        }
+        if (at + 1 < rows.size() && rows[at + 1].depth > rows[at].depth)
+            ++at;
+    } else if (key == HierarchyNavigation::left) {
+        if (rows[at].children && !s.collapsed.count(id) && s.query.empty()) {
+            s.collapsed.insert(id);
+            s.focused = id;
+            return;
+        }
+        while (at && rows[at - 1].depth >= rows[old].depth)
+            --at;
+        if (at)
+            --at;
+        else
+            at = old;
+    }
+    s.focused = items[rows[at].index].id;
+    s.scrollToFocus = true;
+    if (extend) {
+        if (!s.anchor)
+            s.anchor = items[rows[old].index].id;
+        auto anchor = std::find_if(rows.begin(), rows.end(),
+                                   [&](const auto &row) { return items[row.index].id == s.anchor; });
+        const auto from = anchor == rows.end() ? old : std::size_t(anchor - rows.begin());
+        if (!additive)
+            s.selection.clear();
+        for (auto n = std::min(from, at); n <= std::max(from, at); ++n)
+            if (!selected(s.selection, items[rows[n].index].id))
+                s.selection.push_back(items[rows[n].index].id);
+    } else if (!additive) {
+        s.selection = {s.focused};
+        s.anchor = s.focused;
+    }
+}
 std::vector<HierarchyRequest> hierarchy(const char *id, HierarchyState &s, ArrayView<HierarchyItem> items,
                                         ImVec2 size, const HierarchyOptions &o) {
     ScopedID scope(id);
@@ -101,10 +180,34 @@ std::vector<HierarchyRequest> hierarchy(const char *id, HierarchyState &s, Array
     if (size.y > 0)
         size.y = std::max(dp(1), size.y - ImGui::GetFrameHeightWithSpacing());
     ImGui::BeginChild("##tree", size, ImGuiChildFlags_Borders);
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) && !ImGui::GetIO().WantTextInput &&
+        !s.renaming) {
+        const std::pair<ImGuiKey, HierarchyNavigation> keys[]{
+            {ImGuiKey_UpArrow, HierarchyNavigation::up},
+            {ImGuiKey_DownArrow, HierarchyNavigation::down},
+            {ImGuiKey_LeftArrow, HierarchyNavigation::left},
+            {ImGuiKey_RightArrow, HierarchyNavigation::right},
+            {ImGuiKey_Home, HierarchyNavigation::home},
+            {ImGuiKey_End, HierarchyNavigation::end},
+            {ImGuiKey_PageUp, HierarchyNavigation::pageUp},
+            {ImGuiKey_PageDown, HierarchyNavigation::pageDown},
+            {ImGuiKey_Space, HierarchyNavigation::toggle}};
+        for (const auto &key : keys)
+            if (ImGui::IsKeyPressed(key.first))
+                navigateHierarchy(items, s, key.second, ImGui::GetIO().KeyShift, ImGui::GetIO().KeyCtrl,
+                                  std::size_t(std::max(1.f, ImGui::GetContentRegionAvail().y /
+                                                                ImGui::GetFrameHeightWithSpacing())));
+        if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A))
+            navigateHierarchy(items, s, HierarchyNavigation::selectAll);
+    }
     const auto rows = hierarchyRows(items, s);
     const float height = ImGui::GetFrameHeightWithSpacing();
     ImGuiListClipper clip;
     clip.Begin(int(rows.size()), height);
+    for (std::size_t n = 0; n < rows.size(); ++n)
+        if ((s.scrollToFocus && items[rows[n].index].id == s.focused) ||
+            items[rows[n].index].id == s.renaming)
+            clip.IncludeItemByIndex(int(n));
     auto request = [&](HierarchyAction action, const std::vector<ItemId> &ids) {
         HierarchyRequest r;
         r.action = action;
@@ -178,6 +281,11 @@ std::vector<HierarchyRequest> hierarchy(const char *id, HierarchyState &s, Array
                         selectItem(s.selection, item.id, io.KeyCtrl);
                         s.anchor = item.id;
                     }
+                    s.focused = item.id;
+                }
+                if (s.scrollToFocus && s.focused == item.id) {
+                    ImGui::SetScrollHereY();
+                    s.scrollToFocus = false;
                 }
                 if (!o.readOnly && !item.locked && ImGui::BeginDragDropSource()) {
                     auto ids = selected(s.selection, item.id) ? s.selection : std::vector<ItemId>{item.id};
@@ -245,7 +353,8 @@ std::vector<HierarchyRequest> hierarchy(const char *id, HierarchyState &s, Array
             if (!ids.empty())
                 request(HierarchyAction::remove, ids);
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_F2) && s.selection.size() == 1)
+        if ((ImGui::IsKeyPressed(ImGuiKey_F2) || ImGui::IsKeyPressed(ImGuiKey_Enter)) &&
+            s.selection.size() == 1)
             for (std::size_t i = 0; i < items.count; ++i)
                 if (items[i].id == s.selection[0] && !items[i].locked) {
                     s.renaming = items[i].id;

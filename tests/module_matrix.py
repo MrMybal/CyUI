@@ -16,7 +16,7 @@ dependencies = {
     'AudioViews': ['Plots'], 'Code': [], 'Diff': ['Code'], 'CodeEditor': ['Code'],
     'Inspector': [], 'Assets': [], 'Images': ['Canvas'], 'Viewport': ['Images'],
     'Commands': [], 'Diagnostics': [], 'DocumentViews': ['Code'], 'Web': [],
-    'Hierarchy': [], 'DataView': [], 'FilePicker': [],
+    'Hierarchy': [], 'DataView': ['Inspector'], 'FilePicker': [],
 }
 # Modules whose consumer runs module_smoke.cpp (a link and a few calls), not features.cpp.
 smoke_only = {'Audio', 'Gallery'}

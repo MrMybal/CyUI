@@ -57,8 +57,39 @@ template <class V> Json encode(const V &value, int depth = 0) {
                 for (const auto &field : v.fields)
                     fields.fields[field.first] = encode(field.second, depth + 1);
                 j.fields["value"] = std::move(fields);
+            } else if constexpr (std::is_same_v<T, PropertyEnum>) {
+                j.fields["type"] = Json::str(v.flags ? "flags" : "enum");
+                j.fields["enumType"] = Json::str(v.type);
+                j.fields["value"] = Json::num(std::to_string(v.value));
+                auto items = Json::list();
+                for (const auto &item : v.items) {
+                    auto entry = Json::obj();
+                    entry.fields["value"] = Json::num(std::to_string(item.first));
+                    entry.fields["label"] = Json::str(item.second);
+                    items.items.push_back(std::move(entry));
+                }
+                j.fields["items"] = std::move(items);
+            } else if constexpr (std::is_same_v<T, PropertyOptional>) {
+                j.fields["type"] = Json::str("optional");
+                if (v.elementTemplate)
+                    j.fields["element"] = encode(*v.elementTemplate, depth + 1);
+                j.fields["value"] = v.value ? encode(*v.value, depth + 1) : Json{};
+            } else if constexpr (std::is_same_v<T, PropertyMap>) {
+                j.fields["type"] = Json::str("map");
+                if (v.keyTemplate)
+                    j.fields["keyTemplate"] = encode(*v.keyTemplate, depth + 1);
+                if (v.valueTemplate)
+                    j.fields["valueTemplate"] = encode(*v.valueTemplate, depth + 1);
+                auto entries = Json::list();
+                for (const auto &entry : v.entries) {
+                    auto item = Json::obj();
+                    item.fields["key"] = encode(entry.key, depth + 1);
+                    item.fields["value"] = encode(entry.value, depth + 1);
+                    entries.items.push_back(std::move(item));
+                }
+                j.fields["value"] = std::move(entries);
             } else {
-                j.fields["type"] = Json::str("array");
+                j.fields["type"] = Json::str(std::is_same_v<T, PropertySet> ? "set" : "array");
                 if (v.elementTemplate)
                     j.fields["element"] = encode(*v.elementTemplate, depth + 1);
                 auto a = Json::list();
@@ -89,6 +120,41 @@ PropertyValue decode(const Json &j, int depth = 0) {
         return PropertyAsset{j.get("assetType").str(), v.str()};
     if (type == "custom")
         return PropertyCustom{j.get("customType").str(), detail::jsonDump(v)};
+    if (type == "enum" || type == "flags") {
+        PropertyEnum e;
+        e.type = j.get("enumType").str();
+        e.value = v.integer<std::int64_t>();
+        e.flags = type == "flags";
+        if (j.fields.count("items")) {
+            const auto &items = j.get("items");
+            if (items.kind != Json::array)
+                throw std::invalid_argument("Invalid enum items");
+            for (const auto &item : items.items)
+                e.items.emplace_back(item.get("value").integer<std::int64_t>(), item.get("label").str());
+        }
+        return e;
+    }
+    if (type == "optional") {
+        PropertyOptional o;
+        if (j.fields.count("element"))
+            o.elementTemplate = std::make_shared<const PropertyValue>(decode(j.get("element"), depth + 1));
+        if (v.kind != Json::null)
+            o.value = std::make_unique<PropertyValue>(decode(v, depth + 1));
+        return o;
+    }
+    if (type == "map") {
+        if (v.kind != Json::array)
+            throw std::invalid_argument("Invalid map");
+        PropertyMap map;
+        if (j.fields.count("keyTemplate"))
+            map.keyTemplate = std::make_shared<const PropertyValue>(decode(j.get("keyTemplate"), depth + 1));
+        if (j.fields.count("valueTemplate"))
+            map.valueTemplate =
+                std::make_shared<const PropertyValue>(decode(j.get("valueTemplate"), depth + 1));
+        for (const auto &item : v.items)
+            map.entries.push_back({decode(item.get("key"), depth + 1), decode(item.get("value"), depth + 1)});
+        return map;
+    }
     if (type == "object") {
         if (v.kind != Json::object)
             throw std::invalid_argument("Invalid object");
@@ -113,7 +179,7 @@ PropertyValue decode(const Json &j, int depth = 0) {
             p.values.push_back(double(n.num()));
         return p;
     }
-    if (type == "array") {
+    if (type == "array" || type == "set") {
         if (v.kind != Json::array)
             throw std::invalid_argument("Invalid collection");
         PropertyArray a;
@@ -121,6 +187,8 @@ PropertyValue decode(const Json &j, int depth = 0) {
             a.elementTemplate = std::make_shared<PropertyValue>(decode(j.get("element"), depth + 1));
         for (const auto &item : v.items)
             a.values.push_back(decode(item, depth + 1));
+        if (type == "set")
+            return PropertySet{std::move(a.values), std::move(a.elementTemplate)};
         return a;
     }
     throw std::invalid_argument("Unknown property type");
@@ -161,6 +229,136 @@ PropertyArray makePropertyArray(PropertyValue elementTemplate, std::size_t count
     result.values.assign(count, *result.elementTemplate);
     return result;
 }
+PropertySet makePropertySet(PropertyValue prototype) {
+    return {{}, std::make_shared<const PropertyValue>(std::move(prototype))};
+}
+PropertyMap makePropertyMap(PropertyValue key, PropertyValue value) {
+    return {{},
+            std::make_shared<const PropertyValue>(std::move(key)),
+            std::make_shared<const PropertyValue>(std::move(value))};
+}
+PropertyOptional makePropertyOptional(PropertyValue prototype, bool present) {
+    PropertyOptional result;
+    result.elementTemplate = std::make_shared<const PropertyValue>(std::move(prototype));
+    if (present)
+        result.value = std::make_unique<PropertyValue>(*result.elementTemplate);
+    return result;
+}
+static Property inheritedField(const Property &p, const PropertyValue &value) {
+    Property field;
+    field.id = p.id;
+    field.value = value;
+    field.readOnly = p.readOnly;
+    field.bounded = p.bounded;
+    field.minimum = p.minimum;
+    field.maximum = p.maximum;
+    field.integerMinimum = p.integerMinimum;
+    field.integerMaximum = p.integerMaximum;
+    field.choices = p.choices;
+    field.password = p.password;
+    field.multiline = p.multiline;
+    return field;
+}
+Property propertyObjectField(const Property &root, const PropertyObject &object, const std::string &key) {
+    auto field = inheritedField(root, object.fields.at(key));
+    field.key = key;
+    field.label = key;
+    if (const auto found = object.metadata.find(key); found != object.metadata.end()) {
+        const auto &m = found->second;
+        field.label = m.label.empty() ? key : m.label;
+        field.help = m.help;
+        field.readOnly = root.readOnly || m.readOnly;
+        field.password = m.password;
+        field.multiline = m.multiline;
+        field.bounded = m.bounded;
+        field.minimum = m.minimum;
+        field.maximum = m.maximum;
+        field.integerMinimum = m.integerMinimum;
+        field.integerMaximum = m.integerMaximum;
+        field.choices = m.choices;
+    }
+    return field;
+}
+static Json identity(Json j) {
+    const auto type = j.get("type").str();
+    j.fields.erase("element");
+    j.fields.erase("keyTemplate");
+    j.fields.erase("valueTemplate");
+    j.fields.erase("items");
+    auto &value = j.fields.at("value");
+    if (type == "array" || type == "set") {
+        for (auto &item : value.items)
+            item = identity(std::move(item));
+        if (type == "set")
+            std::sort(value.items.begin(), value.items.end(),
+                      [](const auto &a, const auto &b) { return detail::jsonDump(a) < detail::jsonDump(b); });
+    } else if (type == "map") {
+        for (auto &item : value.items) {
+            item.fields["key"] = identity(std::move(item.fields.at("key")));
+            item.fields["value"] = identity(std::move(item.fields.at("value")));
+        }
+        std::sort(value.items.begin(), value.items.end(), [](const auto &a, const auto &b) {
+            return detail::jsonDump(a.get("key")) < detail::jsonDump(b.get("key"));
+        });
+    } else if (type == "object")
+        for (auto &field : value.fields)
+            field.second = identity(std::move(field.second));
+    else if (type == "optional" && value.kind != Json::null)
+        value = identity(std::move(value));
+    else if ((type == "float" || type == "double") && value.num() == 0)
+        value = Json::num("0");
+    else if (type == "color" || type == "vector2" || type == "vector3" || type == "vector4")
+        for (auto &number : value.items)
+            if (number.num() == 0)
+                number = Json::num("0");
+    return j;
+}
+std::string propertyValueKey(const PropertyValue &v) {
+    return detail::jsonDump(identity(encode(v)));
+}
+bool PropertySet::operator==(const PropertySet &b) const {
+    return propertyValueKey(*this) == propertyValueKey(b);
+}
+bool PropertyMap::operator==(const PropertyMap &b) const {
+    return propertyValueKey(*this) == propertyValueKey(b);
+}
+std::string propertyValueText(const PropertyValue &v) {
+    return std::visit(
+        [&](const auto &n) -> std::string {
+            using T = std::decay_t<decltype(n)>;
+            if constexpr (std::is_same_v<T, std::string>)
+                return n;
+            else if constexpr (std::is_same_v<T, bool>)
+                return n ? "true" : "false";
+            else if constexpr (std::is_arithmetic_v<T>)
+                return detail::jsonDump(encode(v).get("value"));
+            else if constexpr (std::is_same_v<T, PropertyAsset>)
+                return n.path;
+            else if constexpr (std::is_same_v<T, PropertyCustom>)
+                return n.type + ": " + n.json;
+            else if constexpr (std::is_same_v<T, PropertyEnum>) {
+                std::string text;
+                for (const auto &item : n.items)
+                    if (n.flags ? (item.first && (n.value & item.first) == item.first)
+                                : n.value == item.first) {
+                        if (!text.empty())
+                            text += " | ";
+                        text += item.second;
+                    }
+                return text.empty() ? std::to_string(n.value) : text;
+            } else if constexpr (std::is_same_v<T, PropertyOptional>)
+                return n.value ? propertyValueText(*n.value) : "null";
+            else if constexpr (std::is_same_v<T, PropertyArray> || std::is_same_v<T, PropertySet>)
+                return propertyType(v) + " (" + std::to_string(n.values.size()) + ")";
+            else if constexpr (std::is_same_v<T, PropertyMap>)
+                return "map (" + std::to_string(n.entries.size()) + ")";
+            else if constexpr (std::is_same_v<T, PropertyObject>)
+                return n.type;
+            else
+                return detail::jsonDump(encode(v).get("value"));
+        },
+        v);
+}
 std::string propertyType(const PropertyValue &v) {
     return std::visit(
         [](const auto &n) -> std::string {
@@ -185,10 +383,55 @@ std::string propertyType(const PropertyValue &v) {
                 return "object:" + n.type;
             else if constexpr (std::is_same_v<T, PropertyCustom>)
                 return "custom:" + n.type;
+            else if constexpr (std::is_same_v<T, PropertySet>)
+                return "set";
+            else if constexpr (std::is_same_v<T, PropertyMap>)
+                return "map";
+            else if constexpr (std::is_same_v<T, PropertyOptional>)
+                return "optional";
+            else if constexpr (std::is_same_v<T, PropertyEnum>)
+                return (n.flags ? "flags:" : "enum:") + n.type;
             else
                 return "array";
         },
         v);
+}
+static std::string readonlySignature(const PropertyValue &schema, const PropertyValue &value, int depth = 0) {
+    if (depth > 12 || propertyType(schema) != propertyType(value))
+        return {};
+    std::string signature;
+    if (auto object = std::get_if<PropertyObject>(&schema)) {
+        const auto &data = std::get<PropertyObject>(value);
+        for (const auto &field : object->fields) {
+            const auto actual = data.fields.find(field.first);
+            if (actual == data.fields.end())
+                continue;
+            const auto metadata = object->metadata.find(field.first);
+            const auto part = metadata != object->metadata.end() && metadata->second.readOnly
+                                  ? propertyValueKey(actual->second)
+                                  : readonlySignature(field.second, actual->second, depth + 1);
+            if (!part.empty())
+                signature += detail::jsonQuote(field.first) + ":" + part + ";";
+        }
+    } else if (auto array = std::get_if<PropertyArray>(&schema)) {
+        const auto &data = std::get<PropertyArray>(value);
+        const auto *prototype = array->elementTemplate
+                                    ? array->elementTemplate.get()
+                                    : (array->values.empty() ? nullptr : &array->values.front());
+        if (prototype)
+            for (std::size_t n = 0; n < data.values.size(); ++n) {
+                auto part = readonlySignature(*prototype, data.values[n], depth + 1);
+                if (!part.empty())
+                    signature += std::to_string(n) + ":" + part + ";";
+            }
+    } else if (auto optional = std::get_if<PropertyOptional>(&schema)) {
+        const auto &data = std::get<PropertyOptional>(value);
+        const auto *prototype =
+            optional->elementTemplate ? optional->elementTemplate.get() : optional->value.get();
+        if (prototype && data.value)
+            signature = readonlySignature(*prototype, *data.value, depth + 1);
+    }
+    return signature;
 }
 static bool normalizeAt(const Property &p, PropertyValue &v, std::string &error, int depth) {
     error.clear();
@@ -250,9 +493,16 @@ static bool normalizeAt(const Property &p, PropertyValue &v, std::string &error,
                         stablePrototype = *prototype;
                         prototype = &*stablePrototype;
                     }
-                    auto normalizeElement = [&](PropertyValue &element) {
+                    std::unordered_map<std::string, const PropertyValue *> originals;
+                    if (prototype && !readonlySignature(*prototype, *prototype).empty())
+                        for (const auto &element : source.values)
+                            originals.emplace(readonlySignature(*prototype, element), &element);
+                    auto normalizeElement = [&](PropertyValue &element,
+                                                const PropertyValue *current = nullptr) {
                         Property field;
-                        field.value = *prototype;
+                        field.value = current && propertyType(*current) == propertyType(*prototype)
+                                          ? *current
+                                          : *prototype;
                         field.bounded = p.bounded;
                         field.minimum = p.minimum;
                         field.maximum = p.maximum;
@@ -268,11 +518,125 @@ static bool normalizeAt(const Property &p, PropertyValue &v, std::string &error,
                         normalizeElement(element);
                         n.elementTemplate = std::make_shared<const PropertyValue>(std::move(element));
                     }
-                    for (auto &atom : n.values) {
-                        normalizeElement(atom);
+                    for (std::size_t index = 0; index < n.values.size(); ++index) {
+                        auto &atom = n.values[index];
+                        const PropertyValue *current =
+                            index < source.values.size() ? &source.values[index] : nullptr;
+                        if (!originals.empty()) {
+                            const auto found = originals.find(readonlySignature(*prototype, atom));
+                            if (found != originals.end())
+                                current = found->second;
+                        }
+                        normalizeElement(atom, current);
                     }
                     if (source.elementTemplate)
                         n.elementTemplate = source.elementTemplate;
+                } else if constexpr (std::is_same_v<T, PropertySet>) {
+                    const auto &source = std::get<PropertySet>(p.value);
+                    auto field = inheritedField(p, PropertyArray{source.values, source.elementTemplate});
+                    PropertyValue elements = PropertyArray{n.values, n.elementTemplate};
+                    std::string e;
+                    if (!normalizeAt(field, elements, e, depth))
+                        throw std::invalid_argument(e);
+                    auto array = std::get<PropertyArray>(std::move(elements));
+                    std::unordered_set<std::string> identities;
+                    for (const auto &element : array.values)
+                        if (!identities.insert(propertyValueKey(element)).second)
+                            throw std::invalid_argument("Duplicate set element");
+                    n.values = std::move(array.values);
+                    n.elementTemplate = std::move(array.elementTemplate);
+                } else if constexpr (std::is_same_v<T, PropertyMap>) {
+                    const auto &source = std::get<PropertyMap>(p.value);
+                    const auto *key = source.keyTemplate
+                                          ? source.keyTemplate.get()
+                                          : (source.entries.empty() ? nullptr : &source.entries.front().key);
+                    const auto *value =
+                        source.valueTemplate
+                            ? source.valueTemplate.get()
+                            : (source.entries.empty() ? nullptr : &source.entries.front().value);
+                    if (!key)
+                        key = n.keyTemplate ? n.keyTemplate.get()
+                                            : (n.entries.empty() ? nullptr : &n.entries.front().key);
+                    if (!value)
+                        value = n.valueTemplate ? n.valueTemplate.get()
+                                                : (n.entries.empty() ? nullptr : &n.entries.front().value);
+                    auto normalizePart = [&](const PropertyValue *prototype, PropertyValue &part,
+                                             const PropertyValue *current = nullptr) {
+                        if (!prototype)
+                            throw std::invalid_argument("Map templates are required");
+                        auto field = inheritedField(
+                            p, current && propertyType(*current) == propertyType(*prototype) ? *current
+                                                                                             : *prototype);
+                        std::string e;
+                        if (!normalizeAt(field, part, e, depth + 1))
+                            throw std::invalid_argument(e);
+                    };
+                    if (key && n.keyTemplate) {
+                        auto part = *n.keyTemplate;
+                        normalizePart(key, part);
+                    }
+                    if (value && n.valueTemplate) {
+                        auto part = *n.valueTemplate;
+                        normalizePart(value, part);
+                    }
+                    std::unordered_set<std::string> keys;
+                    std::unordered_map<std::string, const PropertyMapEntry *> originals;
+                    for (const auto &entry : source.entries)
+                        originals.emplace(propertyValueKey(entry.key), &entry);
+                    for (std::size_t index = 0; index < n.entries.size(); ++index) {
+                        auto &entry = n.entries[index];
+                        const auto found = originals.find(propertyValueKey(entry.key));
+                        const auto *current = found != originals.end()        ? found->second
+                                              : index < source.entries.size() ? &source.entries[index]
+                                                                              : nullptr;
+                        normalizePart(key, entry.key, current ? &current->key : nullptr);
+                        normalizePart(value, entry.value, current ? &current->value : nullptr);
+                        if (!keys.insert(propertyValueKey(entry.key)).second)
+                            throw std::invalid_argument("Duplicate map key");
+                    }
+                    if (source.keyTemplate)
+                        n.keyTemplate = source.keyTemplate;
+                    if (source.valueTemplate)
+                        n.valueTemplate = source.valueTemplate;
+                } else if constexpr (std::is_same_v<T, PropertyOptional>) {
+                    const auto &source = std::get<PropertyOptional>(p.value);
+                    const auto *prototype =
+                        source.elementTemplate ? source.elementTemplate.get() : source.value.get();
+                    if (!prototype)
+                        throw std::invalid_argument("Optional template is required");
+                    auto field = inheritedField(p, *prototype);
+                    std::string e;
+                    if (n.elementTemplate) {
+                        auto part = *n.elementTemplate;
+                        if (!normalizeAt(field, part, e, depth + 1))
+                            throw std::invalid_argument(e);
+                    }
+                    if (n.value) {
+                        auto current = inheritedField(p, source.value && propertyType(*source.value) ==
+                                                                             propertyType(*prototype)
+                                                             ? *source.value
+                                                             : *prototype);
+                        if (!normalizeAt(current, *n.value, e, depth + 1))
+                            throw std::invalid_argument(e);
+                    }
+                    n.elementTemplate = source.elementTemplate
+                                            ? source.elementTemplate
+                                            : std::make_shared<const PropertyValue>(*prototype);
+                } else if constexpr (std::is_same_v<T, PropertyEnum>) {
+                    const auto &source = std::get<PropertyEnum>(p.value);
+                    if (!source.items.empty())
+                        n.items = source.items;
+                    if (n.type.empty() || n.items.empty())
+                        throw std::invalid_argument("Enum items and type are required");
+                    std::unordered_set<std::int64_t> seen;
+                    std::int64_t mask = 0;
+                    for (const auto &item : n.items) {
+                        if (!seen.insert(item.first).second || (n.flags && item.first < 0))
+                            throw std::invalid_argument("Invalid enum items");
+                        mask |= item.first;
+                    }
+                    if (n.flags ? (n.value < 0 || (n.value & ~mask) != 0) : !seen.count(n.value))
+                        throw std::invalid_argument("Invalid enum value");
                 } else if constexpr (std::is_same_v<T, PropertyObject>) {
                     const auto &source = std::get<PropertyObject>(p.value);
                     if (n.type.empty() || source.fields.size() != n.fields.size())
@@ -281,18 +645,17 @@ static bool normalizeAt(const Property &p, PropertyValue &v, std::string &error,
                         const auto target = source.fields.find(field.first);
                         if (target == source.fields.end())
                             throw std::invalid_argument("Object schema mismatch");
-                        Property child;
-                        child.value = target->second;
-                        child.bounded = p.bounded;
-                        child.minimum = p.minimum;
-                        child.maximum = p.maximum;
-                        child.integerMinimum = p.integerMinimum;
-                        child.integerMaximum = p.integerMaximum;
-                        child.choices = p.choices;
+                        auto child = propertyObjectField(p, source, field.first);
+                        if (child.readOnly) {
+                            if (!(field.second == target->second))
+                                throw std::invalid_argument("Property is read-only");
+                            continue;
+                        }
                         std::string e;
                         if (!normalizeAt(child, field.second, e, depth + 1))
                             throw std::invalid_argument(e);
                     }
+                    n.metadata = source.metadata;
                 } else if constexpr (std::is_same_v<T, PropertyCustom>) {
                     if (n.type.empty())
                         throw std::invalid_argument("Custom type identifier is required");
@@ -308,6 +671,78 @@ static bool normalizeAt(const Property &p, PropertyValue &v, std::string &error,
 }
 bool normalizePropertyValue(const Property &p, PropertyValue &v, std::string &error) {
     return normalizeAt(p, v, error, 0);
+}
+PropertyPasteResult editPropertyCollection(const Property &p, const std::vector<std::size_t> &selected,
+                                           PropertyCollectionAction action, const std::string &text,
+                                           std::size_t before, const PropertyValidator &validate) {
+    try {
+        if (p.readOnly)
+            throw std::invalid_argument("Property is read-only");
+        auto result = p.value;
+        std::vector<PropertyValue> *values = nullptr;
+        std::vector<PropertyMapEntry> *entries = nullptr;
+        if (auto a = std::get_if<PropertyArray>(&result))
+            values = &a->values;
+        else if (auto s = std::get_if<PropertySet>(&result))
+            values = &s->values;
+        else if (auto m = std::get_if<PropertyMap>(&result))
+            entries = &m->entries;
+        else
+            throw std::invalid_argument("Expected a collection");
+        const auto size = values ? values->size() : entries->size();
+        auto selection = selected;
+        std::sort(selection.begin(), selection.end());
+        selection.erase(std::unique(selection.begin(), selection.end()), selection.end());
+        if (selection.empty() || selection.back() >= size)
+            throw std::invalid_argument("Invalid collection selection");
+        if (action == PropertyCollectionAction::remove) {
+            for (auto it = selection.rbegin(); it != selection.rend(); ++it) {
+                if (values)
+                    values->erase(values->begin() + std::ptrdiff_t(*it));
+                else
+                    entries->erase(entries->begin() + std::ptrdiff_t(*it));
+            }
+        } else if (action == PropertyCollectionAction::duplicate ||
+                   action == PropertyCollectionAction::move) {
+            if (!std::holds_alternative<PropertyArray>(result))
+                throw std::invalid_argument("Only arrays can be duplicated or reordered");
+            std::vector<PropertyValue> copied;
+            for (auto row : selection)
+                copied.push_back((*values)[row]);
+            if (before == std::size_t(-1))
+                before = selection.back() + 1;
+            if (before > size)
+                throw std::invalid_argument("Invalid drop position");
+            if (action == PropertyCollectionAction::move) {
+                const auto removedBefore = std::size_t(
+                    std::lower_bound(selection.begin(), selection.end(), before) - selection.begin());
+                for (auto it = selection.rbegin(); it != selection.rend(); ++it)
+                    values->erase(values->begin() + std::ptrdiff_t(*it));
+                before -= removedBefore;
+            }
+            values->insert(values->begin() + std::ptrdiff_t(before), copied.begin(), copied.end());
+        } else {
+            for (auto row : selection) {
+                auto &value = values ? (*values)[row] : (*entries)[row].value;
+                const auto field = inheritedField(p, value);
+                if (action == PropertyCollectionAction::expression) {
+                    PropertyValue candidate;
+                    std::string error;
+                    if (!evaluatePropertyExpression(field, text, candidate, error))
+                        throw std::invalid_argument(error);
+                    value = std::move(candidate);
+                } else {
+                    auto paste = propertyFromJson(field, text);
+                    if (!paste)
+                        throw std::invalid_argument(paste.error);
+                    value = std::move(paste.edits.front().edit.value);
+                }
+            }
+        }
+        return {{checked(p, std::move(result), validate)}, {}};
+    } catch (const std::exception &e) {
+        return {{}, e.what()};
+    }
 }
 bool evaluatePropertyExpression(const Property &p, const std::string &expression, PropertyValue &out,
                                 std::string &error) {
@@ -427,6 +862,39 @@ static bool sameSchema(const PropertyValue &a, const PropertyValue &b, int depth
                                : (array->values.empty() ? nullptr : &array->values.front());
         const auto *right = other.elementTemplate ? other.elementTemplate.get()
                                                   : (other.values.empty() ? nullptr : &other.values.front());
+        return !left || !right || sameSchema(*left, *right, depth + 1);
+    }
+    if (auto set = std::get_if<PropertySet>(&a)) {
+        const auto &other = std::get<PropertySet>(b);
+        const auto *left = set->elementTemplate ? set->elementTemplate.get()
+                                                : (set->values.empty() ? nullptr : &set->values.front());
+        const auto *right = other.elementTemplate ? other.elementTemplate.get()
+                                                  : (other.values.empty() ? nullptr : &other.values.front());
+        return !left || !right || sameSchema(*left, *right, depth + 1);
+    }
+    if (auto map = std::get_if<PropertyMap>(&a)) {
+        const auto &other = std::get<PropertyMap>(b);
+        auto compatible = [&](const auto *left, const auto *right) {
+            return !left || !right || sameSchema(*left, *right, depth + 1);
+        };
+        return compatible(map->keyTemplate       ? map->keyTemplate.get()
+                          : map->entries.empty() ? nullptr
+                                                 : &map->entries.front().key,
+                          other.keyTemplate       ? other.keyTemplate.get()
+                          : other.entries.empty() ? nullptr
+                                                  : &other.entries.front().key) &&
+               compatible(map->valueTemplate     ? map->valueTemplate.get()
+                          : map->entries.empty() ? nullptr
+                                                 : &map->entries.front().value,
+                          other.valueTemplate     ? other.valueTemplate.get()
+                          : other.entries.empty() ? nullptr
+                                                  : &other.entries.front().value);
+    }
+    if (auto optional = std::get_if<PropertyOptional>(&a)) {
+        const auto &other = std::get<PropertyOptional>(b);
+        const auto *left =
+            optional->elementTemplate ? optional->elementTemplate.get() : optional->value.get();
+        const auto *right = other.elementTemplate ? other.elementTemplate.get() : other.value.get();
         return !left || !right || sameSchema(*left, *right, depth + 1);
     }
     if (auto object = std::get_if<PropertyObject>(&a)) {

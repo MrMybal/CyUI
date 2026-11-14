@@ -4,14 +4,16 @@
 #include <functional>
 #include <string>
 #include <variant>
+#include "cyui/modules/Inspector.h"
 namespace cyui {
-using DataCell = std::variant<std::string, std::int64_t, double, bool>;
+using DataCell = PropertyValue;
 struct DataColumn {
     ItemId id = 0;
     std::string label;
     bool editable = false, bounded = false;
     double minimum = 0, maximum = 1;
     float width = 140;
+    PropertyMetadata metadata;
 };
 struct DataRow {
     ItemId id = 0;
@@ -32,6 +34,8 @@ struct DataViewState {
     std::string draft, error;
     bool editFocus = false;
     std::uint64_t revision = 0;
+    InspectorState editors;
+    std::optional<Property> richProperty;
 };
 struct DataCellEdit {
     ItemId row = 0, column = 0;
@@ -41,6 +45,7 @@ struct DataViewOptions {
     bool readOnly = false, filters = true;
     std::function<std::string(ItemId, ItemId, const DataCell &)> validate;
     std::uint64_t revision = 0; // external model replacement cancels an active cell edit
+    InspectorOptions editors;
 };
 struct DataPasteResult {
     std::vector<DataCellEdit> edits;

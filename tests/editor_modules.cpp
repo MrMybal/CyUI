@@ -4,6 +4,9 @@
 #include <cstdio>
 #include <limits>
 #include <functional>
+#if defined(CYUI_HAS_INSPECTOR)
+#include <cyui/examples/EditorWorkspace.h>
+#endif
 namespace {
 int failures = 0;
 void check(bool value, const char *message) {
@@ -179,6 +182,171 @@ int main() {
     common = commonProperties({fields, selection});
     check(evaluatePropertyExpression(common[0], "Value*100", value, error) && std::get<double>(value) == 3,
           "multi-object edits use the intersection of all bounds");
+    {
+        Property unique;
+        unique.id = 700;
+        unique.label = "Set";
+        auto setValue = makePropertySet(0.);
+        setValue.values = {1., 2., 3.};
+        unique.value = setValue;
+        check(bool(propertyFromJson(unique, propertyToJson(unique))),
+              "Set JSON preserves typed element schema");
+        auto reordered = setValue;
+        std::reverse(reordered.values.begin(), reordered.values.end());
+        check(setValue == reordered, "Set identity is independent of presentation order");
+        auto duplicate = PropertyValue{PropertySet{{0., -0.}, setValue.elementTemplate}};
+        check(!normalizePropertyValue(unique, duplicate, error),
+              "Set rejects equivalent signed-zero elements");
+        unique.bounded = true;
+        unique.minimum = 0;
+        unique.maximum = 10;
+        duplicate = PropertySet{{10., 256.}, setValue.elementTemplate};
+        check(!normalizePropertyValue(unique, duplicate, error),
+              "Set uniqueness is checked after numeric clamp");
+        auto mapping = makePropertyMap(PropertyVector{{0, 0}}, PropertyArray{{std::string("A")}});
+        mapping.entries = {{PropertyVector{{1, 2}}, PropertyArray{{std::string("A")}}},
+                           {PropertyVector{{3, 4}}, PropertyArray{{std::string("B")}}}};
+        Property mapped;
+        mapped.id = 701;
+        mapped.value = mapping;
+        check(bool(propertyFromJson(mapped, propertyToJson(mapped))),
+              "Map accepts vector keys and collection values");
+        auto reverseMap = mapping;
+        std::reverse(reverseMap.entries.begin(), reverseMap.entries.end());
+        check(reverseMap == mapping, "Map identity is independent of entry order");
+        auto repeatedMap = mapping;
+        repeatedMap.entries[1].key = repeatedMap.entries[0].key;
+        auto repeated = PropertyValue{repeatedMap};
+        check(!normalizePropertyValue(mapped, repeated, error),
+              "Map rejects duplicate typed keys atomically");
+        auto badMap = mapped;
+        badMap.value = makePropertyMap(std::string{}, PropertyArray{{std::string("A")}});
+        check(!propertyFromJson(mapped, propertyToJson(badMap)),
+              "Empty Map key templates remain type checked");
+        check(commonProperties({{mapped}, {badMap}}).empty(), "Multi-object Map schemas must agree");
+        Property enumeration;
+        enumeration.id = 702;
+        enumeration.value = PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "High"}}};
+        auto badEnum = PropertyValue{PropertyEnum{"Quality", 99, {{0, "Low"}, {1, "High"}}}};
+        check(!normalizePropertyValue(enumeration, badEnum, error), "Enums reject unknown enumerators");
+        Property flags;
+        flags.id = 703;
+        flags.value = PropertyEnum{"Channels", 3, {{0, "None"}, {1, "A"}, {2, "B"}, {4, "C"}}, true};
+        check(bool(propertyFromJson(flags, propertyToJson(flags))), "Flags JSON round trip");
+        auto badFlags = flags.value;
+        std::get<PropertyEnum>(badFlags).value = 8;
+        check(!normalizePropertyValue(flags, badFlags, error), "Flags reject undefined bits");
+        Property optional;
+        optional.id = 704;
+        optional.value = makePropertyOptional(enumeration.value);
+        check(bool(propertyFromJson(optional, propertyToJson(optional))),
+              "Nullable enum retains its empty schema");
+        auto present = optional;
+        present.value = makePropertyOptional(enumeration.value, true);
+        check(bool(propertyFromJson(optional, propertyToJson(present))), "Optional enables a typed value");
+        auto detached = present.value;
+        std::get<PropertyEnum>(*std::get<PropertyOptional>(detached).value).value = 0;
+        check(std::get<PropertyEnum>(*std::get<PropertyOptional>(present.value).value).value == 1,
+              "Optional copies own independent values");
+        PropertyMetadata immutable;
+        immutable.readOnly = true;
+        PropertyMetadata gain;
+        gain.bounded = true;
+        gain.minimum = 0;
+        gain.maximum = 10;
+        PropertyMetadata choices;
+        choices.choices = {"A", "B"};
+        PropertyObject firstRecord{"Record",
+                                   {{"id", std::int64_t(1)}, {"gain", 2.56}, {"name", std::string("A")}},
+                                   {{"id", immutable}, {"gain", gain}, {"name", choices}}};
+        auto secondRecord = firstRecord;
+        secondRecord.fields["id"] = std::int64_t(2);
+        secondRecord.fields["name"] = std::string("B");
+        Property optionalRecord;
+        optionalRecord.id = 708;
+        auto optionalValue = makePropertyOptional(firstRecord, true);
+        *optionalValue.value = secondRecord;
+        optionalRecord.value = optionalValue;
+        check(bool(propertyFromJson(optionalRecord, propertyToJson(optionalRecord))),
+              "Optional records retain current readonly fields independently of Add defaults");
+        auto invalidOptional = optionalRecord;
+        std::get<PropertyObject>(*std::get<PropertyOptional>(invalidOptional.value).value).fields["id"] =
+            std::int64_t(9);
+        check(!propertyFromJson(optionalRecord, propertyToJson(invalidOptional)),
+              "Optional records reject changes to current readonly fields");
+        Property recordsWithRules;
+        recordsWithRules.id = 705;
+        recordsWithRules.value =
+            PropertyArray{{firstRecord, secondRecord}, std::make_shared<const PropertyValue>(firstRecord)};
+        check(bool(propertyFromJson(recordsWithRules, propertyToJson(recordsWithRules))),
+              "Record field metadata is restored from the destination");
+        auto movedRecords =
+            editPropertyCollection(recordsWithRules, {0}, PropertyCollectionAction::move, {}, 2);
+        check(bool(movedRecords) &&
+                  std::get<std::int64_t>(
+                      std::get<PropertyObject>(
+                          std::get<PropertyArray>(movedRecords.edits[0].edit.value).values[0])
+                          .fields.at("id")) == 2,
+              "Readonly fields remain attached to records during array reordering");
+        check(bool(editPropertyCollection(recordsWithRules, {0}, PropertyCollectionAction::remove)),
+              "Removing a record does not rewrite another record's readonly fields");
+        auto changedRecords = recordsWithRules.value;
+        auto &changedFields =
+            std::get<PropertyObject>(std::get<PropertyArray>(changedRecords).values[1]).fields;
+        changedFields["gain"] = 256.;
+        check(normalizePropertyValue(recordsWithRules, changedRecords, error) &&
+                  std::get<double>(std::get<PropertyObject>(std::get<PropertyArray>(changedRecords).values[1])
+                                       .fields.at("gain")) == 10.,
+              "Per-field bounds clamp inside array records");
+        changedFields["id"] = std::int64_t(9);
+        check(!normalizePropertyValue(recordsWithRules, changedRecords, error),
+              "Per-field readonly rejects unauthorized clipboard changes");
+        Property batch;
+        batch.id = 706;
+        batch.value = PropertyArray{{2.56, 4., 8.}};
+        batch.bounded = true;
+        batch.maximum = 10;
+        auto bulk = editPropertyCollection(batch, {0, 1}, PropertyCollectionAction::expression, "Value*100");
+        check(bool(bulk) &&
+                  std::get<double>(std::get<PropertyArray>(bulk.edits[0].edit.value).values[1]) == 10.,
+              "Bulk expressions use each selected original value and clamp atomically");
+        check(!editPropertyCollection(batch, {0, 1}, PropertyCollectionAction::expression, "Value/0"),
+              "Invalid bulk arithmetic does not return partial edits");
+        check(!editPropertyCollection(unique, {0, 1}, PropertyCollectionAction::expression, "Value*100"),
+              "Bulk Set edits reject uniqueness collisions");
+        check(!editPropertyCollection(
+                  batch, {0}, PropertyCollectionAction::remove, {}, std::size_t(-1),
+                  [](ItemId, const PropertyValue &) { return std::string("Host refuses"); }),
+              "Bulk changes run the host validator once for the whole property");
+    }
+    {
+        examples::EditorWorkspace workspace;
+        auto original = workspace.find(1)->properties[4].value;
+        PropertyValue calculated;
+        std::string message;
+        check(evaluatePropertyExpression(workspace.find(1)->properties[4], "Value*100", calculated, message),
+              "Integrated app prepares an Inspector expression transaction");
+        check(workspace.apply({{1, 5, calculated}, {2, 2, PropertyVector{{10, 20, 30}}}}),
+              "Integrated app applies Inspector and DataView changes atomically");
+        check(std::get<double>(workspace.find(1)->properties[4].value) == 10 &&
+                  std::get<PropertyVector>(workspace.find(2)->properties[1].value).values[0] == 10,
+              "Integrated app views share one updated model");
+        check(workspace.undo() && workspace.find(1)->properties[4].value == original &&
+                  std::get<PropertyVector>(workspace.find(2)->properties[1].value).values[0] == 150,
+              "One Undo restores all fields in the shared transaction");
+        check(workspace.redo() && std::get<double>(workspace.find(1)->properties[4].value) == 10,
+              "Integrated app Redo restores the full transaction");
+        const auto revision = workspace.revision();
+        check(!workspace.apply({{1, 5, 3.}, {2, 2, std::string("Wrong type")}}) &&
+                  workspace.revision() == revision &&
+                  std::get<double>(workspace.find(1)->properties[4].value) == 10,
+              "An invalid shared transaction changes neither model nor history");
+        check(workspace.apply({{1, 4, PropertyAsset{"Texture", "/Game/Textures/Stone.png"}}}) &&
+                  workspace.undo(),
+              "Host asset selection participates in the same Undo history");
+        check(workspace.apply({{1, 5, 4.}}) && !workspace.canRedo(),
+              "A new edit after Undo discards the obsolete Redo branch");
+    }
 #endif
 #if defined(CYUI_HAS_HIERARCHY)
     std::vector<HierarchyItem> tree{{1, 0, "Root", "Scene"},
@@ -203,6 +371,23 @@ int main() {
     std::vector<HierarchyItem> cycle{{1, 2, "A"}, {2, 1, "B"}};
     hierarchyState = {};
     check(hierarchyRows(cycle, hierarchyState).size() == 2, "cyclic input cannot hang hierarchy");
+    {
+        HierarchyState navigation;
+        navigation.selection = {1};
+        navigation.focused = 1;
+        navigation.collapsed.insert(1);
+        navigateHierarchy(tree, navigation, HierarchyNavigation::right);
+        check(!navigation.collapsed.count(1), "Right expands a keyboard-focused hierarchy branch");
+        navigateHierarchy(tree, navigation, HierarchyNavigation::right);
+        check(navigation.selection == std::vector<ItemId>{2}, "Right enters the first child");
+        navigateHierarchy(tree, navigation, HierarchyNavigation::down, true);
+        check(navigation.selection == std::vector<ItemId>({2, 4}),
+              "Shift-down extends visible hierarchy selection");
+        navigateHierarchy(tree, navigation, HierarchyNavigation::left);
+        check(navigation.focused == 2, "Left navigates from a leaf to its visible parent");
+        navigateHierarchy(tree, navigation, HierarchyNavigation::end);
+        check(navigation.selection == std::vector<ItemId>{5}, "End selects the final visible root");
+    }
 #endif
 #if defined(CYUI_HAS_DATAVIEW)
     std::vector<DataColumn> columns{{1, "Name", true}, {2, "Value", true, true, 0, 10}, {3, "Exact", true}};
@@ -239,6 +424,39 @@ int main() {
     check(!cells && cells.edits.empty(), "bad multi-cell paste is atomic");
     rows[1].readOnly = true;
     check(!pasteDataCells(columns, rows, dataState, "3\n4"), "row read-only is enforced on paste");
+    {
+        std::vector<DataCell> richValues{PropertyVector{{1, 2, 3}},
+                                         PropertyColor{},
+                                         PropertyAsset{"Texture", "/Game/Test"},
+                                         PropertyCustom{"Angle", "45"},
+                                         makePropertyArray(2.56, 2),
+                                         PropertySet{{std::string("A"), std::string("B")},
+                                                     std::make_shared<const PropertyValue>(std::string{})},
+                                         PropertyMap{{{std::string("A"), 2.56}},
+                                                     std::make_shared<const PropertyValue>(std::string{}),
+                                                     std::make_shared<const PropertyValue>(0.)},
+                                         makePropertyOptional(PropertyVector{{0, 0, 0}}),
+                                         PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "High"}}}};
+        std::vector<DataColumn> richColumns;
+        for (std::size_t c = 0; c < richValues.size(); ++c)
+            richColumns.push_back({ItemId(c + 1), "Value", true});
+        std::vector<DataRow> richRows{{1, richValues}};
+        DataViewState selectedCells;
+        selectedCells.anchor = selectedCells.active = 1;
+        selectedCells.anchorColumn = 0;
+        selectedCells.activeColumn = richValues.size() - 1;
+        auto richPaste =
+            pasteDataCells(richColumns, richRows, selectedCells, copyDataCells(richRows, selectedCells));
+        check(bool(richPaste) && richPaste.edits.size() == richValues.size(),
+              "Every rich DataView cell round trips through typed quoted TSV");
+        if (richPaste)
+            for (std::size_t c = 0; c < richValues.size(); ++c)
+                check(richPaste.edits[c].edit.value == richValues[c],
+                      "Rich DataView paste preserves typed values");
+        richColumns.back().metadata.readOnly = true;
+        check(!pasteDataCells(richColumns, richRows, selectedCells, copyDataCells(richRows, selectedCells)),
+              "Readonly column metadata rejects an entire rich cell paste");
+    }
 #endif
 #if defined(CYUI_HAS_FILEPICKER)
     check(normalizeFilePath("/project/text/../images", "/project") == "/project/images",
@@ -392,7 +610,119 @@ int main() {
 #endif
         });
     }
+#if defined(CYUI_HAS_NODES)
+    {
+        std::vector<Node> movingNodes{{1, {50, 80}, "Inside"}, {2, {600, 80}, "Outside"}};
+        std::vector<NodeGroup> movingGroups{{10, {20, 20}, {400, 240}, "Group"}};
+        std::vector<NodeReroute> movingRoutes{{20, 1, {180, 100}}, {21, 1, {600, 100}}};
+        NodeState movingState;
+        NodeOptions movingOptions;
+        movingOptions.groups = movingGroups;
+        movingOptions.reroutes = movingRoutes;
+        NodeResult movedGroup;
+        ImVec2 origin;
+        auto drawGroup = [&] {
+            origin = ImGui::GetCursorScreenPos();
+            movedGroup =
+                nodeEditor("groupContents", movingState, movingNodes, {}, {1000, 330}, movingOptions);
+        };
+        frame(drawGroup);
+        frame(drawGroup);
+        io.AddMousePosEvent(origin.x + 30, origin.y + 30);
+        io.AddMouseButtonEvent(0, true);
+        frame(drawGroup);
+        check(movedGroup.moved.phase == EditPhase::begin,
+              "Moving a comment group begins a content transaction");
+        io.AddMousePosEvent(origin.x + 80, origin.y + 55);
+        frame(drawGroup);
+        io.AddMouseButtonEvent(0, false);
+        frame(drawGroup);
+        check(movedGroup.moved.committed() && movedGroup.moved.value.size() == 1 &&
+                  movedGroup.moved.value[0].id == 1 && movedGroup.moved.value[0].position.x == 100 &&
+                  movedGroup.moved.value[0].position.y == 105,
+              "Group drag commits contained nodes exactly once and leaves outside nodes unchanged");
+        check(movedGroup.reroutes.committed() && movedGroup.reroutes.value[0].position.x == 230 &&
+                  movedGroup.reroutes.value[1].position.x == 600,
+              "Group drag moves contained reroutes and keeps external reroutes fixed");
+        check(movingNodes[0].position.x == 50, "Group gesture proposals leave the host model untouched");
+        io.AddMousePosEvent(origin.x + 30, origin.y + 30);
+        io.AddMouseButtonEvent(0, true);
+        frame(drawGroup);
+        io.AddKeyEvent(ImGuiKey_Escape, true);
+        frame(drawGroup);
+        check(movedGroup.groups.phase == EditPhase::cancel && movedGroup.moved.phase == EditPhase::cancel &&
+                  movedGroup.reroutes.phase == EditPhase::cancel,
+              "Escape cancels group, node and route gestures together");
+        io.AddKeyEvent(ImGuiKey_Escape, false);
+        io.AddMouseButtonEvent(0, false);
+        frame(drawGroup);
+    }
+#endif
+#if defined(CYUI_HAS_DATAVIEW)
+    {
+        std::vector<DataColumn> richColumns{{8, "Angle", true}};
+        std::vector<DataRow> richRows{{11, {PropertyCustom{"Angle", "45"}}}};
+        DataViewState editingCell;
+        editingCell.editing = 11;
+        editingCell.editingColumn = 0;
+        DataViewOptions editingOptions;
+        ImVec2 buttonPosition;
+        editingOptions.editors.editCustom = [&](ItemId owner, const std::vector<std::string> &path,
+                                                const PropertyCustom &custom) {
+            check(owner == 8 && path == std::vector<std::string>{"11"},
+                  "DataView custom editors receive column ID and row path");
+            const bool clicked = ImGui::Button(custom.json.c_str());
+            const auto lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
+            buttonPosition = {(lo.x + hi.x) * .5f, (lo.y + hi.y) * .5f};
+            return clicked ? Edit<PropertyCustom>{EditPhase::commit, {custom.type, "60"}}
+                           : Edit<PropertyCustom>{};
+        };
+        auto drawGrid = [&] {
+            for (const auto &event :
+                 dataView("richCellCommit", editingCell, richColumns, richRows, {600, 200}, editingOptions))
+                if (event.edit.committed())
+                    richRows[0].cells[0] = event.edit.value;
+        };
+        frame(drawGrid);
+        frame(drawGrid);
+        io.AddMousePosEvent(buttonPosition.x, buttonPosition.y);
+        io.AddMouseButtonEvent(0, true);
+        frame(drawGrid);
+        io.AddMouseButtonEvent(0, false);
+        frame(drawGrid);
+        check(std::get<PropertyCustom>(richRows[0].cells[0]).json == "60",
+              "DataView commits typed custom values through the shared property editor");
+    }
+#endif
 #if defined(CYUI_HAS_INSPECTOR)
+    for (const auto &theme : builtInThemes()) {
+        setTheme(theme.key.c_str());
+        for (auto density : {Density::compact, Density::comfortable}) {
+            setDensity(density);
+            auto map = makePropertyMap(std::string{}, PropertyVector{{0, 0, 0}});
+            map.entries = {{std::string("A"), PropertyVector{{1, 2, 3}}},
+                           {std::string("B"), PropertyVector{{4, 5, 6}}}};
+            std::vector<PropertyValue> extraTypes{
+                PropertySet{{std::int64_t(1), std::int64_t(2)},
+                            std::make_shared<const PropertyValue>(std::int64_t(0))},
+                map,
+                makePropertyOptional(2.56),
+                makePropertyOptional(PropertyVector{{1, 2, 3}}, true),
+                PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "High"}}},
+                PropertyEnum{"Flags", 3, {{1, "A"}, {2, "B"}}, true}};
+            for (const auto &type : extraTypes) {
+                Property field;
+                field.id = 800;
+                field.label = "Extended type";
+                field.value = type;
+                std::vector<Property> model{field};
+                InspectorState state;
+                frame([&] { inspector("extendedTypes", state, model); });
+                frame([&] { inspector("extendedTypes", state, model); });
+            }
+        }
+    }
+    setDensity(Density::compact);
     {
         Property field;
         field.id = 500;

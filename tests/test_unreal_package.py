@@ -28,6 +28,7 @@ class UnrealPackage(unittest.TestCase):
     def test_selection(self):
         self.assertEqual(package.select_modules(['Core']), [])
         self.assertEqual(package.select_modules(['Diff']), ['Code', 'Diff'])
+        self.assertEqual(package.select_modules(['DataView']), ['DataView', 'Inspector'])
         self.assertEqual(package.select_modules(['AudioViews']), ['AudioViews', 'Canvas', 'Plots'])
         with self.assertRaises(ValueError):
             package.select_modules(['Missing'])
