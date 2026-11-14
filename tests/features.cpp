@@ -212,8 +212,19 @@ int main() {
     check(nodeResult.connectFrom == 11 && nodeResult.connectTo == 21, "typed pin connection proposal");
     auto linkDraw = [&] { nodeResult = nodeEditor("Nodes", nodeState, nodes, links, {700, 300}); };
     frame(linkDraw, 265, 60, 1, true);
-    check(nodeResult.removeLink == 1, "node link removal proposal");
+    check(nodeState.selectedLinks == std::vector<ItemId>{1} && !nodeResult.linkRemoved,
+          "right-click selects the link and opens its edit menu");
     frame(linkDraw, 265, 60, 1, false);
+    io.AddKeyEvent(ImGuiKey_Escape, true);
+    frame(linkDraw);
+    io.AddKeyEvent(ImGuiKey_Escape, false);
+    frame(linkDraw);
+    frame(linkDraw, 265, 60, 0, true);
+    frame(linkDraw, 265, 60, 0, false);
+    frame(linkDraw, 265, 60);
+    frame(linkDraw, 265, 60, -1, false, false, 0, ImGuiKey_Delete);
+    check(nodeResult.removeLinks == std::vector<ItemId>{1}, "selected link removal proposal");
+    frame(linkDraw);
 #endif
 #if defined(CYUI_HAS_TIMELINE)
     TimelineState timelineState;

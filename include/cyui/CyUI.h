@@ -26,6 +26,16 @@
 #define CYUI_VERSION "1.2.0"
 #define CYUI_VERSION_NUM 10200
 
+#if defined(CYUI_HAS_HIERARCHY)
+#include "cyui/modules/Hierarchy.h"
+#endif
+#if defined(CYUI_HAS_DATAVIEW)
+#include "cyui/modules/DataView.h"
+#endif
+#if defined(CYUI_HAS_FILEPICKER)
+#include "cyui/modules/FilePicker.h"
+#endif
+
 // Optional modules selected by the linked CMake targets.
 #if defined(CYUI_HAS_CANVAS)
 #include "cyui/modules/Canvas.h"

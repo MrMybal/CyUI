@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 6
+revision: 7
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -55,6 +55,10 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | `CyUI::Spreadsheet` | `modules/Spreadsheet.h` | Worksheets, formula bar, bounded calculation and workbook undo | DataGrid |
 | `CyUI::RichDocument` | `modules/RichDocument.h` | Paginated document editor, rich paragraphs, tables, images and page settings | DocumentEditor, DataGrid |
 | `CyUI::OfficeIO` | `modules/OfficeIO.h` | ODT/ODS, DOCX/XLSX and flat ODF imports/exports with issues | RichDocument, Spreadsheet, DocumentIO, MIT pugixml |
+
+| `CyUI::Hierarchy` | `modules/Hierarchy.h` | Scene/layer tree, selection, reparent, rename, visibility/locking | Core |
+| `CyUI::DataView` | `modules/DataView.h` | Virtual tables, all Inspector editors, atomic typed TSV paste | Inspector (Core transitively) |
+| `CyUI::FilePicker` | `modules/FilePicker.h` | Host/VFS open/save/directory selection, filters and overwrite confirmation | Core |
 | `CyUI::Gallery` | `Gallery.h` | Examples and theme editor | Enabled modules only |
 
 Header paths are relative to `include/cyui/`. `CyUI::Code::Diff` is an alias for
@@ -112,7 +116,7 @@ with the demo disabled default to no new optional modules. Audio and Gallery
 retain their original ON defaults; disable those explicitly when not used.
 `CyUI::Core` never links them. The old Widgets.h/CyUI.h declarations remain source compatible.
 
-Without CMake, compile the four Core sources and only the selected
+Without CMake, compile the five Core sources and only the selected
 `src/modules/<Name>.cpp` files plus their dependency closure. Define the matching
 `CYUI_HAS_<NAME>` macros for Gallery/CyUI.h. CodeEditor also needs `src/modules/PagedCodeEditor.cpp`, TextEditor.cpp,
 its include directory and C++20. Code and its dependents additionally compile
@@ -189,3 +193,7 @@ binding yet. Source packaging includes it when CodeEditor is selected; Unreal
 Editor compilation and platform input still require host validation.
 
 [Native Markdown guide](doc:native-markdown).
+
+## Editor tools {#editor-tools}
+
+[Typed Inspector JSON, expressions, hierarchies, tables, file picker, commands and graph/timeline editing](doc:editor-tools).

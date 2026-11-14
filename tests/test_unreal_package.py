@@ -28,6 +28,7 @@ class UnrealPackage(unittest.TestCase):
     def test_selection(self):
         self.assertEqual(package.select_modules(['Core']), [])
         self.assertEqual(package.select_modules(['Diff']), ['Code', 'Diff'])
+        self.assertEqual(package.select_modules(['DataView']), ['DataView', 'Inspector'])
         self.assertEqual(package.select_modules(['AudioViews']), ['AudioViews', 'Canvas', 'Plots'])
         with self.assertRaises(ValueError):
             package.select_modules(['Missing'])
@@ -44,7 +45,7 @@ class UnrealPackage(unittest.TestCase):
             self.assertNotIn('/*CYUI_MODULES*/', rules)
             sources = list((output/'Source/CyUI/Private').glob('CyUILibrary_*.cpp'))
             syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
-            self.assertEqual(len(sources), 10+len(syntax_units))
+            self.assertEqual(len(sources), 11+len(syntax_units))
             self.assertTrue((output/'ThirdParty/CyUI/third_party/code-syntax.lock.json').is_file())
             self.assertEqual((output/'ThirdParty/CyUI/src/fonts/JetBrainsMonoRegular.inc').read_bytes(), (ROOT/'src/fonts/JetBrainsMonoRegular.inc').read_bytes())
             self.assertEqual((output/'ThirdParty/CyUI/third_party/jetbrains-mono/OFL.txt').read_bytes(), (ROOT/'third_party/jetbrains-mono/OFL.txt').read_bytes())
@@ -59,6 +60,16 @@ class UnrealPackage(unittest.TestCase):
             self.assertTrue((output/'.gitattributes').is_file())
             with self.assertRaises(FileExistsError):
                 package.prepare_plugin(output, ['Core'])
+
+    def test_editor_modules_include_support_units(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)/'EditorCyUI'
+            chosen = package.prepare_module(output, ['Hierarchy', 'DataView', 'FilePicker', 'Inspector', 'Commands', 'Nodes', 'Timeline'])
+            self.assertIn('Hierarchy', chosen)
+            for unit in ('Numeric',):
+                self.assertTrue((output/f'Library/src/{unit}.inl').is_file())
+            for unit in ('Hierarchy', 'DataView', 'FilePicker', 'InspectorData', 'CommandRegistry', 'NodeData', 'TimelineData'):
+                self.assertTrue((output/f'Library/src/modules/{unit}.inl').is_file())
 
     def test_all_and_gallery(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -86,7 +97,7 @@ class UnrealPackage(unittest.TestCase):
             output.rename(relocated)
             bridges = list((relocated/'Private').glob('CyUILibrary_*.cpp'))
             syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
-            self.assertEqual(len(bridges), 10+len(syntax_units))
+            self.assertEqual(len(bridges), 11+len(syntax_units))
             self.assertFalse(list((relocated/'Library').rglob('*.cxx')))
             self.assertTrue((relocated/'Library/src/modules/code/CodeSyntax.inl').is_file())
             for bridge in bridges:

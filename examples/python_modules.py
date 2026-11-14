@@ -4,6 +4,7 @@ The host may supply ImageData and a CEFView; it owns textures and the CEF runtim
 """
 from pathlib import Path
 import math
+import itertools
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'python'))
@@ -11,7 +12,7 @@ from cyui_modules.common import Range
 from cyui_modules.canvas import Canvas, CanvasState
 from cyui_modules.plots import Axis, PlotState, Series, ColorRamp, plot, histogram, heatmap
 from cyui_modules.curves import CurvePoint, CurveState, curve_editor
-from cyui_modules.nodes import Node, Pin, Link, NodeState, node_editor
+from cyui_modules.nodes import Node, Pin, Link, NodeState, NodeGroup, NodeReroute, node_editor
 from cyui_modules.timeline import Lane, Clip, Marker, TimelineState, timeline
 from cyui_modules.audioviews import make_peaks, WaveformState, waveform, spectrum, oscilloscope, stereo_scope
 from cyui_modules.audioviews import (SpectrogramData, spectrogram, LoudnessData, loudness,
@@ -46,6 +47,9 @@ class ModuleGallery:
         self.keys = [CurvePoint(1, 0, .2), CurvePoint(2, 3, .8, 'smooth'), CurvePoint(3, 8, .4)]
         self.nodes = [Node(1, (30, 40), 'Source', outputs=[Pin(11, 'Output')]), Node(2, (320, 60), 'Processor', [Pin(21, 'Input')], [Pin(22, 'Output')], 1)]
         self.links, self.node_state = [Link(1, 11, 21)], NodeState()
+        self.node_ids = itertools.count(100)
+        self.node_groups = [NodeGroup(50, (10, 5), (530, 180), 'Signal'), NodeGroup(51, (20, 30), (200, 140), 'Source')]
+        self.node_routes = [NodeReroute(52, 1, (280, 100))]
         self.lanes = [Lane(1, 'Video', 70), Lane(2, 'Audio', 80)]
         self.clips = [Clip(1, 1, 1, 3, 'Opening'), Clip(2, 2, .5, 7, 'Sound', 1)]
         self.timeline, self.wave = TimelineState(), WaveformState()
@@ -175,15 +179,23 @@ class ModuleGallery:
             edit = curve_editor('curves', self.curves, self.keys, snap_step=.25)
             if edit.committed: self.keys = edit.value
         elif name == 'Nodes':
-            event = node_editor('nodes', self.node_state, self.nodes, self.links)
+            c.text_dim(c.tr('Copy/paste nodes, groups, links and reroutes: Ctrl+C/V/D or right-click. Paste at pointer.'))
+            event = node_editor('nodes', self.node_state, self.nodes, self.links,
+                groups=self.node_groups, reroutes=self.node_routes, allocate_id=self.node_ids.__next__)
+            if event['groups'].committed: self.node_groups = event['groups'].value
+            if event['reroutes'].committed: self.node_routes = event['reroutes'].value
+            created = event['created']; self.nodes.extend(created.nodes); self.links.extend(created.links)
+            self.node_groups.extend(created.groups); self.node_routes.extend(created.reroutes)
             if event['moved'].committed:
                 for node in self.nodes: node.position = event['moved'].value.get(node.id, node.position)
             if event['connect']:
-                self.links.append(Link(max([link.id for link in self.links]+[0])+1, *event['connect']))
+                self.links.append(Link(next(self.node_ids), *event['connect']))
             removed = set(event['remove_nodes'])
             self.nodes = [node for node in self.nodes if node.id not in removed]
             pins = {pin.id for node in self.nodes for pin in node.inputs+node.outputs}
-            self.links = [link for link in self.links if link.id != event['remove_link'] and link.source in pins and link.target in pins]
+            self.links = [link for link in self.links if link.id != event['remove_link'] and link.id not in event['remove_links'] and link.source in pins and link.target in pins]
+            self.node_groups = [g for g in self.node_groups if g.id not in event['remove_groups']]
+            self.node_routes = [r for r in self.node_routes if r.id not in event['remove_reroutes'] and any(l.id == r.link for l in self.links)]
         elif name == 'Timeline':
             event = timeline('timeline', self.timeline, self.lanes, self.clips, [Marker(1, 4, 'Cue')], snap_step=.25)
             if event['clips'].committed: self.clips = event['clips'].value

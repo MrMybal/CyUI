@@ -18,9 +18,11 @@ dependencies = {
     'Commands': [], 'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor', 'DataGrid'],
     'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [], 'DataGrid': [], 'Spreadsheet': ['DataGrid'],
     'RichDocument': ['DocumentEditor', 'DataGrid'], 'OfficeIO': ['RichDocument', 'Spreadsheet', 'DocumentIO'],
+    'Hierarchy': [], 'DataView': ['Inspector'], 'FilePicker': [],
 }
 # Modules whose consumer runs module_smoke.cpp (a link and a few calls), not features.cpp.
 smoke_only = {'Audio', 'Gallery'}
+editor_modules = {'Inspector', 'Hierarchy', 'DataView', 'FilePicker', 'Commands', 'Nodes', 'Timeline'}
 
 
 def closure(name):
@@ -79,5 +81,5 @@ if __name__ == '__main__':
             for log in logs[-1:]:
                 sys.stdout.write(log.read_text(errors='replace')[-4000:])
             sys.exit(f'{module}: failed ({error})')
-        checks = 'smoke checks (module_smoke.cpp)' if module in smoke_only else 'feature checks (features.cpp)'
+        checks = ('smoke checks (module_smoke.cpp)' if module in smoke_only else 'editor checks (editor_modules.cpp)' if module in editor_modules else 'feature checks (features.cpp)')
         print(f'{module}: isolated build, host ImGui, dependency closure and {checks} passed', flush=True)

@@ -275,10 +275,7 @@ int main(int argc, char **argv) {
         io.DeltaTime = 1.f / 60;
         io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
         apply();
-        unsigned char *pixels;
-        int width, height;
-        io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-        io.Fonts->SetTexID(ImTextureID(1));
+        // Headless modern texture mode: leave pending atlas textures without a GPU ID.
         GridState state;
         state.hasSelection = true;
         GridModel typing(3, 3);

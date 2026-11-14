@@ -19,6 +19,7 @@ DEPENDENCIES = {
     'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor', 'DataGrid'],
     'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [], 'DataGrid': [], 'Spreadsheet': ['DataGrid'],
     'RichDocument': ['DocumentEditor', 'DataGrid'], 'OfficeIO': ['RichDocument', 'Spreadsheet', 'DocumentIO'],
+    'Hierarchy': [], 'DataView': ['Inspector'], 'FilePicker': [],
 }
 # Inside the checkout, output may only go to these ignored build folders.
 OUTPUT_FOLDERS = ('build', 'out')
@@ -91,8 +92,10 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     shutil.copytree(ROOT/'include', library/'include')
     shutil.copytree(ROOT/'src/fonts', library/'src/fonts')
     shutil.copytree(ROOT/'third_party/jetbrains-mono', library/'third_party/jetbrains-mono')
-    sources = ['src/Theme.cpp', 'src/Widgets.cpp', 'src/Layout.cpp', 'src/Filter.cpp']
+    sources = ['src/Theme.cpp', 'src/Widgets.cpp', 'src/Layout.cpp', 'src/Filter.cpp', 'src/Numeric.cpp']
     sources += [f'src/modules/{name}.cpp' for name in selected]
+    support = {'Inspector': 'InspectorData', 'Nodes': 'NodeData', 'Timeline': 'TimelineData', 'Commands': 'CommandRegistry'}
+    sources += [f'src/modules/{unit}.cpp' for module, unit in support.items() if module in selected]
     if 'CodeEditor' in selected:
         sources.append('src/modules/PagedCodeEditor.cpp')
     if 'DocumentViews' in selected:

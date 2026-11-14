@@ -23,6 +23,9 @@
 
 #include <imgui.h>
 #include "cyui/CyUI.h"
+#if defined(CYUI_HAS_INSPECTOR)
+#include "cyui/examples/EditorWorkspace.h"
+#endif
 #include <cstdint>
 
 #include <algorithm>
@@ -635,12 +638,16 @@ void imageGraphPage(const GalleryResources& resources)
                 if (node.id == move.id) node.position = move.position;
     if (edit.connect)
         links.push_back({nextLink++, edit.connectFrom, edit.connectTo, 0});
-    if (edit.linkRemoved)
-        links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink& link) {
-            return link.id == edit.removeLink;
-        }), links.end());
+    if (edit.linkRemoved || !edit.removeLinks.empty())
+        links.erase(std::remove_if(links.begin(), links.end(),
+                                   [&](const NodeLink &link) {
+                                       return (edit.linkRemoved && link.id == edit.removeLink) ||
+                                              std::find(edit.removeLinks.begin(), edit.removeLinks.end(),
+                                                        link.id) != edit.removeLinks.end();
+                                   }),
+                    links.end());
     for (auto id : edit.removeNodes) {
-        for (const auto& node : nodes)
+        for (const auto &node : nodes)
             if (node.id == id)
                 links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink& link) {
                     const auto owns = [&](ItemId pin) {
@@ -656,27 +663,46 @@ void imageGraphPage(const GalleryResources& resources)
 void nodesPage(const GalleryResources& resources)
 {
     static int example = 0;
-    if (resources.previewImageGraph) example = 1;
-    const char* examples[]{"Signal graph", "Image graph"};
+    if (resources.previewImageGraph)
+        example = 1;
+    const char *examples[]{"Signal graph", "Image graph"};
     segmented("##nodeExample", examples, 2, &example);
     if (example == 1) {
         imageGraphPage(resources);
         return;
     }
     sectionTitle(tr("Voice graph").c_str());
-    textDim(tr("Drag nodes or connect pins. Ctrl: multi-select. Home: frame. Delete: remove. Execution is host-owned.").c_str());
+    textDim(tr("Drag nodes or connect pins. Ctrl: multi-select. Home: frame. Delete: remove. Execution is "
+               "host-owned.")
+                .c_str());
+    textDim("%s",
+            tr("Copy/paste nodes, groups, links and reroutes: Ctrl+C/V/D or right-click. Paste at pointer.")
+                .c_str());
     static NodeState state;
     static std::vector<Node> nodes{
         {1, {30, 35}, "On note", {}, {{11, "Trigger", 3}, {12, "Pitch", 1}, {13, "Velocity", 2}}, 3},
         {2, {30, 270}, "Voice settings", {}, {{21, "Cutoff", 0}, {22, "Resonance", 0}, {23, "Level", 2}}, 0},
-        {3, {330, 35}, "Oscillator", {{31, "Trigger", 3}, {32, "Pitch", 1}, {33, "Velocity", 2}}, {{34, "Audio", 0}}, 1},
-        {4, {640, 55}, "Filter", {{41, "Audio", 0}, {42, "Cutoff", 0}, {43, "Resonance", 0}}, {{44, "Signal", 0}}, 0},
+        {3,
+         {330, 35},
+         "Oscillator",
+         {{31, "Trigger", 3}, {32, "Pitch", 1}, {33, "Velocity", 2}},
+         {{34, "Audio", 0}},
+         1},
+        {4,
+         {640, 55},
+         "Filter",
+         {{41, "Audio", 0}, {42, "Cutoff", 0}, {43, "Resonance", 0}},
+         {{44, "Signal", 0}},
+         0},
         {5, {640, 290}, "Gain", {{51, "Signal", 0}, {52, "Level", 2}}, {{53, "Output", 0}}, 2},
         {6, {950, 190}, "Stereo output", {{61, "Left", 0}, {62, "Right", 0}}, {}, 3}};
-    static std::vector<NodeLink> links{{1, 11, 31, 3}, {2, 12, 32, 1}, {3, 13, 33, 2},
-                                      {4, 34, 41, 0}, {5, 21, 42, 0}, {6, 22, 43, 0},
-                                      {7, 44, 51, 0}, {8, 23, 52, 2}, {9, 53, 61, 0}, {10, 53, 62, 0}};
-    static ItemId nextLink = 11;
+    static std::vector<NodeLink> links{{1, 11, 31, 3}, {2, 12, 32, 1}, {3, 13, 33, 2}, {4, 34, 41, 0},
+                                       {5, 21, 42, 0}, {6, 22, 43, 0}, {7, 44, 51, 0}, {8, 23, 52, 2},
+                                       {9, 53, 61, 0}, {10, 53, 62, 0}};
+    static ItemId nextLink = 1000;
+    static std::vector<NodeGroup> groups{{900, {-5, 5}, {570, 405}, "Voice controls", 1},
+                                         {903, {15, 235}, {225, 170}, "Voice settings", 0}};
+    static std::vector<NodeReroute> reroutes{{901, 5, {570, 250}}, {902, 1, {265, 95}}};
     const auto size = dp(0, 470);
     static bool framed = false;
     if (!framed) {
@@ -690,8 +716,26 @@ void nodesPage(const GalleryResources& resources)
                     node.position = move.position;
     NodeOptions options;
     options.snap = 8;
+    options.groups = groups;
+    options.reroutes = reroutes;
+    options.allocateId = []() { return nextLink++; };
     const auto shown = translatedNodes(nodes);
     const auto edit = nodeEditor("##nodes", state, shown, links, size, options);
+    if (edit.groups.committed())
+        groups = edit.groups.value;
+    if (edit.reroutes.committed())
+        reroutes = edit.reroutes.value;
+    nodes.insert(nodes.end(), edit.created.nodes.begin(), edit.created.nodes.end());
+    links.insert(links.end(), edit.created.links.begin(), edit.created.links.end());
+    groups.insert(groups.end(), edit.created.groups.begin(), edit.created.groups.end());
+    reroutes.insert(reroutes.end(), edit.created.reroutes.begin(), edit.created.reroutes.end());
+    for (auto key : edit.removeGroups)
+        groups.erase(std::remove_if(groups.begin(), groups.end(), [&](const auto &g) { return g.id == key; }),
+                     groups.end());
+    for (auto key : edit.removeReroutes)
+        reroutes.erase(
+            std::remove_if(reroutes.begin(), reroutes.end(), [&](const auto &r) { return r.id == key; }),
+            reroutes.end());
     if (edit.moved.committed())
         for (const auto &move : edit.moved.value)
             for (auto &node : nodes)
@@ -699,22 +743,40 @@ void nodesPage(const GalleryResources& resources)
                     node.position = move.position;
     if (edit.connect)
         links.push_back({nextLink++, edit.connectFrom, edit.connectTo, 0});
-    if (edit.linkRemoved)
-        links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink &link) {
-            return link.id == edit.removeLink;
-        }), links.end());
+    if (edit.linkRemoved || !edit.removeLinks.empty())
+        links.erase(std::remove_if(links.begin(), links.end(),
+                                   [&](const NodeLink &link) {
+                                       return (edit.linkRemoved && link.id == edit.removeLink) ||
+                                              std::find(edit.removeLinks.begin(), edit.removeLinks.end(),
+                                                        link.id) != edit.removeLinks.end();
+                                   }),
+                    links.end());
     for (auto id : edit.removeNodes) {
         for (const auto &node : nodes)
             if (node.id == id)
-                links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink &link) {
-                    const auto owns = [&](ItemId pin) {
-                        return std::any_of(node.inputs.begin(), node.inputs.end(), [&](const NodePin &p) { return p.id == pin; }) ||
-                               std::any_of(node.outputs.begin(), node.outputs.end(), [&](const NodePin &p) { return p.id == pin; });
-                    };
-                    return owns(link.from) || owns(link.to);
-                }), links.end());
+                links.erase(std::remove_if(
+                                links.begin(), links.end(),
+                                [&](const NodeLink &link) {
+                                    const auto owns = [&](ItemId pin) {
+                                        return std::any_of(node.inputs.begin(), node.inputs.end(),
+                                                           [&](const NodePin &p) { return p.id == pin; }) ||
+                                               std::any_of(node.outputs.begin(), node.outputs.end(),
+                                                           [&](const NodePin &p) { return p.id == pin; });
+                                    };
+                                    return owns(link.from) || owns(link.to);
+                                }),
+                            links.end());
         nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&](const Node &node) { return node.id == id; }), nodes.end());
     }
+    reroutes.erase(std::remove_if(reroutes.begin(), reroutes.end(),
+                                  [&](const auto &route) {
+                                      return std::none_of(links.begin(), links.end(), [&](const auto &link) {
+                                          return route.link == link.id;
+                                      });
+                                  }),
+                   reroutes.end());
+    if (!state.clipboardError.empty())
+        textColoured(palette().error, "%s", tr(state.clipboardError.c_str()).c_str());
 }
 #endif
 
@@ -794,8 +856,282 @@ void assetsPage(const GalleryResources& resources)
 #endif
 
 #if defined(CYUI_HAS_INSPECTOR)
+void virtualArraysPage() {
+    textDim("%s",
+            tr("Only visible rows are drawn. Right-click an element to copy, paste, duplicate or move it.")
+                .c_str());
+    static int kind = 6, count = 1, builtKind = -1, builtCount = -1;
+    const char *kinds[]{"Bool",    "Int64", "Float", "Double",        "Text",    "Vector2",    "Vector3",
+                        "Vector4", "Color", "Asset", "Nested arrays", "Objects", "Custom type", "Set", "Map", "Optional", "Enum", "Flags"};
+    const char *counts[]{"100", "10000", "100000"};
+    ImGui::SetNextItemWidth(dp(160));
+    combo(trLabel("Element type").c_str(), &kind, kinds, 18);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(110));
+    combo(trLabel("Element count").c_str(), &count, counts, 3);
+    static std::vector<Property> fields(1);
+    static InspectorState state;
+    static std::uint64_t revision = 0;
+    if (kind != builtKind || count != builtCount) {
+        std::vector<PropertyValue> prototypes{true,
+                                              std::int64_t(9007199254740993LL),
+                                              2.56f,
+                                              2.56,
+                                              std::string("Element"),
+                                              PropertyVector{{2.56, 5}},
+                                              PropertyVector{{2.56, 5, 8}},
+                                              PropertyVector{{2.56, 5, 8, 10}},
+                                              PropertyColor{{.35f, .65f, .8f, 1}},
+                                              PropertyAsset{"Texture", "/Game/Textures/Terrain"},
+                                              makePropertyArray(PropertyVector{{1, 2, 3}}, 3),
+                                              PropertyObject{"SpawnPoint",
+                                                             {{"Name", std::string("Spawn")},
+                                                              {"Position", PropertyVector{{1, 2, 3}}},
+                                                              {"Weights", makePropertyArray(.5f, 3)}}},
+                                              PropertyCustom{"Angle", "45"}, makePropertySet(std::int64_t(0)), makePropertyMap(std::string{}, 0.),
+                                              makePropertyOptional(2.56), PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "Medium"}, {2, "High"}}},
+                                              PropertyEnum{"Channels", 3, {{1, "A"}, {2, "B"}, {4, "C"}}, true}};
+        auto &object = std::get<PropertyObject>(prototypes[11]);
+        object.metadata["Name"].readOnly = true;
+        object.metadata["Position"].bounded = true; object.metadata["Position"].minimum = 0; object.metadata["Position"].maximum = 100;
+        auto &field = fields[0];
+        field.id = 900;
+        field.label = "Values";
+        field.value = makePropertyArray(prototypes[kind], std::size_t(std::stoul(counts[count])));
+        builtKind = kind;
+        builtCount = count;
+        ++revision;
+    }
+    InspectorOptions options;
+    options.arrayHeight = 280;
+    options.browseAssetAt = [](ItemId, const std::vector<std::string> &path) {
+        notify((tr("Asset element requested") + ": " + (path.empty() ? "" : path.front())).c_str());
+    };
+    options.editCustom = [](ItemId, const std::vector<std::string> &, const PropertyCustom &value) {
+        if (button((value.json + " deg###angle").c_str()))
+            return Edit<PropertyCustom>{
+                EditPhase::commit, {value.type, std::to_string(std::fmod(std::stod(value.json) + 15, 360))}};
+        return Edit<PropertyCustom>{};
+    };
+    for (const auto &event : inspector("##virtualArrays", state, fields, revision, {}, options))
+        if (event.edit.committed()) {
+            fields[0].value = event.edit.value;
+            ++revision;
+        }
+    std::size_t drawn = 0;
+    for (const auto &list : state.lists)
+        drawn += list.second.renderedRows;
+    textDim(tr("Visible rows: %zu / %zu").c_str(), drawn,
+            std::get<PropertyArray>(fields[0].value).values.size());
+    textDim("%s", tr("Nested arrays and objects open a detail editor. Custom types use a host callback or "
+                     "the JSON editor.")
+                      .c_str());
+}
+PropertyValue uniqueExampleValue(PropertyValue value, std::size_t index) {
+    std::visit(
+        [&](auto &element) {
+            using T = std::decay_t<decltype(element)>;
+            if constexpr (std::is_same_v<T, bool>)
+                element = index != 0;
+            else if constexpr (std::is_same_v<T, std::int64_t>)
+                element = std::int64_t(index);
+            else if constexpr (std::is_floating_point_v<T>)
+                element = T(index) + T(.25);
+            else if constexpr (std::is_same_v<T, std::string>)
+                element = "Element " + std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyVector>)
+                element.values.front() = double(index);
+            else if constexpr (std::is_same_v<T, PropertyColor>)
+                element.rgba[0] = float(index) / 100000.f;
+            else if constexpr (std::is_same_v<T, PropertyAsset>)
+                element.path += "/" + std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyCustom>)
+                element.json = std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyObject>)
+                element.fields["Name"] = std::string("Record ") + std::to_string(index);
+            else if constexpr (std::is_same_v<T, PropertyEnum>)
+                element.value =
+                    element.flags ? std::int64_t(index) : element.items[index % element.items.size()].first;
+            else if constexpr (std::is_same_v<T, PropertyOptional>) {
+                element.value = index ? std::make_unique<PropertyValue>(
+                                            uniqueExampleValue(*element.elementTemplate, index - 1))
+                                      : nullptr;
+            } else if constexpr (std::is_same_v<T, PropertyArray> || std::is_same_v<T, PropertySet>) {
+                auto prototype = element.elementTemplate ? *element.elementTemplate : element.values.front();
+                element.values = {uniqueExampleValue(std::move(prototype), index)};
+            } else if constexpr (std::is_same_v<T, PropertyMap>) {
+                element.entries = {{uniqueExampleValue(*element.keyTemplate, index), *element.valueTemplate}};
+            }
+        },
+        value);
+    return value;
+}
+void associativeCollectionsPage(bool maps) {
+    struct Example {
+        int kind = 1, key = 4, count = 1, builtKind = -1, builtKey = -1, builtCount = -1;
+        std::vector<Property> fields{1};
+        InspectorState state;
+        std::uint64_t revision = 0;
+    };
+    static std::array<Example, 2> examples;
+    auto &example = examples[maps ? 1 : 0];
+    if (maps && example.builtKind < 0)
+        example.kind = 5;
+    textDim("%s",
+            tr("Set elements and Map keys are unique. Conflicting edits and paste are rejected atomically.")
+                .c_str());
+    const char *kinds[]{"Bool",  "Int64",   "Float",         "Double",   "Text", "Vector3", "Color",
+                        "Asset", "Objects", "Nested arrays", "Optional", "Enum", "Flags"};
+    const char *counts[]{"100", "10000", "100000"};
+    ImGui::SetNextItemWidth(dp(150));
+    combo(trLabel(maps ? "Value type" : "Element type").c_str(), &example.kind, kinds, 13);
+    if (maps) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(dp(150));
+        combo(trLabel("Key type").c_str(), &example.key, kinds, 13);
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(100));
+    combo(trLabel("Element count").c_str(), &example.count, counts, 3);
+    if (example.kind != example.builtKind || example.key != example.builtKey ||
+        example.count != example.builtCount) {
+        PropertyMetadata locked;
+        locked.readOnly = true;
+        PropertyMetadata limited;
+        limited.bounded = true;
+        limited.minimum = 0;
+        limited.maximum = 10;
+        std::vector<PropertyValue> prototypes{
+            true,
+            std::int64_t(0),
+            2.56f,
+            2.56,
+            std::string{},
+            PropertyVector{{2.56, 5, 8}},
+            PropertyColor{{.35f, .65f, .8f, 1}},
+            PropertyAsset{"Texture", "/Game/Textures"},
+            PropertyObject{"Record",
+                           {{"Name", std::string("Record")},
+                            {"Strength", 2.56},
+                            {"Tint", PropertyColor{{.35f, .65f, .8f, 1}}}},
+                           {{"Name", locked}, {"Strength", limited}}},
+            makePropertyArray(PropertyVector{{1, 2, 3}}, 2),
+            makePropertyOptional(2.56),
+            PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "Medium"}, {2, "High"}}},
+            PropertyEnum{"Channels", 3, {{1, "A"}, {2, "B"}, {4, "C"}}, true}};
+        auto number = std::size_t(std::stoul(counts[example.count]));
+        const auto uniqueKind = maps ? example.key : example.kind;
+        if (uniqueKind == 0)
+            number = std::min(number, std::size_t(2));
+        if (uniqueKind == 11)
+            number = std::min(number, std::size_t(3));
+        if (uniqueKind == 12)
+            number = std::min(number, std::size_t(8));
+        auto &field = example.fields[0];
+        field.id = 901;
+        field.label = maps ? "Map" : "Set";
+        if (maps) {
+            auto map = makePropertyMap(prototypes[example.key], prototypes[example.kind]);
+            for (std::size_t n = 0; n < number; ++n)
+                map.entries.push_back(
+                    {uniqueExampleValue(prototypes[example.key], n), prototypes[example.kind]});
+            field.value = std::move(map);
+        } else {
+            auto set = makePropertySet(prototypes[example.kind]);
+            for (std::size_t n = 0; n < number; ++n)
+                set.values.push_back(uniqueExampleValue(prototypes[example.kind], n));
+            field.value = std::move(set);
+        }
+        example.builtKind = example.kind;
+        example.builtKey = example.key;
+        example.builtCount = example.count;
+        ++example.revision;
+    }
+    InspectorOptions options;
+    options.arrayHeight = 280;
+    for (const auto &event :
+         inspector("##associative", example.state, example.fields, example.revision, {}, options))
+        if (event.edit.committed()) {
+            example.fields[0].value = event.edit.value;
+            ++example.revision;
+        }
+    std::size_t drawn = 0;
+    for (const auto &list : example.state.lists)
+        drawn += list.second.renderedRows;
+    const auto count = maps ? std::get<PropertyMap>(example.fields[0].value).entries.size()
+                            : std::get<PropertySet>(example.fields[0].value).values.size();
+    textDim(tr("Visible rows: %zu / %zu").c_str(), drawn, count);
+    textDim("%s", tr("Ctrl/Shift select rows. Edit selection applies a formula or typed JSON to the "
+                     "selection. Add validates uniqueness.")
+                      .c_str());
+}
+void advancedInspectorPage() {
+    textDim(
+        "%s",
+        tr("Right-click a field or category to copy/paste JSON. Double-click a number to enter Value*100.")
+            .c_str());
+    static std::vector<Property> first, second;
+    static InspectorState state;
+    static bool multi = false;
+    static std::uint64_t revision = 0;
+    if (first.empty()) {
+        auto field = [](ItemId id, const char *key, const char *category, PropertyValue value) {
+            Property p;
+            p.id = id;
+            p.key = key;
+            p.label = key;
+            p.category = category;
+            p.value = std::move(value);
+            p.defaultValue = p.value;
+            return p;
+        };
+        first = {field(1, "Strength", "Material", 2.56),
+                 field(2, "Enabled", "Material", true),
+                 field(3, "Tint", "Material", PropertyColor{{.4f, .6f, .8f, 1}}),
+                 field(4, "Position", "Transform", PropertyVector{{0, 25, 100}}),
+                 field(5, "Scale", "Transform", PropertyVector{{1, 1, 1}}),
+                 field(6, "Texture", "Resources", PropertyAsset{"Texture", "/Game/Textures/Terrain"}),
+                 field(7, "Tags", "Resources",
+                       PropertyArray{{std::string("Environment"), std::string("Outdoor")}})};
+        first[0].bounded = true;
+        first[0].minimum = 0;
+        first[0].maximum = 10;
+        first[0].help = "Try Value*100: 2.56 becomes 10 because the maximum is 10.";
+        second = first;
+        second[0].value = 5.;
+        second[3].value = PropertyVector{{10, 25, 100}};
+    }
+    if (ImGui::Checkbox(trLabel("Edit two objects").c_str(), &multi))
+        ++revision;
+    auto fields = multi ? commonProperties({first, second}) : first;
+    InspectorOptions options;
+    options.browseAsset = [](ItemId) { notify(tr("The host opens its asset selector here.").c_str()); };
+    static TextFilter filter;
+    filterBox("##advancedFilter", filter);
+    options.filter = &filter;
+    for (const auto &e : inspector("##advanced", state, fields, revision, {}, options))
+        if (e.edit.committed()) {
+            for (auto &p : first)
+                if (p.id == e.id)
+                    p.value = e.edit.value;
+            if (multi)
+                for (auto &p : second)
+                    if (p.id == e.id)
+                        p.value = e.edit.value;
+            ++revision;
+        }
+    if (ghostButton(trLabel("Copy category as JSON").c_str()))
+        ImGui::SetClipboardText(propertyCategoryToJson(first, "Material").c_str());
+}
 void inspectorPage(const GalleryResources& resources)
 {
+    static int view = 1;
+    const char *views[]{"Material example", "Advanced inspector"};
+    segmented("##inspectorExample", views, 2, &view);
+    if (view == 1) {
+        advancedInspectorPage();
+        return;
+    }
     sectionTitle(tr("Details inspector").c_str());
     textDim(tr("Grouped editor properties with typed values, validation, read-only fields and committed edits.").c_str());
     static std::vector<Property> identity, surface, sampling, rendering;
@@ -1586,9 +1922,399 @@ void richDocumentPage(const GalleryResources &resources) {
     editor.draw("##writer", dp(0, 570), options);
 }
 #endif
-void moduleGallery(int selectedTab,const GalleryResources& resources) {
+
+#if defined(CYUI_HAS_HIERARCHY)
+void hierarchyPage() {
+    textDim("%s",
+            tr("Drag to reparent; Shift-drop inserts before a row. Ctrl/Shift selects; F2 renames.").c_str());
+    static std::vector<HierarchyItem> items{{1, 0, "Scene", "Scene"},   {2, 1, "Environment", "Group"},
+                                            {3, 2, "Terrain", "Mesh"},  {4, 2, "Sun", "Light"},
+                                            {5, 1, "Camera", "Camera"}, {6, 1, "Effects", "Group"},
+                                            {7, 6, "Fog", "Volume"}};
+    static HierarchyState state;
+    static ItemId next = 100;
+    for (const auto &r : hierarchy("##hierarchy", state, items, dp(0, 460))) {
+        if (r.action == HierarchyAction::remove) {
+            auto removed = r.ids;
+            bool more = true;
+            while (more) {
+                more = false;
+                for (const auto &item : items)
+                    if (selected(removed, item.parent) && !selected(removed, item.id)) {
+                        removed.push_back(item.id);
+                        more = true;
+                    }
+            }
+            items.erase(std::remove_if(items.begin(), items.end(),
+                                       [&](const auto &item) { return selected(removed, item.id); }),
+                        items.end());
+            continue;
+        }
+        if (r.action == HierarchyAction::duplicate) {
+            std::vector<HierarchyItem> copies;
+            for (const auto &item : items)
+                if (selected(r.ids, item.id)) {
+                    auto copy = item;
+                    copy.id = next++;
+                    copy.label += " (copy)";
+                    copies.push_back(copy);
+                }
+            items.insert(items.end(), copies.begin(), copies.end());
+            continue;
+        }
+        for (auto &item : items)
+            if (selected(r.ids, item.id)) {
+                if (r.action == HierarchyAction::rename)
+                    item.label = r.text;
+                if (r.action == HierarchyAction::visibility)
+                    item.visible = r.value;
+                if (r.action == HierarchyAction::locking)
+                    item.locked = r.value;
+                if (r.action == HierarchyAction::reparent)
+                    item.parent = r.parent;
+            }
+        if (r.action == HierarchyAction::reparent && r.before) {
+            std::vector<HierarchyItem> moved;
+            for (const auto &item : items)
+                if (selected(r.ids, item.id))
+                    moved.push_back(item);
+            items.erase(std::remove_if(items.begin(), items.end(),
+                                       [&](const auto &item) { return selected(r.ids, item.id); }),
+                        items.end());
+            auto at = std::find_if(items.begin(), items.end(),
+                                   [&](const auto &item) { return item.id == r.before; });
+            items.insert(at, moved.begin(), moved.end());
+        }
+    }
+}
+#endif
+#if defined(CYUI_HAS_DATAVIEW)
+void dataViewPage() {
+    textDim(
+        "%s",
+        tr("10,000 rows. Sort headers, filter columns, Shift-select cells, Ctrl+C/V; double-click to edit.")
+            .c_str());
+    static std::vector<DataRow> rows;
+    static DataViewState state;
+    static std::vector<DataColumn> columns{{1, "Name", true, false, 0, 1, 220},
+                                           {2, "Value", true, true, 0, 10, 160},
+                                           {3, "Enabled", true, false, 0, 1, 100},
+                                           {4, "ID", false, false, 0, 1, 150}};
+    if (rows.empty())
+        for (int n = 1; n <= 10000; ++n)
+            rows.push_back({ItemId(n),
+                            {std::string("Object ") + std::to_string(n), double(n % 100) / 10., true,
+                             std::int64_t(9007199254740990LL + n)}});
+    for (const auto &e : dataView("##dataView", state, columns, rows, dp(0, 470)))
+        if (e.edit.committed())
+            for (auto &row : rows)
+                if (row.id == e.row)
+                    for (std::size_t c = 0; c < columns.size(); ++c)
+                        if (columns[c].id == e.column)
+                            row.cells[c] = e.edit.value;
+}
+#endif
+#if defined(CYUI_HAS_FILEPICKER)
+void filePickerPage() {
+    textDim("%s", tr("A virtual project supplied by the host. Selecting or saving here performs no "
+                     "filesystem operation.")
+                      .c_str());
+    static FilePickerState state;
+    static bool initialized = false;
+    static int mode = 0;
+    const char *modes[]{"Open file", "Open files", "Save file", "Select folder"};
+    if (segmented("##pickerMode", modes, 4, &mode)) {
+        state.selection.clear();
+        state.filename.clear();
+    }
+    if (!initialized) {
+        state.directory = state.pathText = "/project";
+        initialized = true;
+    }
+    FilePickerOptions options;
+    options.root = "/project";
+    options.mode = FilePickerMode(mode);
+    options.filters = {{"All files", {}}, {"Images", {"png", "jpg"}}, {"Source", {"cpp", "h"}}};
+    FileListing listing;
+    listing.directory = state.directory;
+    if (state.directory == "/project")
+        listing.entries = {{1, "Images", true},
+                           {2, "Source", true},
+                           {3, "README.md", false, 2300},
+                           {4, "scene.json", false, 48000}};
+    else if (state.directory == "/project/Images")
+        listing.entries = {{5, "Terrain.png", false, 250000}, {6, "Preview.jpg", false, 80000}};
+    else if (state.directory == "/project/Source")
+        listing.entries = {{7, "main.cpp", false, 3200}, {8, "App.h", false, 1200}};
+    else
+        listing.error = tr("Folder not found");
+    const auto result = filePicker("##filePicker", state, listing, dp(0, 490), options);
+    if (result.accepted && !result.paths.empty())
+        notify(result.paths.front().c_str(), Tone::success);
+}
+#endif
+#if defined(CYUI_HAS_TIMELINE)
+void timelinePage() {
+    textDim("%s", tr("Drag clips/edges and markers. Drag lane names to reorder. S: split; Ctrl+D: duplicate; "
+                     "right-click: actions.")
+                      .c_str());
+    static TimelineState state;
+    static std::vector<TimelineLane> lanes{{1, "Video", 70}, {2, "Audio", 80}, {3, "Events", 48}};
+    static std::vector<TimelineClip> clips{{1, 1, 1, 3, "Opening", 0},
+                                           {2, 1, 5, 3, "Sequence", 1},
+                                           {3, 2, .5, 7, "Sound", 2},
+                                           {4, 3, 2, 1, "Marker interval", 3}};
+    static std::vector<TimelineMarker> markers{{1, 4, "Cue"}};
+    static ItemId next = 100;
+    TimelineOptions options;
+    options.playhead = 3.5;
+    options.snap = .25;
+    options.allocateId = []() { return ++next; };
+    auto edit = timeline("##timeline", state, lanes, clips, markers, dp(0, 380), options);
+    if (edit.clips.committed())
+        clips = edit.clips.value;
+    if (edit.lanes.committed())
+        lanes = edit.lanes.value;
+    if (edit.markers.committed())
+        markers = edit.markers.value;
+    for (auto key : edit.remove)
+        clips.erase(std::remove_if(clips.begin(), clips.end(), [&](const auto &c) { return c.id == key; }),
+                    clips.end());
+    if (!state.error.empty())
+        textColoured(palette().error, "%s", tr(state.error.c_str()).c_str());
+}
+#endif
+#if defined(CYUI_HAS_COMMANDS)
+void commandsPage(const GalleryResources &resources) {
+    static CommandRegistry registry;
+    static bool init = false, open = false;
+    static CommandState state;
+    static std::string error;
+    if (!init) {
+        registry.add({1, "Open document", "Ctrl+O", "File"});
+        registry.add({2, "Save document", "Ctrl+S", "File"});
+        registry.add({3, "Frame selection", "Home", "View"});
+        registry.add({4, "Unavailable command", "", "Example", false});
+        init = true;
+    }
+    textDim(
+        "%s",
+        tr("Menus, toolbar and command palette share one registry. Click a shortcut to rebind it.").c_str());
+    if (primaryButton(trLabel("Open command palette").c_str()) || resources.previewCommands)
+        open = true;
+    if (registry.toolbarButton(2, icon::save))
+        notify(tr("Save requested").c_str());
+    if (beginProperties("##bindings")) {
+        for (const auto &command : registry.commands()) {
+            ItemScope key(command.id);
+            property(tr(command.label.c_str()).c_str());
+            auto chord = parseShortcut(command.shortcut);
+            if (shortcutEditor("##binding", chord) && !registry.rebind(command.id, chord))
+                error = tr("Shortcut conflicts with another command");
+        }
+        endProperties();
+    }
+    if (ghostButton(trLabel("Copy shortcuts as JSON").c_str()))
+        ImGui::SetClipboardText(registry.bindingsJson().c_str());
+    ImGui::SameLine();
+    if (ghostButton(trLabel("Paste shortcuts").c_str())) {
+        auto text = ImGui::GetClipboardText();
+        registry.loadBindingsJson(text ? text : "", error);
+    }
+    const auto commands = registry.commands();
+    const auto action = commandPalette("Commands###examplePalette", open, state, commands);
+    if (action || registry.poll())
+        notify(tr("Command requested (handled by the host)").c_str());
+    if (!error.empty())
+        textColoured(palette().error, "%s", tr(error.c_str()).c_str());
+}
+#endif
+#if defined(CYUI_HAS_INSPECTOR) && defined(CYUI_HAS_DATAVIEW) && defined(CYUI_HAS_HIERARCHY) &&              \
+    defined(CYUI_HAS_COMMANDS) && defined(CYUI_HAS_FILEPICKER)
+void editorWorkspacePage() {
+    static examples::EditorWorkspace model;
+    static ItemId selected = 1, shown = 0, pendingObject = 0, pendingProperty = 0;
+    static std::uint64_t inspectorRevision = 0, shownRevision = UINT64_MAX;
+    static InspectorState details;
+    static HierarchyState tree;
+    static DataViewState grid;
+    static CommandRegistry commands;
+    static bool initialized = false, openPicker = false;
+    static FilePickerState picker;
+    if (!initialized) {
+        commands.add({1, "Undo", "Ctrl+Z", "Edit"});
+        commands.add({2, "Redo", "Ctrl+Y", "Edit"});
+        tree.selection = {1};
+        picker.directory = picker.pathText = "/Game/Textures";
+        initialized = true;
+    }
+    commands.find(1)->enabled = model.canUndo();
+    commands.find(2)->enabled = model.canRedo();
+    const auto action = commands.poll();
+    {
+        ScopedDisabled disabled(!model.canUndo());
+        if (button(trLabel("Undo").c_str()) || action == 1)
+            model.undo();
+    }
+    ImGui::SameLine();
+    {
+        ScopedDisabled disabled(!model.canRedo());
+        if (button(trLabel("Redo").c_str()) || action == 2)
+            model.redo();
+    }
+    ImGui::SameLine();
+    textDim("%s", tr("One host model, shared selection and atomic Undo/Redo across Inspector, DataView and "
+                     "asset selection.")
+                      .c_str());
+    if (ImGui::BeginTable("##workspaceLayout", 2,
+                          ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn(trLabel("Hierarchy").c_str(), ImGuiTableColumnFlags_WidthFixed, dp(250));
+        ImGui::TableSetupColumn(trLabel("Inspector").c_str(), ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        std::vector<HierarchyItem> items;
+        for (const auto &object : model.objects())
+            items.push_back({object.id, 0, std::get<std::string>(object.properties[0].value), "Object"});
+        HierarchyOptions readOnlyTree;
+        readOnlyTree.readOnly = true;
+        hierarchy("##workspaceObjects", tree, items, dp(0, 260), readOnlyTree);
+        if (!tree.selection.empty() && selected != tree.selection.back()) {
+            selected = tree.selection.back();
+            grid.active = grid.anchor = selected;
+        }
+        ImGui::TableNextColumn();
+        if (shown != selected || shownRevision != model.revision()) {
+            ++inspectorRevision;
+            shown = selected;
+            shownRevision = model.revision();
+        }
+        if (const auto *object = model.find(selected)) {
+            InspectorOptions options;
+            options.browseAssetAt = [&](ItemId field, const std::vector<std::string> &) {
+                pendingObject = selected;
+                pendingProperty = field;
+                openPicker = true;
+            };
+            std::vector<examples::WorkspaceChange> commits;
+            for (const auto &event :
+                 inspector("##workspaceDetails", details, object->properties, inspectorRevision, {}, options))
+                if (event.edit.committed())
+                    commits.push_back({selected, event.id, event.edit.value});
+            if (!commits.empty())
+                model.apply(commits);
+        }
+        ImGui::EndTable();
+    }
+    std::vector<DataColumn> columns{
+        {1, "Name", true, false, 0, 1, 160},     {2, "Position", true, false, 0, 1, 220},
+        {3, "Tint", true, false, 0, 1, 160},     {4, "Texture", true, false, 0, 1, 270},
+        {5, "Strength", true, true, 0, 10, 120}, {6, "Settings", true, false, 0, 1, 150}};
+    std::vector<DataRow> rows;
+    for (const auto &object : model.objects()) {
+        DataRow row;
+        row.id = object.id;
+        for (const auto &p : object.properties)
+            row.cells.push_back(p.value);
+        rows.push_back(std::move(row));
+    }
+    DataViewOptions table;
+    table.revision = model.revision();
+    table.editors.browseAssetAt = [&](ItemId field, const std::vector<std::string> &path) {
+        pendingObject = path.empty() ? selected : ItemId(std::stoull(path.front()));
+        pendingProperty = field;
+        openPicker = true;
+    };
+    std::vector<examples::WorkspaceChange> commits;
+    for (const auto &event : dataView("##workspaceData", grid, columns, rows, dp(0, 220), table))
+        if (event.edit.committed())
+            commits.push_back({event.row, event.column, event.edit.value});
+    if (!commits.empty())
+        model.apply(commits);
+    if (grid.active && grid.active != selected) {
+        selected = grid.active;
+        tree.selection = {selected};
+    }
+    if (openPicker) {
+        ImGui::OpenPopup("##workspaceAsset");
+        openPicker = false;
+    }
+    ImGui::SetNextWindowSize(dp(640, 410), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("##workspaceAsset", nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+        textDim("%s", tr("Choose texture").c_str());
+        FileListing listing{"/Game/Textures", {{1, "Terrain.png"}, {2, "Stone.png"}, {3, "Water.png"}}};
+        FilePickerOptions options;
+        options.root = "/Game/Textures";
+        options.filters = {{"Images", {"png"}}};
+        const auto result = filePicker("##workspacePicker", picker, listing, dp(0, 300), options);
+        if (result.accepted && !result.paths.empty()) {
+            model.apply({{pendingObject, pendingProperty, PropertyAsset{"Texture", result.paths.front()}}});
+            ImGui::CloseCurrentPopup();
+        }
+        if (result.cancelled)
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+    if (!model.error.empty())
+        textColoured(palette().error, "%s", tr(model.error.c_str()).c_str());
+}
+#endif
+
+#if defined(CYUI_HAS_DATAVIEW)
+void richDataViewPage() {
+    textDim(
+        "%s",
+        tr("Double-click a cell to use the Inspector editor. Rich cells keep their type when copied as TSV.")
+            .c_str());
+    static std::vector<DataColumn> columns{
+        {1, "Name", true, false, 0, 1, 150},      {2, "Position", true, false, 0, 1, 240},
+        {3, "Tint", true, false, 0, 1, 180},      {4, "Texture", true, false, 0, 1, 250},
+        {5, "Quality", true, false, 0, 1, 130},   {6, "Tags", true, false, 0, 1, 140},
+        {7, "Overrides", true, false, 0, 1, 160}, {8, "Optional", true, false, 0, 1, 160},
+        {9, "Angle", true, false, 0, 1, 100}};
+    static std::vector<DataRow> rows;
+    static DataViewState state;
+    if (rows.empty()) {
+        for (int n = 1; n <= 1000; ++n)
+            rows.push_back(
+                {ItemId(n),
+                 {std::string("Object ") + std::to_string(n), PropertyVector{{2.56, double(n), 0}},
+                  PropertyColor{{.35f, .65f, .8f, 1}}, PropertyAsset{"Texture", "/Game/Textures/Terrain"},
+                  PropertyEnum{"Quality", 1, {{0, "Low"}, {1, "Medium"}, {2, "High"}}},
+                  PropertySet{{std::string("Static"), std::string("Outdoor")},
+                              std::make_shared<const PropertyValue>(std::string{})},
+                  PropertyMap{{{std::string("Gain"), 1.}},
+                              std::make_shared<const PropertyValue>(std::string{}),
+                              std::make_shared<const PropertyValue>(0.)},
+                  makePropertyOptional(2.56), PropertyCustom{"Angle", "45"}}});
+        state.editing = 1;
+        state.editingColumn = 1;
+    }
+    DataViewOptions options;
+    options.editors.editCustom = [](ItemId, const std::vector<std::string> &, const PropertyCustom &value) {
+        return button((value.json + " deg").c_str())
+                   ? Edit<PropertyCustom>{EditPhase::commit,
+                                          {value.type,
+                                           std::to_string(std::fmod(std::stod(value.json) + 15, 360))}}
+                   : Edit<PropertyCustom>{};
+    };
+    for (const auto &event : dataView("##richData", state, columns, rows, dp(0, 450), options))
+        if (event.edit.committed())
+            for (auto &row : rows)
+                if (row.id == event.row)
+                    for (std::size_t column = 0; column < columns.size(); ++column)
+                        if (columns[column].id == event.column)
+                            row.cells[column] = event.edit.value;
+}
+#endif
+void moduleGallery(int selectedTab, const GalleryResources &resources) {
     (void)resources;
-    auto page=[&](const char*label,int index,auto body){if(ImGui::BeginTabItem(trLabel(label).c_str(),nullptr,selectedTab==index?ImGuiTabItemFlags_SetSelected:0)){body();ImGui::EndTabItem();}};
+    auto page = [&](const char *label, int index, auto body) {
+        if (ImGui::BeginTabItem(trLabel(label).c_str(), nullptr,
+                                selectedTab == index ? ImGuiTabItemFlags_SetSelected : 0)) {
+            body();
+            ImGui::EndTabItem();
+        }
+    };
 #if defined(CYUI_HAS_CANVAS)
     page("Canvas",4,[]{textDim(tr("Wheel: zoom at pointer. Middle drag: pan. Space + drag: pan.").c_str());static CanvasState state;CanvasScope canvas("##canvas",state,dp(0,320));const auto&f=canvas.frame();auto*d=ImGui::GetWindowDrawList();const auto a=state.view.screen({40,40},f.bounds.min),b=state.view.screen({220,160},f.bounds.min);d->AddRectFilled(a,b,palette().accentDim,dp(4));d->AddText(a,palette().text,"World-space content");});
 #endif
@@ -1602,7 +2328,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
     page("Nodes",7,[&]{nodesPage(resources);});
 #endif
 #if defined(CYUI_HAS_TIMELINE)
-    page("Timeline",8,[]{textDim(tr("Wheel: zoom. Shift-wheel: pan. Ctrl-wheel: scroll lanes. Drag clip/edges to move/trim.").c_str());static TimelineState state;static std::vector<TimelineLane>lanes{{1,"Video",70},{2,"Audio",80},{3,"Events",48}};static std::vector<TimelineClip>clips{{1,1,1,3,"Opening",0},{2,1,5,3,"Sequence",1},{3,2,.5,7,"Sound",2},{4,3,2,1,"Marker interval",3}};TimelineMarker marker{1,4,"Cue"};TimelineOptions o;o.playhead=3.5;o.snap=.25;auto e=timeline("##timeline",state,lanes,clips,{&marker,1},dp(0,350),o);if(e.clips.committed())clips=e.clips.value;});
+    page("Timeline", 8, timelinePage);
 #endif
 #if defined(CYUI_HAS_AUDIOVIEWS)
     page("Audio views",9,audioViewsPage);
@@ -1617,6 +2343,9 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
 #endif
 #if defined(CYUI_HAS_INSPECTOR)
     page("Inspector",12,[&]{inspectorPage(resources);});
+    page("Virtual arrays", 33, virtualArraysPage);
+    page("Sets", 34, [] { associativeCollectionsPage(false); });
+    page("Maps", 35, [] { associativeCollectionsPage(true); });
 #endif
 #if defined(CYUI_HAS_ASSETS)
     page("Assets",13,[&]{assetsPage(resources);});
@@ -1632,7 +2361,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
         });
 #endif
 #if defined(CYUI_HAS_COMMANDS)
-    page("Commands",16,[&]{static bool open=false;static CommandState state;static std::vector<Command>commands{{1,"Open document","Ctrl+O","File"},{2,"Save document","Ctrl+S","File"},{3,"Frame selection","Home","View"},{4,"Unavailable command","","Example",false}};if(primaryButton(trLabel("Open command palette").c_str())||resources.previewCommands)open=true;const auto action=commandPalette("Commands###examplePalette",open,state,commands);if(action)notify(tr("Command requested (handled by the host)").c_str());});
+    page("Commands", 16, [&] { commandsPage(resources); });
 #endif
 #if defined(CYUI_HAS_DIAGNOSTICS)
     page("Diagnostics",17,[]{static LogBuffer buffer;static LogState state;static bool init=false;if(!init){buffer.append(LogLevel::info,"Application initialized");buffer.append(LogLevel::warning,"Example warning");buffer.append(LogLevel::error,"Example diagnostic — no file is modified");init=true;}logView("##log",state,buffer,dp(0,210));std::vector<Diagnostic>rows{{1,LogLevel::warning,"example.cpp","Unused value",8,4},{2,LogLevel::error,"shader.hlsl","Example compiler diagnostic",12,3}};diagnosticList("##diagnostics",rows,dp(0,140));});
@@ -1664,6 +2393,19 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
     });
 #endif
 
+#if defined(CYUI_HAS_HIERARCHY)
+    page("Hierarchy", 30, hierarchyPage);
+#endif
+#if defined(CYUI_HAS_DATAVIEW)
+    page("Data view", 31, dataViewPage);
+    page("Rich data view", 36, richDataViewPage);
+#endif
+#if defined(CYUI_HAS_INSPECTOR) && defined(CYUI_HAS_DATAVIEW) && defined(CYUI_HAS_HIERARCHY) && defined(CYUI_HAS_COMMANDS) && defined(CYUI_HAS_FILEPICKER)
+    page("Editor workspace", 37, editorWorkspacePage);
+#endif
+#if defined(CYUI_HAS_FILEPICKER)
+    page("File picker", 32, filePickerPage);
+#endif
 }
 
 }  // namespace

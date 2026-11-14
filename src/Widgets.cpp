@@ -1,5 +1,6 @@
 #include "cyui/CoreWidgets.h"
 #include "cyui/Locale.h"
+#include "cyui/Numeric.h"
 
 #include "cyui/Icons.h"
 
@@ -513,6 +514,8 @@ struct WidgetContextState {
     ImGuiID entryId {};
     char entryText[64] {};
     bool entryFresh = false;
+    double entryValue = 0;
+    std::string entryError;
     ImGuiID pressId {};  // sliderBar: the value before the press, undone by a double click
     float pressValue {};
     std::vector<Toast> toasts;
@@ -578,22 +581,6 @@ WidgetContextState& widgetState()
     return state;
 }
 
-std::optional<double> typedNumber(std::string text)
-{
-    std::replace(text.begin(), text.end(), ',', '.');
-    const auto* start = text.c_str();
-    while (*start == ' ')
-        ++start;
-    char* end = nullptr;
-    const auto number = std::strtod(start, &end);
-    if (end == start || !std::isfinite(number))
-        return std::nullopt;
-    while (end != nullptr && *end == ' ')
-        ++end;
-    if (end != nullptr && (*end == 'k' || *end == 'K'))
-        return number * 1000.0;
-    return number;
-}
 }  // namespace
 
 void takeWheel()
@@ -648,8 +635,10 @@ bool valueEntry(const ImGuiID id, const ImVec2 min, const ImVec2 max, double& va
 {
     if (open) {
         widgetState().entryId = id;
-        std::snprintf(widgetState().entryText, sizeof(widgetState().entryText), "%.6g", value * scale);
+        std::snprintf(widgetState().entryText, sizeof(widgetState().entryText), "%.17g", value * scale);
         widgetState().entryFresh = true;
+        widgetState().entryValue = value * scale;
+        widgetState().entryError.clear();
         ImGui::OpenPopupEx(id, ImGuiPopupFlags_None);
     }
     if (widgetState().entryId != id)
@@ -673,16 +662,27 @@ bool valueEntry(const ImGuiID id, const ImVec2 min, const ImVec2 max, double& va
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::InputText("##typed", widgetState().entryText, sizeof(widgetState().entryText),
                          ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-        if (const auto typed = typedNumber(widgetState().entryText)) {
-            value = std::clamp(*typed / (scale != 0.0 ? scale : 1.0), std::min(minimum, maximum), std::max(minimum, maximum));
+        std::string expression = widgetState().entryText;
+        // Preserve decimal-comma entry for simple numbers; commas in functions separate arguments.
+        if (expression.find('(') == std::string::npos)
+            std::replace(expression.begin(), expression.end(), ',', '.');
+        const auto typed = evaluateNumericExpression(expression, widgetState().entryValue);
+        if (typed.valid) {
+            const auto next = std::clamp(typed.value / (scale != 0.0 ? scale : 1.0),
+                                         static_cast<long double>(std::min(minimum, maximum)),
+                                         static_cast<long double>(std::max(minimum, maximum)));
+            value = static_cast<double>(next);
             set = true;
-        }
-        ImGui::CloseCurrentPopup();
-        widgetState().entryId = 0;
+            ImGui::CloseCurrentPopup();
+            widgetState().entryId = 0;
+        } else
+            widgetState().entryError = typed.error;
     } else if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
         ImGui::CloseCurrentPopup();
         widgetState().entryId = 0;
     }
+    if (!widgetState().entryError.empty())
+        textColoured(palette().error, "%s", tr(widgetState().entryError.c_str()).c_str());
     ImGui::EndPopup();
     return set;
 }

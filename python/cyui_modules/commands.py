@@ -9,6 +9,9 @@ class Command:
     shortcut: str = ''
     category: str = ''
     enabled: bool = True
+    context: str = ''
+    allow_while_typing: bool = False
+    checked: bool = False
 
 
 @dataclass
@@ -84,3 +87,6 @@ def command_palette(identifier, opened, state, commands, size=(560, 400)):
         i.end_popup()
     state.was_open = opened
     return opened, request
+
+# Kept separate so the registry models remain dependency-light.
+from .command_registry import CommandRegistry, parse_shortcut

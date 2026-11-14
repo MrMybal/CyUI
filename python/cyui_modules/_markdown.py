@@ -44,12 +44,17 @@ class Block:
 
 def parser():
     from markdown_it import MarkdownIt
-    from markdown_it.rules_inline.text import _TerminatorChars
     md = MarkdownIt('commonmark', {'html': True, 'breaks': True, 'linkify': True, 'maxNesting': 256})
     md.enable(['table', 'strikethrough', 'linkify'])
     md.core.ruler.disable('text_join')
     md.linkify.set({'fuzzy_link': False, 'fuzzy_email': False})
-    terminators = re.compile('['+re.escape(''.join(_TerminatorChars | {'|', '='}))+']')
+    base_terminators = getattr(md.inline, 'terminator_re', None)
+    if base_terminators is not None:
+        terminators = re.compile('(?:'+base_terminators.pattern+'|[|=])')
+    else:
+        # markdown-it-py 4.0 predates the parser's public terminator expression.
+        from markdown_it.rules_inline.text import _TerminatorChars
+        terminators = re.compile('['+re.escape(''.join(_TerminatorChars | {'|', '='}))+']')
 
     def text_rule(state, silent):
         match = terminators.search(state.src, state.pos, state.posMax)

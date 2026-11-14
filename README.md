@@ -200,7 +200,7 @@ adding a code editor, audio engine or browser.
 | `CyUI::Code` | Source views, syntax colors, annotations and search |
 | `CyUI::CodeEditor` | Editable source using the bundled MIT TextEditor backend |
 | `CyUI::Diff` | Unified/split comparisons, inline changes and hunk navigation |
-| `CyUI::Inspector` | Typed properties, validation and draft edits |
+| `CyUI::Inspector` | Typed properties, virtual Array/Set/Map editors, optional/enum/flags, validation and draft edits |
 | `CyUI::Assets` | Folder trees, grids/lists, thumbnails, filtering and drag/drop |
 | `CyUI::Images` | Image navigation, checkerboard, crop and gradient stops |
 | `CyUI::Viewport` | Host-rendered scene surfaces, orbit camera and 2D transform controls |
@@ -216,6 +216,9 @@ adding a code editor, audio engine or browser.
 | `CyUI::RichDocument` | Paginated native document workspace |
 | `CyUI::OfficeIO` | ODT/ODS, DOCX/XLSX and flat ODF exchange |
 | `CyUI::Web` | Browser surface, input, origin policy, messages and theme bridge |
+| `CyUI::Hierarchy` | Scene/layer trees, reparenting, renaming and visibility/locking |
+| `CyUI::DataView` | Virtual sorted/filtered tables, all Inspector editors and typed TSV clipboard (depends on Inspector) |
+| `CyUI::FilePicker` | Host/VFS open/save/directory selection |
 | `CyUI::Gallery` | Widget/module examples and the theme editor |
 
 The optional `CyUI::WebCEF` and `CyUI::ImGuizmo` adapters use host-supplied

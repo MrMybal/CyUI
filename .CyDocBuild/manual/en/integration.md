@@ -4,7 +4,7 @@ title: Integrate CyUI
 description: Integrate CyUI for CyUI integrators.
 section: Start
 order: 1
-revision: 2
+revision: 3
 ---
 
 **Localization is required for interface text:** keep English as the default and
@@ -47,7 +47,7 @@ target_link_libraries(app PRIVATE CyUI::Diff)
 ### Without CMake {#without-cmake}
 
 Add `include/` to the include path. Compile `src/Theme.cpp`, `src/Widgets.cpp`,
-`src/Layout.cpp`, `src/Filter.cpp` alongside the app's ImGui sources for Core. Add
+`src/Layout.cpp`, `src/Filter.cpp`, `src/Numeric.cpp` alongside the app's ImGui sources for Core. Add
 `src/modules/Audio.cpp` for audio controls, and `src/Gallery.cpp` for the gallery.
 Define `CYUI_HAS_AUDIO=1` when compiling Gallery with audio examples.
 
