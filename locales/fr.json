@@ -446,6 +446,24 @@
     "Spectrogram": "Spectrogramme",
     "True peak": "Crête vraie",
     "dB in": "dB entrée",
-    "dB out": "dB sortie"
+    "dB out": "dB sortie",
+    "Spectral displays": "Vues spectrales",
+    "Color map": "Palette de couleurs",
+    "Intensity": "Intensité",
+    "Frequency": "Fréquence",
+    "Monochrome": "Monochrome",
+    "Theme colors": "Couleurs du thème",
+    "Follow latest": "Suivre les dernières trames",
+    "Clear persistence": "Effacer la persistance",
+    "Filled spectra and gradients": "Spectres remplis et dégradés",
+    "Band spectrum and FFT overlay": "Spectre par bandes et courbe FFT",
+    "Vertical scrolling spectrogram": "Spectrogramme à défilement vertical",
+    "Horizontal scrolling spectrogram": "Spectrogramme à défilement horizontal",
+    "Spatial stereo spectrogram": "Spectrogramme spatial stéréo",
+    "Persistent vectorscope": "Vectorscope à persistance",
+    "Stereo": "Stéréo",
+    "Mono": "Mono",
+    "Out of phase": "Opposition de phase",
+    "Center": "Centre"
   }
 }

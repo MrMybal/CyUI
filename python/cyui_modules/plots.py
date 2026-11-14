@@ -5,6 +5,48 @@ from .canvas import Canvas, CanvasState
 
 
 @dataclass
+class ColorRamp:
+    style: str = 'themed'  # themed, intensity, frequency, monochrome
+    colors: object = field(default_factory=list)  # optional 1..64 palette colors
+
+
+def sample_ramp(ramp, fraction):
+    _, c = ui()
+    p = c.palette(); t = max(0., min(1., fraction)) if isfinite(fraction) else 0.
+    colors = ramp.colors
+    if not 1 <= len(colors) <= 64:
+        if ramp.style == 'monochrome': return c.mix(p.bg0, p.text, t)
+        if ramp.style == 'themed':
+            return c.mix(p.bg0, p.info, t*2) if t < .5 else (c.mix(p.info, p.accent, (t-.5)/.3) if t < .8 else c.mix(p.accent, p.warning, (t-.8)/.2))
+        colors = [p.error, p.warning, p.success, p.info, p.codeKeyword, p.codeType] if ramp.style == 'frequency' else [p.bg0, p.codeType, p.codeKeyword, p.info, p.success, p.warning, p.error]
+    at = t*(len(colors)-1); a = int(at)
+    return c.mix(colors[a], colors[min(a+1, len(colors)-1)], at-a)
+
+
+def draw_color_scale(top, bottom, ramp, values, unit='', vertical=True, logarithmic=False):
+    i, c = ui(); d = i.get_window_draw_list()
+    if not values.valid or bottom[0] <= top[0] or bottom[1] <= top[1]: return
+    for n in range(128):
+        a, b = n/128, (n+1)/128
+        lo = (top[0], bottom[1]-(bottom[1]-top[1])*b) if vertical else (top[0]+(bottom[0]-top[0])*a, top[1])
+        hi = (bottom[0], bottom[1]-(bottom[1]-top[1])*a) if vertical else (top[0]+(bottom[0]-top[0])*b, bottom[1])
+        d.add_rect_filled(lo, hi, sample_ramp(ramp, (a+b)/2))
+    for n in range(3):
+        t = n/2
+        value = exp(log(values.minimum)+t*(log(values.maximum)-log(values.minimum))) if logarithmic and values.minimum > 0 else values.minimum+t*values.span
+        text = f'{value:.3g} {unit}'
+        at = (bottom[0]+c.dp(4), max(top[1], min(max(top[1], bottom[1]-i.get_font_size()), bottom[1]-t*(bottom[1]-top[1])-i.get_font_size()/2))) if vertical else (max(top[0], min(bottom[0]-i.calc_text_size(text).x, top[0]+t*(bottom[0]-top[0]))), bottom[1]+c.dp(3))
+        d.add_text(at, c.palette().textDim, text)
+
+
+def _quad(d, points, colors):
+    i, _ = ui(); uv = i.get_font_tex_uv_white_pixel()
+    d.prim_reserve(6, 4); index = d._vtx_current_idx
+    for offset in (0, 1, 2, 0, 2, 3): d.prim_write_idx(index+offset)
+    for point, color in zip(points, colors): d.prim_write_vtx(point, uv, color)
+
+
+@dataclass
 class Axis:
     view: Range = field(default_factory=Range)
     logarithmic: bool = False
@@ -63,6 +105,12 @@ class Series:
     label: str = ''
     style: str = 'line'
     color_index: int = 0
+    baseline: float = 0.
+    fill_alpha: float = 1.
+    gradient: bool = False
+    color_by_x: bool = False
+    ramp: ColorRamp = field(default_factory=ColorRamp)
+    bands: object = field(default_factory=list)
 
 
 def reduce_plot(points, budget):
@@ -95,7 +143,7 @@ def histogram(values, view, bins):
     return out
 
 
-def plot(identifier, state, series, size=(0, 240), navigation=True, max_points=65536, axes=True, legend=True, format_x=None, format_y=None):
+def plot(identifier, state, series, size=(0, 240), navigation=True, max_points=65536, axes=True, legend=True, format_x=None, format_y=None, draw_background=None):
     i, c = ui()
     with Canvas(identifier, CanvasState(), size, grid=False, navigation=False) as frame:
         p, draw, io = c.palette(), frame.draw, i.get_io()
@@ -112,6 +160,7 @@ def plot(identifier, state, series, size=(0, 240), navigation=True, max_points=6
                 for axis, anchor in ((state.x, mouse[0]), (state.y, mouse[1])) if io.key_ctrl else ((state.x, mouse[0]),):
                     _navigate(axis, 0, anchor, exp(-io.mouse_wheel * .15))
                 take_wheel()
+        if draw_background: draw_background(frame, state)
         for n in range(1, 4):
             x, y = frame.top[0] + frame.size[0] * n / 4, frame.top[1] + frame.size[1] * n / 4
             draw.add_line((x, frame.top[1]), (x, frame.bottom[1]), p.grid, c.dp(1))
@@ -121,9 +170,9 @@ def plot(identifier, state, series, size=(0, 240), navigation=True, max_points=6
             if len(line.points) > max_points:
                 skipped.append(line.id)
                 continue
-            previous = None
+            previous, previous_fraction = None, 0
             color = c.categorical(line.color_index)
-            for x, y in line.points:
+            for index, (x, y) in enumerate(line.points):
                 fx, fy = state.x.fraction(x), state.y.fraction(y)
                 if not isfinite(fx) or not isfinite(fy):
                     previous = None
@@ -133,15 +182,33 @@ def plot(identifier, state, series, size=(0, 240), navigation=True, max_points=6
                     draw.add_circle_filled(q, c.dp(2.5), color)
                 elif line.style == 'bars':
                     width = max(c.dp(1), frame.size[0] / max(1, len(line.points)) * .8)
-                    base = frame.bottom[1] if state.y.logarithmic else frame.bottom[1] - state.y.fraction(0) * frame.size[1]
-                    draw.add_rect_filled((q[0] - width / 2, min(base, q[1])), (q[0] + width / 2, max(base, q[1])), color)
+                    fraction = state.y.fraction(line.baseline)
+                    base = frame.bottom[1]-max(0., min(1., fraction))*frame.size[1] if isfinite(fraction) else frame.bottom[1]
+                    left, right = q[0]-width/2, q[0]+width/2
+                    if len(line.bands):
+                        if len(line.bands) != len(line.points) or not line.bands[index].valid: continue
+                        a, b = state.x.fraction(line.bands[index].minimum), state.x.fraction(line.bands[index].maximum)
+                        if not isfinite(a) or not isfinite(b): continue
+                        left, right = frame.top[0]+a*frame.size[0], frame.top[0]+b*frame.size[0]
+                    fill = sample_ramp(line.ramp, fx) if line.color_by_x else color
+                    high = c.alpha(fill, max(0., min(1., line.fill_alpha))); low = c.alpha(fill, 0) if line.gradient else high
+                    upper, lower = (high, low) if q[1] <= base else (low, high)
+                    draw.add_rect_filled_multi_color((left, min(base, q[1])), (right, max(base, q[1])), upper, upper, lower, lower)
                 elif previous:
                     if line.style == 'step':
                         draw.add_line(previous, (q[0], previous[1]), color, c.dp(1.5))
                         draw.add_line((q[0], previous[1]), q, color, c.dp(1.5))
                     else:
-                        draw.add_line(previous, q, color, c.dp(1.5))
+                        first = sample_ramp(line.ramp, previous_fraction) if line.color_by_x else color
+                        last = sample_ramp(line.ramp, fx) if line.color_by_x else color
+                        if line.style == 'area':
+                            fraction = state.y.fraction(line.baseline)
+                            base = frame.bottom[1]-max(0., min(1., fraction))*frame.size[1] if isfinite(fraction) else frame.bottom[1]
+                            opacity = max(0., min(1., line.fill_alpha))
+                            _quad(draw, (previous, q, (q[0], base), (previous[0], base)), (c.alpha(first, opacity), c.alpha(last, opacity), c.alpha(last, 0 if line.gradient else opacity), c.alpha(first, 0 if line.gradient else opacity)))
+                        draw.add_line(previous, q, last, c.dp(1.5))
                 previous = q
+                previous_fraction = fx
         def axis_label(position, text):
             extent = i.calc_text_size(text)
             draw.add_rect_filled((position[0]-c.dp(2), position[1]), (position[0]+extent.x+c.dp(2), position[1]+extent.y), c.alpha(p.bg0, .85))

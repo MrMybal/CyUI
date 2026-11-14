@@ -178,17 +178,46 @@ bool audioReset(bool enabled) {
 }
 }
 
+bool SpectrogramHistory::reset(std::size_t capacity, std::size_t bins, double hop, Range frequency,
+                               bool logarithmic, double start) {
+    if (!capacity || !bins || capacity > 4194304 / bins || !(hop > 0) || !std::isfinite(hop) ||
+        !frequency.valid() || (logarithmic && frequency.min <= 0) || !std::isfinite(start)) return false;
+    ring_.assign(capacity * bins, std::numeric_limits<float>::quiet_NaN());
+    capacity_ = capacity; bins_ = bins; hop_ = hop; frequency_ = frequency; logarithmic_ = logarithmic;
+    clear(start); return true;
+}
+void SpectrogramHistory::clear(double start) {
+    start_ = std::isfinite(start) ? start : 0; head_ = count_ = 0; total_ = 0;
+    ordered_.clear(); dirty_ = true;
+}
+bool SpectrogramHistory::append(ArrayView<float> values) {
+    if (!capacity_ || values.count != bins_ || total_ == std::numeric_limits<std::uint64_t>::max() ||
+        !std::isfinite(start_ + double(total_ + 1) * hop_)) return false;
+    std::copy(values.data, values.data + bins_, ring_.begin() + head_ * bins_);
+    head_ = (head_ + 1) % capacity_; count_ = std::min(capacity_, count_ + 1); ++total_; dirty_ = true;
+    return true;
+}
+SpectrogramData SpectrogramHistory::view() {
+    if (dirty_) {
+        ordered_.resize(count_ * bins_);
+        const auto first = (head_ + capacity_ - count_) % std::max<std::size_t>(1, capacity_);
+        for (std::size_t n = 0; n < count_; ++n)
+            std::copy_n(ring_.begin() + ((first + n) % capacity_) * bins_, bins_, ordered_.begin() + n * bins_);
+        dirty_ = false;
+    }
+    return {ordered_, count_, bins_, {start_ + double(total_ - count_) * hop_, start_ + double(total_) * hop_}, frequency_, logarithmic_};
+}
 SpectrogramResult spectrogram(const char *id, PlotState &s, const SpectrogramData &data, ImVec2 size,
                               const SpectrogramOptions &o) {
-    CanvasState canvas;
-    CanvasOptions options;
-    options.grid = options.navigation = false;
-    options.claimWheel = o.navigation;
+    CanvasState canvas; CanvasOptions options;
+    options.grid = options.navigation = false; options.claimWheel = o.navigation;
     CanvasScope scope(id, canvas, size, options);
     const auto &f = scope.frame();
-    const auto r = f.bounds;
+    Rect r = f.bounds;
+    const bool legend = o.legend && r.size().x > dp(150);
+    if (legend) r.max.x -= dp(76);
     const auto room = r.size();
-    SpectrogramResult result;
+    SpectrogramResult result; result.bounds = r;
     result.valid = data.frames && data.bins && data.frames <= data.values.count / data.bins &&
                    data.time.valid() && data.frequency.valid() &&
                    (!data.logarithmicBins || data.frequency.min > 0) && o.intensity.valid();
@@ -197,18 +226,26 @@ SpectrogramResult spectrogram(const char *id, PlotState &s, const SpectrogramDat
     if (!s.y.range.valid() || (s.y.logarithmic && s.y.range.min <= 0)) s.y.range = data.frequency;
     s.x.logarithmic = false;
     auto &io = ImGui::GetIO();
-    auto mouse = [&] { return Point{s.x.value((io.MousePos.x - r.min.x) / room.x),
-                                    s.y.value(1 - (io.MousePos.y - r.min.y) / room.y)}; };
+    const bool horizontal = o.orientation == SpectrogramOrientation::timeHorizontal;
+    const bool hovered = f.hovered && r.contains(io.MousePos);
+    auto semantic = [&](double x, double y) {
+        double t = horizontal ? x : 1 - y;
+        if (o.reverseTime) t = 1 - t;
+        return Point{s.x.value(t), s.y.value(horizontal ? 1 - y : x)};
+    };
+    auto mouse = [&] { return semantic((io.MousePos.x - r.min.x) / room.x, (io.MousePos.y - r.min.y) / room.y); };
     result.mouse = mouse();
     if (o.navigation) {
-        if (f.hovered && ImGui::IsMouseClicked(2)) s.dragging = true;
+        if (hovered && ImGui::IsMouseClicked(2)) s.dragging = true;
         if (!ImGui::IsMouseDown(2)) s.dragging = false;
         if (s.dragging) {
-            const bool x = detail::navigateAxis(s.x, -io.MouseDelta.x / room.x, result.mouse.x, 1);
-            const bool y = detail::navigateAxis(s.y, io.MouseDelta.y / room.y, result.mouse.y, 1);
+            const double shiftTime = (horizontal ? -io.MouseDelta.x / room.x : io.MouseDelta.y / room.y) * (o.reverseTime ? -1 : 1);
+            const double shiftFrequency = horizontal ? io.MouseDelta.y / room.y : -io.MouseDelta.x / room.x;
+            const bool x = detail::navigateAxis(s.x, shiftTime, result.mouse.x, 1);
+            const bool y = detail::navigateAxis(s.y, shiftFrequency, result.mouse.y, 1);
             result.viewChanged = x || y;
         }
-        if (f.wheel != 0) {
+        if (hovered && f.wheel != 0) {
             const double factor = std::exp(-f.wheel * .15);
             result.viewChanged = detail::navigateAxis(s.x, 0, result.mouse.x, factor) || result.viewChanged;
             if (io.KeyCtrl) result.viewChanged = detail::navigateAxis(s.y, 0, result.mouse.y, factor) || result.viewChanged;
@@ -216,48 +253,202 @@ SpectrogramResult spectrogram(const char *id, PlotState &s, const SpectrogramDat
     } else s.dragging = false;
     result.mouse = mouse();
     const Axis time{data.time, false}, frequency{data.frequency, data.logarithmicBins};
-    auto index = [](double fraction, std::size_t count) {
-        return std::min(count - 1, std::size_t(std::clamp(fraction, 0., 1.) * count));
-    };
+    const Axis frequencyColor{data.frequency, data.frequency.min > 0};
+    auto index = [](double fraction, std::size_t count) { return std::min(count - 1, std::size_t(std::clamp(fraction, 0., 1.) * count)); };
     auto *d = ImGui::GetWindowDrawList();
     const auto budget = std::clamp<std::size_t>(o.maxCells, 1, 262144);
-    // Sample screen-cell centres. Work is bounded even for a very large external matrix.
-    const auto nx = std::max<std::size_t>(1, std::min({data.frames, budget, std::size_t(std::min(4096.f, std::ceil(room.x)))}));
-    const auto ny = std::max<std::size_t>(1, std::min({data.bins, budget / nx, std::size_t(std::min(4096.f, std::ceil(room.y)))}));
-    for (std::size_t y = 0; y < ny; ++y) {
-        const double fy = frequency.fraction(s.y.value(1 - (y + .5) / ny));
-        if (!std::isfinite(fy) || fy < 0 || fy > 1) continue;
-        const auto bin = index(fy, data.bins);
-        for (std::size_t x = 0; x < nx; ++x) {
-            const double fx = time.fraction(s.x.value((x + .5) / nx));
-            if (!std::isfinite(fx) || fx < 0 || fx > 1) continue;
-            const float value = data.values[index(fx, data.frames) * data.bins + bin];
-            if (!std::isfinite(value)) continue;
-            const float t = audioFraction(value, o.intensity);
-            const auto color = t < .5f ? mix(palette().bg0, palette().info, t * 2) :
-                (t < .8f ? mix(palette().info, palette().accent, (t - .5f) / .3f) : mix(palette().accent, palette().warning, (t - .8f) / .2f));
-            d->AddRectFilled({r.min.x + room.x * float(x) / nx, r.min.y + room.y * float(y) / ny},
-                             {r.min.x + room.x * float(x + 1) / nx, r.min.y + room.y * float(y + 1) / ny}, color);
-        }
+    const auto nx = std::max<std::size_t>(1, std::min({horizontal ? data.frames : data.bins, budget, std::size_t(std::min(4096.f, std::ceil(room.x)))}));
+    const auto ny = std::max<std::size_t>(1, std::min({horizontal ? data.bins : data.frames, budget / nx, std::size_t(std::min(4096.f, std::ceil(room.y)))}));
+    d->PushClipRect(r.min, r.max, true);
+    for (std::size_t y = 0; y < ny; ++y) for (std::size_t x = 0; x < nx; ++x) {
+        const auto point = semantic((x + .5) / nx, (y + .5) / ny);
+        const double fx = time.fraction(point.x), fy = frequency.fraction(point.y);
+        if (!std::isfinite(fx) || !std::isfinite(fy) || fx < 0 || fx > 1 || fy < 0 || fy > 1) continue;
+        const float value = data.values[index(fx, data.frames) * data.bins + index(fy, data.bins)];
+        if (!std::isfinite(value)) continue;
+        const float strength = audioFraction(value, o.intensity);
+        const auto color = sampleRamp(o.ramp, o.colorByFrequency ? frequencyColor.fraction(point.y) : strength);
+        d->AddRectFilled({r.min.x + room.x * float(x) / nx, r.min.y + room.y * float(y) / ny},
+                        {r.min.x + room.x * float(x + 1) / nx, r.min.y + room.y * float(y + 1) / ny}, o.colorByFrequency ? alpha(color, strength) : color);
     }
     if (o.axes) {
-        for (int i = 0; i <= 4; ++i) {
-            const float part = i / 4.f;
-            audioLabel(d, {r.min.x + dp(4), std::max(r.min.y + dp(3), r.max.y - room.y * part - ImGui::GetFontSize() - dp(3))}, audioHz(s.y.value(part)), palette().textDim);
+        for (int tick = 0; tick <= 4; ++tick) {
+            const double part = tick / 4.;
+            const auto bottom = semantic(part, 1), left = semantic(0, 1 - part);
+            const auto xText = horizontal ? audioNumber(bottom.x, "s") : audioHz(bottom.y);
+            const auto yText = horizontal ? audioHz(left.y) : audioNumber(left.x, "s");
+            const float width = ImGui::CalcTextSize(xText.c_str()).x;
+            audioLabel(d, {std::clamp(r.min.x + float(part) * room.x - width / 2, r.min.x + dp(3), std::max(r.min.x + dp(3), r.max.x - width - dp(3))), r.max.y - ImGui::GetFontSize() - dp(3)}, xText, palette().textDim);
+            if (tick) audioLabel(d, {r.min.x + dp(4), std::clamp(r.max.y - float(part) * room.y - ImGui::GetFontSize() / 2,
+                r.min.y + dp(3), std::max(r.min.y + dp(3), r.max.y - ImGui::GetFontSize() - dp(3)))}, yText, palette().textDim);
         }
-        audioLabel(d, {r.min.x + dp(65), r.max.y - ImGui::GetFontSize() - dp(3)}, audioNumber(s.x.range.min, "s") + "  /  " + audioNumber(s.x.range.max, "s"), palette().textDim);
-        audioLabel(d, {r.min.x + dp(65), r.min.y + dp(3)}, audioNumber(o.intensity.min, o.unit ? o.unit : "") + " / " + audioNumber(o.intensity.max, o.unit ? o.unit : ""), palette().textDim);
     }
     const double fx = time.fraction(result.mouse.x), fy = frequency.fraction(result.mouse.y);
-    result.hovered = f.hovered && std::isfinite(fx) && std::isfinite(fy) && fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
+    result.hovered = hovered && std::isfinite(fx) && std::isfinite(fy) && fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
     if (result.hovered) {
         result.frame = index(fx, data.frames); result.bin = index(fy, data.bins);
-        result.intensity = data.values[result.frame * data.bins + result.bin];
-        result.clicked = ImGui::IsMouseClicked(0);
+        result.intensity = data.values[result.frame * data.bins + result.bin]; result.clicked = ImGui::IsMouseClicked(0);
         d->AddLine({io.MousePos.x, r.min.y}, {io.MousePos.x, r.max.y}, alpha(palette().text, .4f), dp(1));
         d->AddLine({r.min.x, io.MousePos.y}, {r.max.x, io.MousePos.y}, alpha(palette().text, .4f), dp(1));
         ImGui::SetTooltip("%s | %s | %s", audioNumber(result.mouse.x, "s").c_str(), audioHz(result.mouse.y).c_str(), audioNumber(result.intensity, o.unit ? o.unit : "").c_str());
     }
+    d->PopClipRect();
+    if (legend) drawColorScale({{r.max.x + dp(8), r.min.y + dp(6)}, {r.max.x + dp(20), r.max.y - dp(6)}}, o.ramp,
+        o.colorByFrequency ? data.frequency : o.intensity, o.colorByFrequency ? "Hz" : o.unit, true, o.colorByFrequency && data.frequency.min > 0);
+    return result;
+}
+SpectrogramResult spectrogram(const char *id, SpectrogramState &state, const SpectrogramData &data,
+                              ImVec2 size, const SpectrogramOptions &options) {
+    if (state.followLatest && data.time.valid()) {
+        const double window = std::isfinite(state.window) && state.window > 0 ? state.window : 8;
+        state.view.x.range = {std::max(data.time.min, data.time.max - window), data.time.max};
+    }
+    auto result = spectrogram(id, state.view, data, size, options);
+    if (result.viewChanged) state.followLatest = false;
+    if (result.hovered && options.navigation && ImGui::IsMouseDoubleClicked(0)) state.followLatest = true;
+    return result;
+}
+PlotResult bandSpectrum(const char *id, PlotState &view, ArrayView<SpectrumBand> bands,
+                        ArrayView<PlotSeries> overlays, ImVec2 size, const BandSpectrumOptions &o) {
+    view.x.logarithmic = true; view.y.logarithmic = false;
+    if (!view.x.range.valid() || view.x.range.min <= 0) view.x.range = {20, 20000};
+    std::vector<Point> points; std::vector<Range> widths;
+    const bool oversized = bands.count > o.plot.maxPoints;
+    if (!oversized) for (std::size_t n = 0; n < bands.count; ++n) {
+        const auto &b = bands[n];
+        points.push_back({b.frequency.valid() && b.frequency.min > 0 ? std::exp((std::log(b.frequency.min) + std::log(b.frequency.max)) / 2) : missingAudioValue, b.level});
+        widths.push_back(b.frequency);
+    }
+    PlotSeries bars{o.seriesId, o.label, points, PlotStyle::bars};
+    bars.baseline = std::isfinite(o.floor) ? o.floor : -90; bars.fillAlpha = .85f;
+    bars.gradient = o.gradient; bars.colorByX = o.colorByFrequency; bars.ramp = o.ramp; bars.bands = widths;
+    std::vector<PlotSeries> series{bars};
+    for (std::size_t n = 0; n < overlays.count; ++n) series.push_back(overlays[n]);
+    auto options = o.plot;
+    if (!options.formatX) options.formatX = audioHz;
+    if (!options.formatY) options.formatY = [](double v) { return audioNumber(v, "dB"); };
+    auto result = plot(id, view, series, size, options);
+    if (oversized) result.skippedSeries.push_back(o.seriesId);
+    return result;
+}
+
+void DensityState::clear() {
+    energy.clear(); color.clear(); scratch.clear(); columns = rows = 0; projection = -1;
+    received = false; time = missingAudioValue;
+}
+namespace {
+void densityPrepare(DensityState &s, const PlotState &view, const PersistenceOptions &o, int projection) {
+    const int resolution = std::clamp(o.resolution, 16, 256);
+    const bool reset = s.columns != resolution || s.rows != resolution || s.projection != projection ||
+        s.x.min != view.x.range.min || s.x.max != view.x.range.max || s.y.min != view.y.range.min || s.y.max != view.y.range.max ||
+        s.logX != view.x.logarithmic || s.logY != view.y.logarithmic;
+    const double now = ImGui::GetTime();
+    if (reset) {
+        s.clear(); s.columns = s.rows = resolution; s.projection = projection;
+        s.x = view.x.range; s.y = view.y.range; s.logX = view.x.logarithmic; s.logY = view.y.logarithmic;
+        s.energy.assign(std::size_t(resolution) * resolution, 0); s.color = s.energy; s.scratch = s.energy;
+    }
+    const double elapsed = std::isfinite(s.time) ? std::clamp(now - s.time, 0., 60.) : 0;
+    s.time = now;
+    const float fade = std::isfinite(o.halfLife) && o.halfLife > 0 ? float(std::exp2(-elapsed / o.halfLife)) : 0;
+    if (fade == 0) s.received = false;
+    for (std::size_t n = 0; n < s.energy.size(); ++n) { s.energy[n] *= fade; s.color[n] *= fade; }
+    const float diffusion = std::isfinite(o.diffusion) ? float(std::clamp(elapsed * o.diffusion, 0., .24)) : 0;
+    auto diffuse = [&](std::vector<float> &buffer) {
+        if (diffusion == 0) return;
+        for (int y = 0; y < resolution; ++y) for (int x = 0; x < resolution; ++x) {
+            const auto at = std::size_t(y) * resolution + x;
+            const float neighbors = buffer[std::size_t(std::max(0, y - 1)) * resolution + x] +
+                buffer[std::size_t(std::min(resolution - 1, y + 1)) * resolution + x] +
+                buffer[std::size_t(y) * resolution + std::max(0, x - 1)] + buffer[std::size_t(y) * resolution + std::min(resolution - 1, x + 1)];
+            s.scratch[at] = buffer[at] * (1 - 4 * diffusion) + diffusion * neighbors;
+        }
+        buffer.swap(s.scratch);
+    };
+    diffuse(s.energy); diffuse(s.color);
+}
+void densityPoint(DensityState &s, const Rect &r, double u, double v, float weight, double color, float radius) {
+    if (!std::isfinite(u) || !std::isfinite(v) || !std::isfinite(weight) || weight <= 0 || u < 0 || u > 1 || v < 0 || v > 1) return;
+    const double x = u * (s.columns - 1), y = (1 - v) * (s.rows - 1);
+    const float pixels = std::isfinite(radius) ? std::clamp(dp(radius), dp(.5f), dp(32)) : dp(4);
+    const double rx = std::clamp(double(pixels * s.columns / r.size().x), .6, 6.), ry = std::clamp(double(pixels * s.rows / r.size().y), .6, 6.);
+    for (int row = std::max(0, int(std::floor(y - ry * 2))); row <= std::min(s.rows - 1, int(std::ceil(y + ry * 2))); ++row)
+        for (int column = std::max(0, int(std::floor(x - rx * 2))); column <= std::min(s.columns - 1, int(std::ceil(x + rx * 2))); ++column) {
+            const auto at = std::size_t(row) * s.columns + column;
+            const float amount = weight * float(std::exp(-2 * (std::pow((column - x) / rx, 2) + std::pow((row - y) / ry, 2))));
+            if (s.energy[at] + amount > 10000) continue;
+            s.energy[at] += amount; s.color[at] += amount * float(std::clamp(color, 0., 1.));
+        }
+}
+void densityDraw(const DensityState &s, const Rect &r, const PersistenceOptions &o, const ColorRamp &ramp, bool frequencyColor) {
+    auto *d = ImGui::GetWindowDrawList();
+    const float exposure = std::isfinite(o.exposure) ? std::clamp(o.exposure, 0.f, 64.f) : .2f;
+    for (int y = 0; y < s.rows; ++y) for (int x = 0; x < s.columns; ++x) {
+        const auto at = std::size_t(y) * s.columns + x;
+        const float intensity = 1 - std::exp(-s.energy[at] * exposure);
+        if (intensity < .002f) continue;
+        const auto color = sampleRamp(ramp, frequencyColor ? s.color[at] / std::max(1e-12f, s.energy[at]) : intensity);
+        d->AddRectFilled({r.min.x + r.size().x * x / s.columns, r.min.y + r.size().y * y / s.rows},
+            {r.min.x + r.size().x * (x + 1) / s.columns, r.min.y + r.size().y * (y + 1) / s.rows},
+            frequencyColor ? alpha(color, intensity) : color);
+    }
+}
+}
+PlotResult stereoDensity(const char *id, StereoDensityState &s, ArrayView<Point> points,
+                         std::uint64_t revision, ImVec2 size, const StereoDensityOptions &o) {
+    const auto &persistence = o.persistence;
+    s.view.x.logarithmic = s.view.y.logarithmic = false;
+    const auto available = ImGui::GetContentRegionAvail();
+    const float side = std::max(dp(1), std::min(size.x > 0 ? size.x : available.x + size.x, size.y > 0 ? size.y : available.y + size.y));
+    const auto point = [&](Point p) { return o.midSide ? Point{(p.x - p.y) * .5, (p.x + p.y) * .5} : p; };
+    const bool oversized = points.count > persistence.maxPoints;
+    PlotOptions options; options.axes = persistence.axes; options.navigation = persistence.navigation; options.legend = false;
+    options.drawBackground = [&](const Rect &r, const PlotState &view) {
+        densityPrepare(s.density, view, persistence, o.midSide ? 1 : 0);
+        if ((!s.density.received || s.density.revision != revision) && !oversized) {
+            for (std::size_t n = 0; n < points.count; ++n) {
+                const auto p = point(points[n]); densityPoint(s.density, r, view.x.fraction(p.x), view.y.fraction(p.y), 1, 0, persistence.pointRadius);
+            }
+            s.density.received = true; s.density.revision = revision;
+        }
+        densityDraw(s.density, r, persistence, persistence.ramp, false);
+        auto *d = ImGui::GetWindowDrawList();
+        const ImVec2 a{r.min.x, r.max.y}, b{r.max.x, r.min.y};
+        d->AddLine(a, b, alpha(palette().gridStrong, .6f), dp(1));
+        d->AddLine(r.min, r.max, alpha(palette().gridStrong, .6f), dp(1));
+        audioLabel(d, {r.min.x + dp(6), r.min.y + dp(4)}, o.midSide ? "S / M" : "L / R", palette().textDim);
+    };
+    auto result = plot(id, s.view, {}, {side, side}, options);
+    if (oversized) result.skippedSeries.push_back(1);
+    return result;
+}
+PlotResult spatialScope(const char *id, SpatialScopeState &s, ArrayView<SpatialSample> points,
+                        std::uint64_t revision, ImVec2 size, const SpatialScopeOptions &o) {
+    const auto &persistence = o.persistence;
+    s.view.x.logarithmic = false;
+    if (!s.view.y.range.valid() || (s.view.y.logarithmic && s.view.y.range.min <= 0)) s.view.y.range = {20, 20000};
+    const bool oversized = points.count > persistence.maxPoints;
+    const auto levels = o.levels.valid() ? o.levels : Range{-90, 0};
+    const Axis colorAxis{o.colorFrequency.valid() && o.colorFrequency.min > 0 ? o.colorFrequency : Range{20, 20000}, true};
+    PlotOptions options; options.axes = persistence.axes; options.navigation = persistence.navigation; options.legend = false;
+    options.formatX = [](double v) { return std::abs(v) < .001 ? tr("Center") : audioNumber(std::abs(v), v < 0 ? "L" : "R"); };
+    options.formatY = audioHz;
+    options.drawBackground = [&](const Rect &r, const PlotState &view) {
+        densityPrepare(s.density, view, persistence, o.colorByFrequency ? 3 : 2);
+        if ((!s.density.received || s.density.revision != revision) && !oversized) {
+            for (std::size_t n = 0; n < points.count; ++n) {
+                const auto p = points[n];
+                if (!std::isfinite(p.frequency) || p.frequency <= 0 || !std::isfinite(p.position) || std::abs(p.position) > 1 || !std::isfinite(p.level)) continue;
+                const float amount = audioFraction(p.level, levels);
+                densityPoint(s.density, r, view.x.fraction(p.position), view.y.fraction(p.frequency), amount * amount,
+                    colorAxis.fraction(p.frequency), persistence.pointRadius);
+            }
+            s.density.received = true; s.density.revision = revision;
+        }
+        densityDraw(s.density, r, persistence, o.colorByFrequency ? o.ramp : persistence.ramp, o.colorByFrequency);
+    };
+    auto result = plot(id, s.view, {}, size, options);
+    if (oversized) result.skippedSeries.push_back(1);
     return result;
 }
 

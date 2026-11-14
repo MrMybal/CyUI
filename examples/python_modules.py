@@ -9,13 +9,15 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'python'))
 from cyui_modules.common import Range
 from cyui_modules.canvas import Canvas, CanvasState
-from cyui_modules.plots import Axis, PlotState, Series, plot, histogram, heatmap
+from cyui_modules.plots import Axis, PlotState, Series, ColorRamp, plot, histogram, heatmap
 from cyui_modules.curves import CurvePoint, CurveState, curve_editor
 from cyui_modules.nodes import Node, Pin, Link, NodeState, node_editor
 from cyui_modules.timeline import Lane, Clip, Marker, TimelineState, timeline
 from cyui_modules.audioviews import make_peaks, WaveformState, waveform, spectrum, oscilloscope, stereo_scope
 from cyui_modules.audioviews import (SpectrogramData, spectrogram, LoudnessData, loudness,
     TruePeakChannel, true_peak, correlation, ResponseState, ResponsePoint, filter_response, DynamicsData, dynamics)
+from cyui_modules.audioviews import (SpectrogramHistory, SpectrogramState, SpectrumBand, band_spectrum,
+    PersistenceOptions, StereoDensityState, stereo_density, SpatialSample, SpatialScopeState, spatial_scope)
 from cyui_modules.audio import knob, fader, meter, MeterState
 from cyui_modules.code import CodeDocument, CodeViewState, CodeEditor, code_viewer
 from cyui_modules.diff import DiffDocument, DiffState, diff_viewer
@@ -79,6 +81,71 @@ class ModuleGallery:
         self.document = Document('# Shared documents\nA paragraph with **emphasis**, `code` and [a link](https://example.com).\n| A | B |\n|---|---|\n| 1 | 2 |\n```cpp\nfloat gain = 0.5;\n```')
         self.document_state, self.chat = DocumentState(), TranscriptState()
         self.gain, self.db, self.meter = .5, -12., MeterState()
+        self.spectral_ready = False
+
+    def draw_spectral(self):
+        from imgui_bundle import imgui as i
+        import cyui as c
+        if not self.spectral_ready:
+            self.stream = SpectrogramHistory(); self.stream.reset(96, 96, 1/12, Range(20, 20000), True)
+            self.stream_time = 0.
+            self.spectral_horizontal, self.spectral_vertical = SpectrogramState(), SpectrogramState()
+            self.spectral_color = 0
+            self.filled_view = PlotState(Axis(Range(20, 20000), True), Axis(Range(-90, 0)))
+            self.band_view = PlotState(Axis(Range(20, 20000), True), Axis(Range(-90, 0)))
+            self.spatial = SpatialScopeState(); self.densities = [StereoDensityState() for _ in range(3)]
+            self.spectral_ready = True
+            for _ in range(96): self.append_spectral()
+        self.append_spectral()
+        _, self.spectral_color = c.combo(c.tr_label('Color map'), self.spectral_color, ['Intensity', 'Frequency', 'Monochrome', 'Theme colors'], c.dp(150))
+        i.same_line()
+        changed, self.spectral_horizontal.follow_latest = i.checkbox(c.tr_label('Follow latest'), self.spectral_horizontal.follow_latest)
+        if changed: self.spectral_vertical.follow_latest = self.spectral_horizontal.follow_latest
+        i.same_line()
+        if i.small_button(c.tr_label('Clear persistence')):
+            self.spatial.density.clear()
+            for state in self.densities: state.density.clear()
+        ramp = ColorRamp(['intensity', 'frequency', 'monochrome', 'themed'][self.spectral_color])
+        def level(hz): return -72+36*math.exp(-(math.log(hz/150)/1.1)**2)+29*math.exp(-(math.log(hz/2200)/1.8)**2)
+        left, right = [], []
+        for n in range(240):
+            hz = 20*1000**(n/239)
+            left.append((hz, level(hz)+3*math.sin(n*.7))); right.append((hz, level(hz)-7+2*math.cos(n*.4)))
+        if i.begin_table('spectral', 2, i.TableFlags_.sizing_stretch_same):
+            i.table_next_column(); c.section_title(c.tr('Filled spectra and gradients'))
+            spectrum('filled', self.filled_view, [Series(1, left, 'L', 'area', baseline=-90, fill_alpha=.65, gradient=True, color_by_x=True, ramp=ColorRamp('frequency')), Series(2, right, 'R', 'area', 1, baseline=-90, fill_alpha=.65, gradient=True)], (0, 150))
+            i.table_next_column(); c.section_title(c.tr('Band spectrum and FFT overlay'))
+            bands = [SpectrumBand(Range(20*1000**(n/30), 20*1000**((n+1)/30)), level(20*1000**((n+.5)/30))-5) for n in range(30)]
+            band_spectrum('bands', self.band_view, bands, [Series(2, left, 'FFT', color_index=1)], (0, 150), label='RTA')
+            data = self.stream.view()
+            i.table_next_column(); c.section_title(c.tr('Vertical scrolling spectrogram'))
+            spectrogram('vertical', self.spectral_vertical, data, (0, 164), orientation='time_vertical', reverse_time=True, legend=True, ramp=ramp, color_by_frequency=self.spectral_color == 1)
+            i.table_next_column(); c.section_title(c.tr('Horizontal scrolling spectrogram'))
+            spectrogram('horizontal', self.spectral_horizontal, data, (0, 164), legend=True, ramp=ramp, color_by_frequency=self.spectral_color == 1)
+            i.table_next_column(); c.section_title(c.tr('Spatial stereo spectrogram'))
+            phase = i.get_time()
+            cloud = [SpatialSample(20*1000**(f/95), .15*math.sin(f*.08+phase)+(.025+.6*f/95)*math.sin(n*1.7+f*.3+phase), -12-f*.6+6*math.sin(f*.2+n)) for f in range(96) for n in range(8)]
+            spatial_scope('spatial', self.spatial, cloud, i.get_frame_count(), (0, 154), persistence=PersistenceOptions(resolution=128, exposure=.06, point_radius=3))
+            i.table_next_column(); c.section_title(c.tr('Persistent vectorscope'))
+            for k, name in enumerate(['Stereo', 'Mono', 'Out of phase']):
+                i.push_id(k); i.begin_group()
+                trace = []
+                for n in range(720):
+                    left_sample = .85*math.sin(n*.08+phase)
+                    right_sample = left_sample if k == 1 else (-left_sample if k == 2 else .75*math.sin(n*.08+phase+.75))
+                    trace.append((left_sample, right_sample))
+                stereo_density('density', self.densities[k], trace, i.get_frame_count(), (145, 134), persistence=PersistenceOptions(axes=False))
+                c.text_dim(c.tr(name)); i.end_group(); i.pop_id()
+                if k != 2: i.same_line(0, c.dp(12))
+            i.end_table()
+
+    def append_spectral(self):
+        fundamental = 180+70*math.sin(self.stream_time*.65)
+        column = []
+        for f in range(96):
+            hz = 20*1000**((f+.5)/96)
+            column.append(max([-98+3*math.sin(f*.8+self.stream_time)]+[-12-h*3-65*(math.log(hz/(fundamental*h))/.16)**2 for h in range(1, 16)]))
+        self.stream.append(column); self.stream_time += 1/12
 
     def draw_page(self, name):
         from imgui_bundle import imgui as i
@@ -142,6 +209,7 @@ class ModuleGallery:
                 self.coherence[0].label = c.tr('Correlation')
                 correlation('correlation', self.correlation_view, .72, self.coherence, (0, 126))
                 i.end_table()
+        elif name == 'Spectral displays': self.draw_spectral()
         elif name == 'Code':
             code_viewer('code', self.code_state, self.source, (0, 180))
             self.editor.draw('editor', (0, 300))
@@ -200,7 +268,7 @@ class ModuleGallery:
         help_requested = (i.is_window_focused(i.FocusedFlags_.root_and_child_windows)
                           and i.is_key_pressed(i.Key.f1, False)) or help_requested
         if i.begin_tab_bar('##modules', i.TabBarFlags_.fitting_policy_scroll):
-            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
+            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Spectral displays', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
                 shown, _ = i.begin_tab_item(c.tr_label(name))
                 if shown:
                     self.active_page = name
@@ -218,6 +286,7 @@ class ModuleGallery:
                      'Audio': ('module-recipes', 'audio-controls-and-prepared-signal-views'),
                      'Audio views': ('module-recipes', 'audio-controls-and-prepared-signal-views'),
                      'Audio analysis': ('module-recipes', 'audio-analysis-displays'),
+                     'Spectral displays': ('module-recipes', 'spectral-and-spatial-displays'),
                      'Inspector': ('module-recipes', 'inspector-and-assets'),
                      'Assets': ('module-recipes', 'inspector-and-assets'),
                      'Images': ('module-recipes', 'images-viewport-and-optional-3d-gizmo'),

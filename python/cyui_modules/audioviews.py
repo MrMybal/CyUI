@@ -1,9 +1,10 @@
 from dataclasses import dataclass, field
-from math import isfinite, isnan, exp, nan, ceil, inf, hypot
+from math import isfinite, isnan, exp, nan, ceil, inf, hypot, log, floor
 from copy import deepcopy
 from .common import Range, Edit, ui, zoom_range, take_wheel, wheel_taken
 from .canvas import Canvas, CanvasState
-from .plots import plot, Axis, PlotState, _navigate
+from .plots import plot, Axis, PlotState, Series, ColorRamp, sample_ramp, draw_color_scale, _navigate
+from array import array
 
 
 def make_peaks(samples, columns):
@@ -150,71 +151,299 @@ def _height(size):
     return max(c.dp(1), size[1] if size[1] > 0 else i.get_content_region_avail().y+size[1])
 
 
-def spectrogram(identifier, state, data, size=(0, 240), *, intensity=None, unit='dB', navigation=True, axes=True, max_cells=65536):
+@dataclass
+class SpectrogramState:
+    view: PlotState = field(default_factory=lambda: PlotState(Axis(Range(0, 8)), Axis(Range(20, 20000), True)))
+    follow_latest: bool = True
+    window: float = 8.
+
+
+class SpectrogramHistory:
+    """Bounded, uniform-hop ring. Append once per new frame; view() is chronological."""
+    def __init__(self):
+        self.capacity = self.bins = self.count = self.head = self.total = 0
+        self.hop = self.start = 0.; self.frequency = Range()
+        self.logarithmic = False; self.dirty = True
+        self.ring, self.ordered = array('f'), array('f')
+
+    def reset(self, capacity, bins, hop_seconds, frequency, logarithmic_bins=False, start=0.):
+        if capacity <= 0 or bins <= 0 or capacity*bins > 4194304 or not isfinite(hop_seconds) or hop_seconds <= 0 or not frequency.valid or (logarithmic_bins and frequency.minimum <= 0) or not isfinite(start):
+            return False
+        self.ring = array('f', [nan])*(capacity*bins)
+        self.capacity, self.bins, self.hop = capacity, bins, hop_seconds
+        self.frequency, self.logarithmic = deepcopy(frequency), logarithmic_bins
+        self.clear(start); return True
+
+    def clear(self, start=0.):
+        self.start = start if isfinite(start) else 0.
+        self.count = self.head = self.total = 0
+        self.ordered = array('f'); self.dirty = True
+
+    def append(self, values):
+        if not self.capacity or len(values) != self.bins or not isfinite(self.start+(self.total+1)*self.hop): return False
+        try: incoming = array('f', values)
+        except (OverflowError, ValueError): return False
+        at = self.head*self.bins
+        self.ring[at:at+self.bins] = incoming
+        self.head = (self.head+1)%self.capacity; self.count = min(self.capacity, self.count+1)
+        self.total += 1; self.dirty = True
+        return True
+
+    def view(self):
+        if self.dirty:
+            self.ordered = array('f')
+            first = (self.head+self.capacity-self.count)%max(1, self.capacity)
+            for n in range(self.count):
+                at = ((first+n)%self.capacity)*self.bins
+                self.ordered.extend(self.ring[at:at+self.bins])
+            self.dirty = False
+        return SpectrogramData(self.ordered, self.count, self.bins, Range(self.start+(self.total-self.count)*self.hop, self.start+self.total*self.hop), self.frequency, self.logarithmic)
+
+
+def spectrogram(identifier, state, data, size=(0, 240), *, intensity=None, unit='dB', navigation=True, axes=True, max_cells=65536, orientation='time_horizontal', reverse_time=False, legend=False, ramp=None, color_by_frequency=False):
     i, c = ui()
-    intensity = intensity or Range(-100, 0)
+    if isinstance(state, SpectrogramState):
+        if state.follow_latest and data.time.valid:
+            window = state.window if isfinite(state.window) and state.window > 0 else 8.
+            state.view.x.view = Range(max(data.time.minimum, data.time.maximum-window), data.time.maximum)
+        result = spectrogram(identifier, state.view, data, size, intensity=intensity, unit=unit, navigation=navigation, axes=axes, max_cells=max_cells, orientation=orientation, reverse_time=reverse_time, legend=legend, ramp=ramp, color_by_frequency=color_by_frequency)
+        if result['view_changed']: state.follow_latest = False
+        if result['hovered'] and navigation and i.is_mouse_double_clicked(0): state.follow_latest = True
+        return result
+    if orientation not in ('time_horizontal', 'time_vertical'): raise ValueError('Unknown spectrogram orientation')
+    intensity, ramp = intensity or Range(-100, 0), ramp or ColorRamp()
     result = dict(valid=False, hovered=False, clicked=False, view_changed=False, frame=0, bin=0, mouse=(0., 0.), intensity=nan)
     with Canvas(identifier, CanvasState(), size, False, False) as f:
+        top = f.top; bottom = (f.bottom[0]-c.dp(76), f.bottom[1]) if legend and f.size[0] > c.dp(150) else f.bottom
+        legend_visible = bottom != f.bottom
+        room = bottom[0]-top[0], bottom[1]-top[1]
+        result['bounds'] = top, bottom
         result['valid'] = (data.frames > 0 and data.bins > 0 and data.frames <= len(data.values)//data.bins
                            and data.time.valid and data.frequency.valid and intensity.valid
                            and (not data.logarithmic_bins or data.frequency.minimum > 0))
-        if not result['valid']:
-            return result
-        if not state.x.view.valid:
-            state.x.view = deepcopy(data.time)
-        if not state.y.view.valid or (state.y.logarithmic and state.y.view.minimum <= 0):
-            state.y.view = deepcopy(data.frequency)
+        if not result['valid']: return result
+        if not state.x.view.valid: state.x.view = deepcopy(data.time)
+        if not state.y.view.valid or (state.y.logarithmic and state.y.view.minimum <= 0): state.y.view = deepcopy(data.frequency)
         state.x.logarithmic = False
         io, p, d = i.get_io(), c.palette(), f.draw
-        def mouse():
-            return state.x.value((io.mouse_pos.x-f.top[0])/f.size[0]), state.y.value(1-(io.mouse_pos.y-f.top[1])/f.size[1])
+        horizontal = orientation == 'time_horizontal'
+        hovered = f.hovered and top[0] <= io.mouse_pos.x <= bottom[0] and top[1] <= io.mouse_pos.y <= bottom[1]
+        def semantic(x, y):
+            t = x if horizontal else 1-y
+            return state.x.value(1-t if reverse_time else t), state.y.value(1-y if horizontal else x)
+        def mouse(): return semantic((io.mouse_pos.x-top[0])/room[0], (io.mouse_pos.y-top[1])/room[1])
         mx, my = mouse()
         if navigation:
-            if f.hovered and i.is_mouse_clicked(2): state.dragging = True
+            if hovered and i.is_mouse_clicked(2): state.dragging = True
             if not i.is_mouse_down(2): state.dragging = False
             before = deepcopy((state.x.view, state.y.view))
             if state.dragging:
-                _navigate(state.x, -io.mouse_delta.x/f.size[0], mx, 1)
-                _navigate(state.y, io.mouse_delta.y/f.size[1], my, 1)
-            if f.hovered and io.mouse_wheel and not wheel_taken():
+                shift_time = (-io.mouse_delta.x/room[0] if horizontal else io.mouse_delta.y/room[1])*(-1 if reverse_time else 1)
+                _navigate(state.x, shift_time, mx, 1)
+                _navigate(state.y, io.mouse_delta.y/room[1] if horizontal else -io.mouse_delta.x/room[0], my, 1)
+            if hovered and io.mouse_wheel and not wheel_taken():
                 _navigate(state.x, 0, mx, exp(-io.mouse_wheel*.15))
                 if io.key_ctrl: _navigate(state.y, 0, my, exp(-io.mouse_wheel*.15))
                 take_wheel()
             result['view_changed'] = before != (state.x.view, state.y.view)
-        else:
-            state.dragging = False
+        else: state.dragging = False
         result['mouse'] = mouse()
         time, frequency = Axis(data.time), Axis(data.frequency, data.logarithmic_bins)
-        def index(fraction, count):
-            return min(count-1, int(max(0., min(1., fraction))*count))
+        frequency_color = Axis(data.frequency, data.frequency.minimum > 0)
+        def index(fraction, count): return min(count-1, int(max(0., min(1., fraction))*count))
         budget = max(1, min(262144, int(max_cells)))
-        nx = max(1, min(data.frames, budget, 4096, ceil(f.size[0])))
-        ny = max(1, min(data.bins, budget//nx, 4096, ceil(f.size[1])))
+        nx = max(1, min(data.frames if horizontal else data.bins, budget, 4096, ceil(room[0])))
+        ny = max(1, min(data.bins if horizontal else data.frames, budget//nx, 4096, ceil(room[1])))
+        d.push_clip_rect(top, bottom, True)
         for y in range(ny):
-            fy = frequency.fraction(state.y.value(1-(y+.5)/ny))
-            if not isfinite(fy) or not 0 <= fy <= 1: continue
-            row = index(fy, data.bins)
             for x in range(nx):
-                fx = time.fraction(state.x.value((x+.5)/nx))
-                if not isfinite(fx) or not 0 <= fx <= 1: continue
-                value = data.values[index(fx, data.frames)*data.bins+row]
+                point = semantic((x+.5)/nx, (y+.5)/ny)
+                fx, fy = time.fraction(point[0]), frequency.fraction(point[1])
+                if not isfinite(fx) or not isfinite(fy) or not (0 <= fx <= 1 and 0 <= fy <= 1): continue
+                value = data.values[index(fx, data.frames)*data.bins+index(fy, data.bins)]
                 if not isfinite(value): continue
-                t = _fraction(value, intensity)
-                color = c.mix(p.bg0, p.info, t*2) if t < .5 else (c.mix(p.info, p.accent, (t-.5)/.3) if t < .8 else c.mix(p.accent, p.warning, (t-.8)/.2))
-                d.add_rect_filled((f.top[0]+f.size[0]*x/nx, f.top[1]+f.size[1]*y/ny), (f.top[0]+f.size[0]*(x+1)/nx, f.top[1]+f.size[1]*(y+1)/ny), color)
+                strength = _fraction(value, intensity)
+                color = sample_ramp(ramp, frequency_color.fraction(point[1]) if color_by_frequency else strength)
+                d.add_rect_filled((top[0]+room[0]*x/nx, top[1]+room[1]*y/ny), (top[0]+room[0]*(x+1)/nx, top[1]+room[1]*(y+1)/ny), c.alpha(color, strength) if color_by_frequency else color)
         if axes:
-            for n in range(5):
-                _label(d, (f.top[0]+c.dp(4), max(f.top[1]+c.dp(3), f.bottom[1]-f.size[1]*n/4-i.get_font_size()-c.dp(3))), _hz(state.y.value(n/4)), p.textDim)
-            _label(d, (f.top[0]+c.dp(65), f.bottom[1]-i.get_font_size()-c.dp(3)), _number(state.x.view.minimum, 's')+' / '+_number(state.x.view.maximum, 's'), p.textDim)
-            _label(d, (f.top[0]+c.dp(65), f.top[1]+c.dp(3)), _number(intensity.minimum, unit)+' / '+_number(intensity.maximum, unit), p.textDim)
+            for tick in range(5):
+                part = tick/4; low, left = semantic(part, 1), semantic(0, 1-part)
+                x_text = _number(low[0], 's') if horizontal else _hz(low[1])
+                y_text = _hz(left[1]) if horizontal else _number(left[0], 's')
+                width = i.calc_text_size(x_text).x
+                _label(d, (max(top[0]+c.dp(3), min(max(top[0]+c.dp(3), bottom[0]-width-c.dp(3)), top[0]+part*room[0]-width/2)), bottom[1]-i.get_font_size()-c.dp(3)), x_text, p.textDim)
+                if tick: _label(d, (top[0]+c.dp(4), max(top[1]+c.dp(3), min(max(top[1]+c.dp(3), bottom[1]-i.get_font_size()-c.dp(3)), bottom[1]-part*room[1]-i.get_font_size()/2))), y_text, p.textDim)
         fx, fy = time.fraction(result['mouse'][0]), frequency.fraction(result['mouse'][1])
-        result['hovered'] = f.hovered and isfinite(fx) and isfinite(fy) and 0 <= fx <= 1 and 0 <= fy <= 1
+        result['hovered'] = hovered and isfinite(fx) and isfinite(fy) and 0 <= fx <= 1 and 0 <= fy <= 1
         if result['hovered']:
             result.update(frame=index(fx, data.frames), bin=index(fy, data.bins), clicked=i.is_mouse_clicked(0))
             result['intensity'] = data.values[result['frame']*data.bins+result['bin']]
-            d.add_line((io.mouse_pos.x, f.top[1]), (io.mouse_pos.x, f.bottom[1]), c.alpha(p.text, .4), c.dp(1))
-            d.add_line((f.top[0], io.mouse_pos.y), (f.bottom[0], io.mouse_pos.y), c.alpha(p.text, .4), c.dp(1))
+            d.add_line((io.mouse_pos.x, top[1]), (io.mouse_pos.x, bottom[1]), c.alpha(p.text, .4), c.dp(1))
+            d.add_line((top[0], io.mouse_pos.y), (bottom[0], io.mouse_pos.y), c.alpha(p.text, .4), c.dp(1))
             i.set_tooltip(f"{_number(result['mouse'][0], 's')} | {_hz(result['mouse'][1])} | {_number(result['intensity'], unit)}")
+        d.pop_clip_rect()
+        if legend_visible: draw_color_scale((bottom[0]+c.dp(8), top[1]+c.dp(6)), (bottom[0]+c.dp(20), bottom[1]-c.dp(6)), ramp, data.frequency if color_by_frequency else intensity, 'Hz' if color_by_frequency else unit, logarithmic=color_by_frequency and data.frequency.minimum > 0)
+    return result
+
+
+@dataclass
+class SpectrumBand:
+    frequency: Range
+    level: float = nan
+
+
+def band_spectrum(identifier, state, bands, overlays=(), size=(0, 240), *, floor=-90., series_id=1, label='', gradient=True, color_by_frequency=True, ramp=None, **plot_options):
+    state.x.logarithmic, state.y.logarithmic = True, False
+    if not state.x.view.valid or state.x.view.minimum <= 0: state.x.view = Range(20, 20000)
+    oversized = len(bands) > plot_options.get('max_points', 65536)
+    points = [] if oversized else [(exp((log(b.frequency.minimum)+log(b.frequency.maximum))/2) if b.frequency.valid and b.frequency.minimum > 0 else nan, b.level) for b in bands]
+    widths = [] if oversized else [b.frequency for b in bands]
+    bars = Series(series_id, points, label, 'bars', baseline=floor if isfinite(floor) else -90, fill_alpha=.85, gradient=gradient, color_by_x=color_by_frequency, ramp=ramp or ColorRamp('frequency'), bands=widths)
+    plot_options.setdefault('format_x', _hz); plot_options.setdefault('format_y', lambda v: _number(v, 'dB'))
+    result = plot(identifier, state, [bars]+list(overlays), size, **plot_options)
+    if oversized: result['skipped'].append(series_id)
+    return result
+
+
+@dataclass
+class DensityState:
+    energy: object = field(default_factory=lambda: array('f'))
+    color: object = field(default_factory=lambda: array('f'))
+    scratch: object = field(default_factory=lambda: array('f'))
+    columns: int = 0
+    rows: int = 0
+    signature: tuple = ()
+    received: bool = False
+    revision: int = 0
+    time: float = nan
+
+    def clear(self):
+        self.energy, self.color, self.scratch = array('f'), array('f'), array('f')
+        self.columns = self.rows = 0; self.signature = (); self.received = False; self.time = nan
+
+
+@dataclass
+class PersistenceOptions:
+    resolution: int = 96
+    half_life: float = .5
+    exposure: float = .2
+    point_radius: float = 4.
+    diffusion: float = 2.
+    max_points: int = 65536
+    ramp: ColorRamp = field(default_factory=lambda: ColorRamp('intensity'))
+    axes: bool = True
+    navigation: bool = True
+
+
+@dataclass
+class StereoDensityState:
+    view: PlotState = field(default_factory=lambda: PlotState(Axis(Range(-1, 1)), Axis(Range(-1, 1))))
+    density: DensityState = field(default_factory=DensityState)
+
+
+@dataclass
+class SpatialSample:
+    frequency: float = 1000.
+    position: float = 0.
+    level: float = -30.
+
+
+@dataclass
+class SpatialScopeState:
+    view: PlotState = field(default_factory=lambda: PlotState(Axis(Range(-1, 1)), Axis(Range(20, 20000), True)))
+    density: DensityState = field(default_factory=DensityState)
+
+
+def _density_prepare(state, view, options, projection):
+    i, _ = ui(); resolution = max(16, min(256, options.resolution))
+    signature = (resolution, projection, view.x.view.minimum, view.x.view.maximum, view.y.view.minimum, view.y.view.maximum, view.x.logarithmic, view.y.logarithmic)
+    now = i.get_time()
+    if signature != state.signature:
+        state.clear(); state.columns = state.rows = resolution; state.signature = signature
+        state.energy = array('f', [0.])*(resolution*resolution); state.color = array('f', state.energy); state.scratch = array('f', state.energy)
+    elapsed = max(0., min(60., now-state.time)) if isfinite(state.time) else 0.
+    state.time = now
+    fade = 2**(-elapsed/options.half_life) if isfinite(options.half_life) and options.half_life > 0 else 0.
+    if fade == 0: state.received = False
+    for n in range(len(state.energy)): state.energy[n] *= fade; state.color[n] *= fade
+    diffusion = max(0., min(.24, elapsed*options.diffusion)) if isfinite(options.diffusion) else 0.
+    if diffusion:
+        for name in ('energy', 'color'):
+            buffer = getattr(state, name)
+            for y in range(resolution):
+                for x in range(resolution):
+                    at = y*resolution+x
+                    neighbors = buffer[max(0, y-1)*resolution+x]+buffer[min(resolution-1, y+1)*resolution+x]+buffer[y*resolution+max(0, x-1)]+buffer[y*resolution+min(resolution-1, x+1)]
+                    state.scratch[at] = buffer[at]*(1-4*diffusion)+diffusion*neighbors
+            setattr(state, name, state.scratch); state.scratch = buffer
+
+
+def _density_point(state, frame, u, v, weight, color, radius):
+    _, c = ui()
+    if not all(map(isfinite, (u, v, weight))) or weight <= 0 or not (0 <= u <= 1 and 0 <= v <= 1): return
+    x, y = u*(state.columns-1), (1-v)*(state.rows-1)
+    pixels = max(c.dp(.5), min(c.dp(32), c.dp(radius))) if isfinite(radius) else c.dp(4)
+    rx, ry = max(.6, min(6, pixels*state.columns/frame.size[0])), max(.6, min(6, pixels*state.rows/frame.size[1]))
+    for row in range(max(0, floor(y-ry*2)), min(state.rows-1, ceil(y+ry*2))+1):
+        for column in range(max(0, floor(x-rx*2)), min(state.columns-1, ceil(x+rx*2))+1):
+            at = row*state.columns+column
+            amount = weight*exp(-2*(((column-x)/rx)**2+((row-y)/ry)**2))
+            if state.energy[at]+amount > 10000: continue
+            state.energy[at] += amount; state.color[at] += amount*max(0., min(1., color))
+
+
+def _density_draw(state, frame, options, ramp, frequency_color):
+    i, c = ui(); d = frame.draw
+    exposure = max(0., min(64., options.exposure)) if isfinite(options.exposure) else .2
+    for y in range(state.rows):
+        for x in range(state.columns):
+            at = y*state.columns+x; intensity = 1-exp(-state.energy[at]*exposure)
+            if intensity < .002: continue
+            color = sample_ramp(ramp, state.color[at]/max(1e-12, state.energy[at]) if frequency_color else intensity)
+            d.add_rect_filled((frame.top[0]+frame.size[0]*x/state.columns, frame.top[1]+frame.size[1]*y/state.rows), (frame.top[0]+frame.size[0]*(x+1)/state.columns, frame.top[1]+frame.size[1]*(y+1)/state.rows), c.alpha(color, intensity) if frequency_color else color)
+
+
+def stereo_density(identifier, state, points, revision, size=(0, 220), *, persistence=None, mid_side=True):
+    i, c = ui(); options = persistence or PersistenceOptions()
+    state.view.x.logarithmic = state.view.y.logarithmic = False
+    available = i.get_content_region_avail()
+    side = max(c.dp(1), min(size[0] if size[0] > 0 else available.x+size[0], size[1] if size[1] > 0 else available.y+size[1]))
+    oversized = len(points) > options.max_points
+    def background(frame, view):
+        _density_prepare(state.density, view, options, int(mid_side))
+        if (not state.density.received or state.density.revision != revision) and not oversized:
+            for left, right in points:
+                x, y = ((left-right)/2, (left+right)/2) if mid_side else (left, right)
+                _density_point(state.density, frame, view.x.fraction(x), view.y.fraction(y), 1., 0., options.point_radius)
+            state.density.received, state.density.revision = True, revision
+        _density_draw(state.density, frame, options, options.ramp, False)
+        frame.draw.add_line((frame.top[0], frame.bottom[1]), (frame.bottom[0], frame.top[1]), c.alpha(c.palette().gridStrong, .6), c.dp(1))
+        frame.draw.add_line(frame.top, frame.bottom, c.alpha(c.palette().gridStrong, .6), c.dp(1))
+        _label(frame.draw, (frame.top[0]+c.dp(6), frame.top[1]+c.dp(4)), 'S / M' if mid_side else 'L / R', c.palette().textDim)
+    result = plot(identifier, state.view, [], (side, side), axes=options.axes, navigation=options.navigation, legend=False, draw_background=background)
+    if oversized: result['skipped'].append(1)
+    return result
+
+
+def spatial_scope(identifier, state, points, revision, size=(0, 240), *, persistence=None, levels=None, color_frequency=None, color_by_frequency=True, ramp=None):
+    i, c = ui(); options = persistence or PersistenceOptions()
+    state.view.x.logarithmic = False
+    if not state.view.y.view.valid or (state.view.y.logarithmic and state.view.y.view.minimum <= 0): state.view.y.view = Range(20, 20000)
+    levels = levels if levels and levels.valid else Range(-90, 0)
+    color_frequency = color_frequency if color_frequency and color_frequency.valid and color_frequency.minimum > 0 else Range(20, 20000)
+    color_axis = Axis(color_frequency, True); ramp = ramp or ColorRamp('frequency')
+    oversized = len(points) > options.max_points
+    def background(frame, view):
+        _density_prepare(state.density, view, options, 3 if color_by_frequency else 2)
+        if (not state.density.received or state.density.revision != revision) and not oversized:
+            for sample in points:
+                if not all(map(isfinite, (sample.frequency, sample.position, sample.level))) or sample.frequency <= 0 or abs(sample.position) > 1: continue
+                amount = _fraction(sample.level, levels)
+                _density_point(state.density, frame, view.x.fraction(sample.position), view.y.fraction(sample.frequency), amount*amount, color_axis.fraction(sample.frequency), options.point_radius)
+            state.density.received, state.density.revision = True, revision
+        _density_draw(state.density, frame, options, ramp if color_by_frequency else options.ramp, color_by_frequency)
+    result = plot(identifier, state.view, [], size, axes=options.axes, navigation=options.navigation, legend=False, format_x=lambda v: c.tr('Center') if abs(v) < .001 else _number(abs(v), 'L' if v < 0 else 'R'), format_y=_hz, draw_background=background)
+    if oversized: result['skipped'].append(1)
     return result
 
 

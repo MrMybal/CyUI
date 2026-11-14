@@ -61,6 +61,10 @@ AudioViews also includes a spectrogram, LUFS/LRA and true-peak displays, correla
 
 ![Audio analysis: spectrogram, LUFS, EQ and phase, dynamics, true peak and correlation](docs/screenshots/audio-analysis.png)
 
+The Spectral displays tab adds filled/gradient spectra, frequency-band bars with a dB floor, scrolling spectrograms with color legends, a spatial stereo view and persistent vectorscopes.
+
+![Spectral displays: filled spectra, RTA bands, scrolling spectrograms, spatial stereo and persistent vectorscopes](docs/screenshots/audio-spectral.png)
+
 #### Blueprint-style node graphs
 
 Colored pins, curved connections, selection, dragging, pan/zoom and automatic

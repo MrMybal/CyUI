@@ -4,7 +4,7 @@ title: Module API and recipes
 description: Module API and recipes for CyUI integrators.
 section: API
 order: 21
-revision: 2
+revision: 3
 ---
 
 All headers below use the `cyui/` prefix. Link the corresponding target described
@@ -188,6 +188,103 @@ Pass display options as keyword arguments. Results use snake_case dictionary key
 The `gain` curves argument uses a different name from the `gains=Range(-24, 24)`
 editing bounds. `dynamics` expects a linear dB plot view, e.g. both axes -60..0;
 `DynamicsOptions.reduction` / Python `reduction=` sets its attenuation scale.
+
+### Spectral and spatial displays {#spectral-and-spatial-displays}
+
+The **Spectral displays** gallery tab (23) demonstrates filled spectra, frequency
+bands, scrolling spectrograms, spatial stereo density and persistent vectorscopes.
+All remain in AudioViews/Plots with no additional dependency.
+
+| API / setting | Purpose |
+| --- | --- |
+| `PlotStyle::area` / Python `Series(style="area")` | Area under a curve with transparency, vertical fade and optional frequency coloring |
+| `PlotSeries.bands` / Python `Series.bands` | Explicit X edges for bars, including logarithmic frequency bands |
+| `bandSpectrum` / `band_spectrum` | Frequency bands with dB floor, colored/gradient bars and overlaid FFT curves |
+| `ColorRamp`, `sampleRamp`, `drawColorScale` | Shared palette ramps, interpolation and labeled vertical/horizontal color scales |
+| `SpectrogramOptions.orientation/reverseTime/legend/ramp` | Both axis orientations, both time directions and optional intensity legend |
+| `SpectrogramHistory` and `SpectrogramState` | Bounded scrolling history and pausable latest-frame tracking |
+| `stereoDensity` / `stereo_density` | L/R input displayed as an XY or normalized M/S vectorscope with glow and persistence |
+| `spatialScope` / `spatial_scope` | Frequency × stereo position density, colored by frequency or intensity |
+
+**Filled curves and bands.** Set `baseline` in data units, e.g. -90 dB, together
+with `fillAlpha` (0..1), `gradient` and `colorByX`. NaN samples break the filled
+curve. Supply increasing frequency points for an ordinary spectral area.
+`bands`, when nonempty, must have one finite, increasing-edge `Range` per point.
+`bandSpectrum` takes `SpectrumBand{frequencyRange, levelDb}` plus optional overlay
+series; its default floor is -90 dB. `BandSpectrumOptions` supplies seriesId, label,
+ramp, gradient, colorByFrequency and ordinary PlotOptions. Keep overlay IDs distinct
+from the band series ID. `PlotResult.series/index` identifies the nearest sample;
+oversized bands are reported in `skippedSeries`, without preparing an unbounded array.
+
+**Color scales.** `RampStyle` offers themed, intensity, frequency and monochrome
+ramps; all built-in colors come from the active semantic palette. Intensity goes
+from a quiet background toward hot levels; frequency grading progresses from low
+to high frequencies. `ColorRamp.colors` optionally borrows 1..64 evenly spaced
+palette colors. Invalid counts fall back to the selected built-in ramp.
+`sampleRamp` clamps fractions and interpolates; missing fractions select its low end.
+`drawColorScale(rect, ramp, range, unit, vertical, logarithmic)` draws inside the current canvas
+clip without reserving an item. A vertical scale has its minimum at the bottom; `logarithmic=true` positions its frequency ticks logarithmically.
+
+**Scrolling spectrograms.** `timeHorizontal` is the default; `timeVertical` places
+frequency horizontally. `reverseTime` reverses only the time direction. State axes
+remain semantic **X=time, Y=frequency** in every orientation, and mouse results
+remain time/Hz. `colorByFrequency=true` uses frequency for hue and intensity for opacity; its legend then shows Hz. `SpectrogramResult.bounds` excludes the optional color legend,
+so legend pixels cannot select a data cell. `legend` defaults to false for existing
+layouts, and hides itself when the widget is too narrow to keep the data readable.
+
+```cpp
+cyui::SpectrogramHistory history; // persist; reset once when the stream format changes
+history.reset(256, 128, 0.01, {20, 20000}, true); // capacity, bins, hop seconds, Hz, log bins
+// Once per new analysis frame, outside draw: history.append(preparedBins);
+cyui::SpectrogramState state; // persist per panel
+state.window = 2.0;
+cyui::SpectrogramOptions options;
+options.orientation = cyui::SpectrogramOrientation::timeVertical;
+options.reverseTime = true;
+options.legend = true;
+options.ramp.style = cyui::RampStyle::intensity;
+cyui::spectrogram("##history", state, history.view(), cyui::dp(0, 240), options);
+```
+
+History validates its format, keeps chronological order through wraparound, and
+accepts only a complete column with the configured bin count. The fixed hop defines
+cell coverage from the configured start time; append NaN columns for missing frames.
+Invalid resets/appends preserve the preceding state. Capacity × bins is capped at
+4,194,304 float cells (up to 32 MiB for ring plus ordered snapshot). `view()` caches
+a borrowed ordered snapshot until data changes. Synchronize producer/UI access in
+the host. `clear(start)` starts a new time origin. The state overload follows the
+latest `window` seconds; zoom/pan pauses following, double-click resumes it, or set
+`followLatest=true` explicitly. The original PlotState overload remains manual.
+
+**Persistence and spatial views.** Supply `stereoDensity` with prepared L/R points
+and a revision that changes only with new input. Its default M/S projection is
+S=(L-R)/2 and M=(L+R)/2; `midSide=false` displays L/R directly. It reserves a square.
+`spatialScope` takes `SpatialSample{frequencyHz, normalizedPan, levelDb}` with pan
+in [-1,+1]. Its view is pan × frequency, logarithmic in frequency by default.
+`SpatialScopeOptions.levels` normalizes level intensity; `colorFrequency` sets the
+frequency grading domain, independently of zoom. `colorByFrequency=false` selects
+intensity grading instead. Invalid/nonfinite samples are skipped.
+
+Each state owns a `DensityState` with `clear()`. Repeated input revisions decay
+without reinjection; new revisions add energy. `PersistenceOptions` controls
+resolution (96 by default, clamped to 16..256), halfLife (0.5 seconds), exposure,
+pointRadius (design pixels), diffusion (per second), axes/navigation, ramp and
+maxPoints (65,536). A nonpositive half-life shows only the current frame. View,
+projection and resolution changes clear incompatible history. Oversized input is
+reported as series 1 in `skippedSeries`. Use one state per panel/ImGui context.
+Dense plots require the renderer's normal ImGui VtxOffset support; reduce point,
+cell or density budgets for renderers with a smaller index budget.
+
+Python mirrors these models with snake_case fields. Use `ColorRamp('intensity')`,
+`spectrogram(..., orientation='time_vertical', reverse_time=True, legend=True)`,
+`band_spectrum(..., floor=-90)`, `stereo_density(..., revision, persistence=options)`
+and `spatial_scope(..., revision, persistence=options)`. `PersistenceOptions` is a
+dataclass. `draw_color_scale(top, bottom, ramp, values, unit='', vertical=True, logarithmic=False)`
+uses screen coordinates within the current clip.
+
+```image
+{"id":"audio-spectral","src":"assets/audio-spectral.webp","alt":"Filled spectra, RTA bands, scrolling spectrograms, spatial stereo cloud and persistent stereo/mono/opposite-phase vectorscopes","controls":"minimal"}
+```
 
 ### Code, editing and Git-style diff presentation {#code-editing-and-git-style-diff-presentation}
 

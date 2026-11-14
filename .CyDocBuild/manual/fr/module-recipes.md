@@ -4,7 +4,7 @@ title: API et recettes des modules
 description: Données, gestes et retours d’action des vues spécialisées.
 section: API
 order: 21
-sourceRevision: 2
+sourceRevision: 3
 ---
 
 Les en-têtes utilisent le préfixe `cyui/` ; liez leurs [cibles correspondantes](doc:modules). Gallery.cpp, onglets 4–19, contient les exemples. Les callbacks et superpositions de l’hôte suivent les règles palette/dp/style.
@@ -147,6 +147,108 @@ snake_case ; `filter_response(...)["points"]` est un `Edit` avec `.phase`, `.val
 `gains=Range(-24, 24)`. Pour `dynamics`, initialisez les deux axes en dB linéaires,
 par exemple -60..0 ; `DynamicsOptions.reduction` / Python `reduction=` règle
 l’échelle d’atténuation.
+
+### Vues spectrales et spatiales {#spectral-and-spatial-displays}
+
+L’onglet **Vues spectrales** (23) présente spectres remplis, bandes fréquentielles,
+spectrogrammes défilants, densité spatiale stéréo et vectorscopes à persistance.
+Ces composants restent dans AudioViews/Plots sans dépendance supplémentaire.
+
+| API / réglage | Utilisation |
+| --- | --- |
+| `PlotStyle::area` / Python `Series(style="area")` | Surface sous une courbe, transparence, dégradé vertical et couleurs fréquentielles optionnelles |
+| `PlotSeries.bands` / Python `Series.bands` | Limites X explicites des barres, dont les bandes fréquentielles logarithmiques |
+| `bandSpectrum` / `band_spectrum` | Bandes avec plancher dB, barres colorées/dégradées et courbes FFT superposées |
+| `ColorRamp`, `sampleRamp`, `drawColorScale` | Palettes partagées, interpolation et échelles colorées légendées verticales/horizontales |
+| `SpectrogramOptions.orientation/reverseTime/legend/ramp` | Deux orientations, deux sens temporels et légende d’intensité optionnelle |
+| `SpectrogramHistory` et `SpectrogramState` | Historique défilant borné et suivi des dernières trames avec mise en pause |
+| `stereoDensity` / `stereo_density` | Entrée L/R affichée en vectorscope XY ou M/S normalisé, avec lueur et persistance |
+| `spatialScope` / `spatial_scope` | Densité fréquence × position stéréo, colorée par fréquence ou intensité |
+
+**Courbes remplies et bandes.** Réglez `baseline` en unités de données, par exemple
+-90 dB, ainsi que `fillAlpha` (0..1), `gradient` et `colorByX`. Les valeurs NaN
+interrompent le remplissage. Utilisez des fréquences croissantes pour une aire
+spectrale ordinaire. `bands`, si non vide, contient une `Range` à limites finies et
+croissantes par point. `bandSpectrum` reçoit `SpectrumBand{plageHz, niveauDb}` et
+des séries superposées optionnelles ; son plancher vaut -90 dB par défaut.
+`BandSpectrumOptions` règle seriesId, label, ramp, gradient, colorByFrequency et les
+PlotOptions ordinaires. Donnez des IDs distincts aux superpositions et aux bandes.
+`PlotResult.series/index` désigne l’échantillon le plus proche ; les bandes trop
+nombreuses sont signalées dans `skippedSeries` sans préparer un tableau non borné.
+
+**Palettes et légendes.** `RampStyle` propose themed, intensity, frequency et
+monochrome, entièrement dérivés de la palette sémantique active. L’intensité va du
+fond discret vers les niveaux chauds ; la coloration fréquentielle suit les basses
+puis les hautes fréquences. `ColorRamp.colors` emprunte optionnellement 1..64 couleurs
+de palette espacées régulièrement. Une taille incorrecte utilise la palette prédéfinie.
+`sampleRamp` borne et interpole la position ; une position manquante choisit le bas.
+`drawColorScale(rect, ramp, range, unit, vertical, logarithmic)` dessine dans le clip courant sans
+réserver d’item. Une légende verticale place son minimum en bas ; `logarithmic=true` positionne ses graduations fréquentielles logarithmiquement.
+
+**Spectrogrammes défilants.** `timeHorizontal` est l’orientation par défaut ;
+`timeVertical` place les fréquences horizontalement. `reverseTime` inverse uniquement
+le sens temporel. `colorByFrequency=true` colore selon la fréquence et règle l’opacité selon l’intensité ; la légende indique alors les Hz. Les axes de l’état restent **X=temps, Y=fréquence**, quelle que soit
+l’orientation, et la souris renvoie toujours temps/Hz. `SpectrogramResult.bounds`
+exclut la légende colorée ; celle-ci ne sélectionne donc aucune cellule. `legend`
+vaut false par défaut pour préserver les dispositions existantes et s’efface si
+le composant est trop étroit pour garder une zone de données lisible.
+
+```cpp
+cyui::SpectrogramHistory history; // persistant ; reset au changement de format
+history.reset(256, 128, 0.01, {20, 20000}, true); // capacité, cases, pas en secondes, Hz, cases log
+// À chaque nouvelle trame, hors dessin : history.append(preparedBins);
+cyui::SpectrogramState state; // persistant par panneau
+state.window = 2.0;
+cyui::SpectrogramOptions options;
+options.orientation = cyui::SpectrogramOrientation::timeVertical;
+options.reverseTime = true;
+options.legend = true;
+options.ramp.style = cyui::RampStyle::intensity;
+cyui::spectrogram("##history", state, history.view(), cyui::dp(0, 240), options);
+```
+
+L’historique valide son format, conserve l’ordre chronologique après bouclage et
+n’accepte qu’une colonne complète du nombre de cases configuré. Le pas fixe définit
+l’intervalle des cellules depuis le temps de départ ; fournissez des colonnes NaN
+pour les trames absentes. Reset/append invalides préservent l’état précédent.
+Capacité × cases est borné à 4 194 304 flottants (jusqu’à 32 Mio pour le tampon et
+l’instantané ordonné). `view()` met en cache une vue empruntée jusqu’au changement
+des données. Synchronisez producteur et interface dans l’hôte. `clear(start)` fixe
+une nouvelle origine temporelle. La surcharge avec état suit les dernières secondes
+`window` ; zoom/déplacement suspendent le suivi, un double-clic le réactive, ou
+réglez explicitement `followLatest=true`. La surcharge PlotState reste manuelle.
+
+**Persistance et vue spatiale.** `stereoDensity` reçoit des points L/R et une révision
+qui change uniquement avec les nouvelles données. Sa projection M/S par défaut est
+S=(L-R)/2 et M=(L+R)/2 ; `midSide=false` affiche directement L/R. Le canevas est carré.
+`spatialScope` reçoit `SpatialSample{frequenceHz, panoramiqueNormalise, niveauDb}`,
+avec panoramique dans [-1,+1]. La vue représente position × fréquence, logarithmique
+en fréquence par défaut. `SpatialScopeOptions.levels` normalise l’intensité ;
+`colorFrequency` fixe le domaine de couleurs fréquentielles indépendamment du zoom.
+`colorByFrequency=false` choisit les couleurs d’intensité. Les valeurs invalides ou
+non finies sont ignorées.
+
+Chaque état possède un `DensityState` avec `clear()`. Les révisions répétées
+s’atténuent sans réinjection ; une nouvelle révision ajoute de l’énergie.
+`PersistenceOptions` règle résolution (96 par défaut, bornée à 16..256), halfLife
+(0,5 seconde), exposure, pointRadius (pixels de conception), diffusion (par seconde),
+axes/navigation, ramp et maxPoints (65 536). Une demi-vie non positive affiche
+uniquement la trame courante. Changer la vue, la projection ou la résolution efface
+l’historique devenu incompatible. Les entrées trop grandes sont signalées comme
+série 1 dans `skippedSeries`. Gardez un état par panneau/contexte ImGui.
+Les vues denses utilisent le support ImGui VtxOffset normal du moteur de rendu ;
+réduisez les budgets de points, cellules ou densité si son budget d’indices est plus petit.
+
+Python reflète ces modèles avec des champs snake_case. Utilisez `ColorRamp('intensity')`,
+`spectrogram(..., orientation='time_vertical', reverse_time=True, legend=True)`,
+`band_spectrum(..., floor=-90)`, `stereo_density(..., revision, persistence=options)`
+et `spatial_scope(..., revision, persistence=options)`. `PersistenceOptions` est une
+dataclass. `draw_color_scale(top, bottom, ramp, values, unit='', vertical=True, logarithmic=False)`
+emploie des coordonnées écran dans le clip courant.
+
+```image
+{"id":"audio-spectral","src":"assets/audio-spectral-fr.webp","alt":"Spectres remplis, bandes RTA, spectrogrammes défilants, nuage spatial stéréo et vectorscopes à persistance stéréo, mono et opposition de phase","controls":"minimal"}
+```
 
 ### Code, édition et comparaison {#code-editing-and-git-style-diff-presentation}
 

@@ -29,7 +29,7 @@ struct GalleryResources {
 // changes; the tabs stay clickable): 0 text, 1 buttons, 2 controls,
 // 3 containers, 4-19 the optional modules (canvas, plots, curves, nodes,
 // timeline, audio views, code, diff, inspector, assets, images, viewport,
-// commands, diagnostics, documents, web), 20 layout, 21 filtering, 22 audio analysis.
+// commands, diagnostics, documents, web), 20 layout, 21 filtering, 22 audio analysis, 23 spectral displays.
 CYUI_API void showGallery(bool *open = nullptr, int selectTab = -1);
 CYUI_API void showGallery(bool *open, int selectTab, const GalleryResources &resources);
 // Live palette editor; saves / loads .cytheme files.

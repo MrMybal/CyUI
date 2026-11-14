@@ -66,6 +66,10 @@ AudioViews propose aussi un spectrogramme, les vues LUFS/LRA et crête vraie, un
 
 ![Analyse audio : spectrogramme, LUFS, EQ et phase, dynamique, crête vraie et corrélation](docs/screenshots/audio-analysis.png)
 
+L’onglet Vues spectrales ajoute spectres remplis/dégradés, barres fréquentielles avec plancher dB, spectrogrammes défilants légendés, vue spatiale stéréo et vectorscopes à persistance.
+
+![Vues spectrales : spectres remplis, bandes RTA, spectrogrammes défilants, vue spatiale et vectorscopes à persistance](docs/screenshots/audio-spectral.png)
+
 #### Graphes à nœuds de type blueprint
 
 Ports colorés, liaisons courbes, sélection, déplacement, navigation, zoom et

@@ -10,13 +10,26 @@ struct CYUI_API Axis {
     double fraction(double value) const;
     double value(double fraction) const;
 };
-enum class PlotStyle { line, step, points, bars };
+enum class RampStyle { themed, intensity, frequency, monochrome };
+struct ColorRamp {
+    RampStyle style = RampStyle::themed;
+    ArrayView<ImU32> colors; // optional 1..64 evenly spaced, caller-owned palette colors
+};
+CYUI_API ImU32 sampleRamp(const ColorRamp &, double fraction);
+// Draw inside an existing clipped canvas. Vertical: low at bottom; horizontal: low at left.
+CYUI_API void drawColorScale(const Rect &, const ColorRamp &, Range, const char *unit = "", bool vertical = true, bool logarithmic = false);
+enum class PlotStyle { line, step, points, bars, area };
 struct PlotSeries {
     ItemId id = 0;
     const char *label = "";
     ArrayView<Point> points;
     PlotStyle style = PlotStyle::line;
     int colorIndex = 0;
+    double baseline = 0; // data units, also used by bars; audio commonly uses the dB floor
+    float fillAlpha = 1;
+    bool gradient = false, colorByX = false;
+    ColorRamp ramp;
+    ArrayView<Range> bands; // bars only: optional explicit left/right X edges, one per point
 };
 struct PlotState {
     Axis x, y;
@@ -33,6 +46,8 @@ struct PlotOptions {
     bool grid = true, crosshair = true, navigation = true, axes = true, legend = true;
     std::function<std::string(double)> formatX, formatY;
     std::size_t maxPoints = 65536;
+    // Called after navigation, inside canvas clipping, before grid/series/axes.
+    std::function<void(const Rect &, const PlotState &)> drawBackground;
 };
 CYUI_API PlotResult plot(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size, const PlotOptions & = {});
 // Preparation helpers: run when data changes, outside the draw loop. Gaps remain gaps.

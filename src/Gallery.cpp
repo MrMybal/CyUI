@@ -848,6 +848,91 @@ void inspectorPage(const GalleryResources& resources)
 #endif
 
 #if defined(CYUI_HAS_AUDIOVIEWS)
+void spectralViewsPage()
+{
+    static int colors = 0;
+    static SpectrogramHistory history;
+    static SpectrogramState horizontal, vertical;
+    static double time = 0;
+    static StereoDensityState stereo[3];
+    static SpatialScopeState spatial;
+    const char *ramps[]{"Intensity", "Frequency", "Monochrome", "Theme colors"};
+    ImGui::SetNextItemWidth(dp(150)); combo(trLabel("Color map").c_str(), &colors, ramps, 4);
+    ImGui::SameLine();
+    if (ImGui::Checkbox(trLabel("Follow latest").c_str(), &horizontal.followLatest)) vertical.followLatest = horizontal.followLatest;
+    ImGui::SameLine();
+    if (ImGui::SmallButton(trLabel("Clear persistence").c_str())) { spatial.density.clear(); for (auto &s : stereo) s.density.clear(); }
+    const RampStyle styles[]{RampStyle::intensity, RampStyle::frequency, RampStyle::monochrome, RampStyle::themed};
+    const ColorRamp ramp{styles[colors], {}};
+    auto append = [&] {
+        std::vector<float> column;
+        const double fundamental = 180 + 70 * std::sin(time * .65);
+        for (int f = 0; f < 128; ++f) {
+            const double hz = 20 * std::pow(1000., (f + .5) / 128.);
+            double level = -98 + 3 * std::sin(f * .8 + time);
+            for (int h = 1; h <= 15; ++h) level = std::max(level, -12 - h * 3 - 65 * std::pow(std::log(hz / (fundamental * h)) / .16, 2));
+            column.push_back(float(level));
+        }
+        history.append(column); time += .0625;
+    };
+    static bool initialized = false;
+    if (!initialized) { history.reset(128, 128, .0625, {20, 20000}, true); for (int n = 0; n < 128; ++n) append(); initialized = true; }
+    append();
+    std::vector<Point> left, right;
+    const auto level = [](double hz) { return -72 + 36 * std::exp(-std::pow(std::log(hz / 150.) / 1.1, 2)) + 29 * std::exp(-std::pow(std::log(hz / 2200.) / 1.8, 2)); };
+    for (int n = 0; n < 240; ++n) {
+        const double hz = 20 * std::pow(1000., n / 239.);
+        left.push_back({hz, level(hz) + 3 * std::sin(n * .7)});
+        right.push_back({hz, level(hz) - 7 + 2 * std::cos(n * .4)});
+    }
+    PlotSeries spectra[]{{1, "L", left, PlotStyle::area}, {2, "R", right, PlotStyle::area, 1}};
+    for (auto &line : spectra) { line.baseline = -90; line.fillAlpha = .65f; line.gradient = true; }
+    spectra[0].colorByX = true; spectra[0].ramp = {RampStyle::frequency, {}};
+    static PlotState spectrumView{{{20, 20000}, true}, {{-90, 0}, false}}, bandsView = spectrumView;
+    if (!ImGui::BeginTable("##spectral", 2, ImGuiTableFlags_SizingStretchSame)) return;
+    ImGui::TableNextColumn(); sectionTitle(tr("Filled spectra and gradients").c_str());
+    spectrum("##filled", spectrumView, {spectra, 2}, dp(0, 150));
+    ImGui::TableNextColumn(); sectionTitle(tr("Band spectrum and FFT overlay").c_str());
+    std::vector<SpectrumBand> bands;
+    for (int n = 0; n < 30; ++n) { const double a = 20 * std::pow(1000., n / 30.), b = 20 * std::pow(1000., (n + 1) / 30.); bands.push_back({{a, b}, level(std::sqrt(a * b)) - 5}); }
+    PlotSeries outline{2, "FFT", left, PlotStyle::line, 1}; BandSpectrumOptions bandOptions; bandOptions.label = "RTA";
+    bandSpectrum("##bands", bandsView, bands, {&outline, 1}, dp(0, 150), bandOptions);
+    ImGui::TableNextColumn(); sectionTitle(tr("Vertical scrolling spectrogram").c_str());
+    const auto data = history.view();
+    SpectrogramOptions image; image.ramp = ramp; image.legend = true; image.colorByFrequency = colors == 1;
+    image.orientation = SpectrogramOrientation::timeVertical; image.reverseTime = true;
+    spectrogram("##vertical", vertical, data, dp(0, 164), image);
+    ImGui::TableNextColumn(); sectionTitle(tr("Horizontal scrolling spectrogram").c_str());
+    image.orientation = SpectrogramOrientation::timeHorizontal; image.reverseTime = false;
+    spectrogram("##horizontal", horizontal, data, dp(0, 164), image);
+    ImGui::TableNextColumn(); sectionTitle(tr("Spatial stereo spectrogram").c_str());
+    std::vector<SpatialSample> cloud;
+    const double phase = ImGui::GetTime();
+    for (int f = 0; f < 128; ++f) for (int n = 0; n < 8; ++n) {
+        const double spread = .025 + .6 * f / 127.;
+        const double pan = .15 * std::sin(f * .08 + phase) + spread * std::sin(n * 1.7 + f * .3 + phase);
+        cloud.push_back({20 * std::pow(1000., f / 127.), pan, -12. - f * .45 + 6 * std::sin(f * .2 + n)});
+    }
+    SpatialScopeOptions spatialOptions; spatialOptions.persistence.exposure = .06f;
+    spatialOptions.persistence.resolution = 160; spatialOptions.persistence.pointRadius = 3;
+    spatialScope("##spatial", spatial, cloud, std::uint64_t(ImGui::GetFrameCount()), dp(0, 154), spatialOptions);
+    ImGui::TableNextColumn(); sectionTitle(tr("Persistent vectorscope").c_str());
+    const char *names[]{"Stereo", "Mono", "Out of phase"};
+    for (int k = 0; k < 3; ++k) {
+        ImGui::PushID(k); ImGui::BeginGroup();
+        std::vector<Point> trace;
+        for (int n = 0; n < 720; ++n) {
+            const double l = .85 * std::sin(n * .08 + phase), r = k == 1 ? l : (k == 2 ? -l : .75 * std::sin(n * .08 + phase + .75));
+            trace.push_back({l, r});
+        }
+        StereoDensityOptions scopeOptions; scopeOptions.persistence.axes = false;
+        stereoDensity("##density", stereo[k], trace, std::uint64_t(ImGui::GetFrameCount()), dp(145, 134), scopeOptions);
+        textDim("%s", tr(names[k]).c_str()); ImGui::EndGroup(); ImGui::PopID();
+        if (k != 2) ImGui::SameLine(0, dp(12));
+    }
+    ImGui::EndTable();
+}
+
 void audioAnalysisPage()
 {
     textDim(tr("Prepared audio displays. Drag EQ handles; Escape cancels. Wheel zooms, middle drag pans.").c_str());
@@ -1302,6 +1387,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
 #if defined(CYUI_HAS_AUDIOVIEWS)
     page("Audio views",9,audioViewsPage);
     page("Audio analysis",22,audioAnalysisPage);
+    page("Spectral displays",23,spectralViewsPage);
 #endif
 #if defined(CYUI_HAS_CODE)
     page("Code",10,[&]{codePage(resources.previewPagedCode);});

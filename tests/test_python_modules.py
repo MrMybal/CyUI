@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'python'))
 from cyui_modules.common import Edit, Range, snap, zoom_range
 from cyui_modules.canvas import CanvasView, CanvasState, Canvas
-from cyui_modules.plots import Axis, Series, PlotState, plot, heatmap, reduce_plot, histogram, _navigate
+from cyui_modules.plots import Axis, Series, PlotState, ColorRamp, sample_ramp, plot, heatmap, reduce_plot, histogram, _navigate
 from cyui_modules.audio import fader_position, fader_gain, meter_position
 from cyui_modules.curves import CurvePoint, CurveState, evaluate_curve, curve_editor
 from cyui_modules.nodes import Node, Pin, Link, NodeState, node_editor, arrange_nodes
@@ -22,6 +22,8 @@ from cyui_modules.timeline import Lane, Clip, TimelineState, timeline
 from cyui_modules.audioviews import make_peaks, WaveformState, waveform, spectrum, oscilloscope
 from cyui_modules.audioviews import (SpectrogramData, spectrogram, LoudnessData, loudness,
     TruePeakChannel, true_peak, correlation, ResponseState, ResponsePoint, filter_response, DynamicsData, dynamics)
+from cyui_modules.audioviews import (SpectrogramHistory, SpectrogramState, SpectrumBand, band_spectrum,
+    PersistenceOptions, StereoDensityState, stereo_density, SpatialSample, SpatialScopeState, spatial_scope)
 from cyui_modules.images import ImageData, ImageState, GradientStop, GradientState, sample_gradient, image_viewport, gradient_editor
 from cyui_modules.viewport import OrbitCamera, ViewportState, Transform2D, TransformState, camera_position, camera_view_matrix, viewport, transform_gizmo
 from cyui_modules.code import CodeDocument, CodeViewState, SourceSpan, CodeEditor, code_viewer
@@ -36,6 +38,19 @@ from cyui_modules.filters import TextFilter, FilterMenuItem, filter_menu_matches
 
 
 class Models(unittest.TestCase):
+    def test_streaming_spectrogram_history(self):
+        history = SpectrogramHistory()
+        self.assertTrue(history.reset(3, 2, .5, Range(20, 20000), True))
+        for n in range(5): self.assertTrue(history.append([n, n]))
+        snapshot = history.view()
+        self.assertEqual(list(snapshot.values), [2, 2, 3, 3, 4, 4])
+        self.assertEqual(snapshot.time, Range(1, 2.5))
+        self.assertEqual((snapshot.frames, snapshot.bins), (3, 2))
+        self.assertFalse(history.reset(10000000, 2, .5, Range(20, 20000)))
+        self.assertFalse(history.append([])); self.assertEqual(history.view().frames, 3)
+        history.clear(10); history.append([-30, -40])
+        self.assertEqual(history.view().time, Range(10, 10.5))
+
     def test_filter_words_translations_and_nested_menus(self):
         from cyui_modules.locale import locale_scope
         first, second = TextFilter(), TextFilter('other')
@@ -258,6 +273,64 @@ class Environment(unittest.TestCase):
 
 @unittest.skipIf(i is None, 'imgui-bundle is required for real UI frame tests')
 class Frames(unittest.TestCase):
+    def test_spectral_rendering_navigation_and_persistence(self):
+        ramp = ColorRamp(colors=[c.palette().info, c.palette().error])
+        self.assertEqual(sample_ramp(ramp, -1), c.palette().info)
+        self.assertEqual(sample_ramp(ramp, .5), c.mix(c.palette().info, c.palette().error, .5))
+        data = SpectrogramData(list(range(16)), 4, 4, Range(0, 4), Range(20, 20000), True)
+        view = PlotState(Axis(Range(0, 4)), Axis(Range(20, 20000), True))
+        for orientation in ('time_horizontal', 'time_vertical'):
+            for reverse in (False, True):
+                draw = lambda: spectrogram('orientation', view, data, (400, 200), orientation=orientation, reverse_time=reverse)
+                self.frame(draw); result = self.frame(draw, (120, 70))
+                expected_frame = (3 if reverse else 1) if orientation == 'time_horizontal' else (1 if reverse else 3)
+                self.assertEqual((result['frame'], result['bin']), (expected_frame, 3 if orientation == 'time_horizontal' else 1))
+        result = self.frame(lambda: spectrogram('legend', view, data, (400, 200), legend=True), (400, 80))
+        self.assertFalse(result['hovered']); self.assertLess(result['bounds'][1][0], 400)
+        color_data = SpectrogramData([-20, -20, -60, -60], 2, 2, Range(0, 4), Range(20, 20000), True)
+        def frequency_draw():
+            before = len(i.get_window_draw_list().vtx_buffer)
+            spectrogram('frequency-mode', view, color_data, (400, 200), axes=False, color_by_frequency=True, ramp=ColorRamp('frequency'))
+            vertices = i.get_window_draw_list().vtx_buffer
+            return vertices[before+4].col, vertices[before+8].col
+        first_color, second_color = self.frame(frequency_draw)
+        self.assertEqual(first_color & 0xffffff, second_color & 0xffffff)
+        self.assertGreater(first_color >> 24, second_color >> 24)
+        follow = SpectrogramState(window=2)
+        draw = lambda: spectrogram('following', follow, data, (400, 200))
+        self.frame(draw); self.frame(draw, (220, 120)); i.get_io().add_mouse_wheel_event(0, 1)
+        self.frame(draw, (220, 120)); self.assertFalse(follow.follow_latest)
+        follow.follow_latest = True; self.frame(draw)
+        self.assertEqual(follow.view.x.view, Range(2, 4))
+        follow.follow_latest = False; i.get_io().delta_time = .4; self.frame(draw); i.get_io().delta_time = 1/60
+        self.frame(draw, (220, 120)); self.frame(draw, (220, 120), (0, True))
+        self.frame(draw, (220, 120), (0, False)); self.frame(draw, (220, 120), (0, True))
+        self.assertTrue(follow.follow_latest)
+        self.frame(draw, (220, 120), (0, False))
+        area_view = PlotState(Axis(Range(20, 20000), True), Axis(Range(-90, 0)))
+        area = Series(1, [(20, -60), (200, -20)], style='area', baseline=-90, gradient=True)
+        def area_draw():
+            plot('area', area_view, [area], (400, 200), axes=False, legend=False)
+            return any(abs(v.pos.y-220) < .1 and v.col >> 24 == 0 for v in i.get_window_draw_list().vtx_buffer)
+        self.assertTrue(self.frame(area_draw))
+        band = SpectrumBand(Range(20, 200), -45)
+        self.assertEqual(self.frame(lambda: band_spectrum('bands', area_view, [band], size=(400, 200), max_points=0))['skipped'], [1])
+        density, options = StereoDensityState(), PersistenceOptions(resolution=32, diffusion=0, axes=False, navigation=False)
+        revision = [1]
+        draw = lambda: stereo_density('density', density, [(.6, .6), (math.nan, 1)], revision[0], (200, 200), persistence=options)
+        self.frame(draw); first = sum(density.density.energy)
+        self.frame(draw); self.assertLess(sum(density.density.energy), first)
+        revision[0] += 1; self.frame(draw); self.assertGreater(sum(density.density.energy), first)
+        options.half_life = 0; self.frame(draw); self.frame(draw); self.assertGreater(sum(density.density.energy), 0)
+        spatial = SpatialScopeState()
+        points = [SpatialSample(1000, .6, -10), SpatialSample(0), SpatialSample(200, math.nan, -10)]
+        self.frame(lambda: spatial_scope('spatial', spatial, points, 1, (400, 200), persistence=options))
+        index = max(range(len(spatial.density.energy)), key=lambda n: spatial.density.energy[n])
+        self.assertGreaterEqual(index % 32, 24)
+        spatial.view.x.view = Range(-2, 2)
+        self.frame(lambda: spatial_scope('spatial', spatial, [], 1, (400, 200), persistence=options))
+        self.assertEqual(sum(spatial.density.energy), 0)
+
     def test_audio_analysis_gestures_and_missing_data(self):
         data = SpectrogramData(list(range(16)), 4, 4, Range(0, 4), Range(20, 20000), True)
         state = PlotState(Axis(Range(0, 4)), Axis(Range(20, 20000), True))
@@ -334,6 +407,7 @@ class Frames(unittest.TestCase):
         c.apply()
         # Modern ImGui font texture protocol, handled without a graphics backend.
         io.backend_flags |= i.BackendFlags_.renderer_has_textures
+        io.backend_flags |= i.BackendFlags_.renderer_has_vtx_offset
 
     @classmethod
     def tearDownClass(cls):
@@ -449,7 +523,7 @@ class Frames(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('cyui_example', path)
         example = importlib.util.module_from_spec(spec); spec.loader.exec_module(example)
         gallery = example.ModuleGallery()
-        for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
+        for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Spectral displays', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
             self.frame(lambda: gallery.draw_page(name))
 
     def test_example_gallery_f1_opens_local_contextual_help(self):

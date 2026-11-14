@@ -23,6 +23,8 @@ PREVIEWS = (
     ("audio", "mid-grey", 9, True, "en"),
     ("audio-analysis", "mid-grey", 22, True, "en"),
     ("audio-analysis-fr", "mid-grey", 22, True, "fr"),
+    ("audio-spectral", "mid-grey", 23, True, "en"),
+    ("audio-spectral-fr", "mid-grey", 23, True, "fr"),
     ("nodes", "violet", 7, True, "en"),
     ("image-graph", "violet", 7, True, "en", "--image-graph"),
     ("assets", "mid-grey", 13, True, "en"),

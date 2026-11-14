@@ -1,5 +1,5 @@
 {
-  "source_revision": "0ba1ba663b4b2bf46d066a32829bc91ea2743cba",
+  "source_revision": "50414576dc39ea3cfbb66e9bc2547fbabf50bf87",
   "images": [
     {
       "file": "overview.webp",
@@ -275,6 +275,28 @@
         721
       ],
       "sha256": "cecc41cec268520b5c9f537b4a24737bb4ec0b59c13b67a937a1ed4b35180ca2"
+    },
+    {
+      "file": "audio-spectral.webp",
+      "theme": "mid-grey",
+      "tab": 23,
+      "locale": "en",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "1971f462442396ee8b7c0031d13a51eabc23fba537369ebf8dcf68f148753e7f"
+    },
+    {
+      "file": "audio-spectral-fr.webp",
+      "theme": "mid-grey",
+      "tab": 23,
+      "locale": "fr",
+      "size": [
+        1424,
+        721
+      ],
+      "sha256": "e3401b34d866c4bd068d1722ea547226792758a2edc9e2c4690e2dc563a4354b"
     }
   ]
 }
