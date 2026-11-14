@@ -514,6 +514,43 @@ int main() {
           "duplicate allocator IDs rejected");
     nodeSelection = {10};
     check(copyNodeSelection(nodeSelection, nodes, links).links.empty(), "external links are omitted");
+    {
+        auto nestedGroups = groups;
+        nestedGroups.push_back({41, {0, 0}, {250, 100}, "Child"});
+        nestedGroups.push_back({42, {450, 0}, {250, 100}, "Overlapping, outside"});
+        NodeSelection selected;
+        selected.groups = {40, 41};
+        selected.nodes = {10};
+        auto copied = copyGraphSelection(selected, nodes, links, nestedGroups, routes);
+        check(copied.groups.size() == 2 && copied.nodes.size() == 2 && copied.links.size() == 1 &&
+                  copied.reroutes.size() == 1,
+              "Typed group copy closes over nested groups and content without duplicates or overlapping "
+              "groups");
+        selected = {};
+        selected.links = {30};
+        copied = copyGraphSelection(selected, nodes, links, nestedGroups, routes);
+        check(copied.nodes.size() == 2 && copied.groups.empty() && copied.reroutes.size() == 1,
+              "Copying a link includes its endpoint nodes, pins and routing");
+        selected = {};
+        selected.reroutes = {50};
+        copied = copyGraphSelection(selected, nodes, links, nestedGroups, routes);
+        check(copied.nodes.size() == 2 && copied.links.size() == 1 && copied.reroutes.size() == 1,
+              "Copying a reroute produces a self-contained cross-graph fragment");
+        auto overlappingIds = nestedGroups;
+        overlappingIds[0].id = 10;
+        selected = {};
+        selected.nodes = {10};
+        check(copyGraphSelection(selected, nodes, links, overlappingIds, routes).groups.empty(),
+              "Typed selection preserves distinct ID namespaces");
+        auto invalid = nodesToJson(copied);
+        const auto at = invalid.find("\"id\":10");
+        check(at != std::string::npos, "Clipboard fixture contains the source node");
+        if (at != std::string::npos)
+            invalid.replace(at, 7, "\"id\":0");
+        const auto previous = restored.nodes[0].id;
+        check(!nodesFromJson(invalid, restored, nodeError) && restored.nodes[0].id == previous,
+              "Invalid zero IDs reject the whole clipboard without replacing output");
+    }
 #endif
 #if defined(CYUI_HAS_TIMELINE)
     std::vector<TimelineClip> clips{{1, 1, 1, 4, "Clip"}, {2, 1, 6, 2, "Locked", 0, true}};
@@ -611,6 +648,89 @@ int main() {
         });
     }
 #if defined(CYUI_HAS_NODES)
+    {
+        static std::string clipboard;
+        auto &platform = ImGui::GetPlatformIO();
+        const auto get = platform.Platform_GetClipboardTextFn;
+        const auto set = platform.Platform_SetClipboardTextFn;
+        platform.Platform_GetClipboardTextFn = [](ImGuiContext *) { return clipboard.c_str(); };
+        platform.Platform_SetClipboardTextFn = [](ImGuiContext *, const char *text) { clipboard = text; };
+        std::vector<Node> model{{1, {80, 80}, "A", {}, {{11, "Out"}}}, {2, {400, 80}, "B", {{21, "In"}}, {}}};
+        std::vector<NodeLink> connections{{3, 11, 21}};
+        std::vector<NodeGroup> boxes{{10, {20, 20}, {650, 220}, "Parent"},
+                                     {12, {50, 50}, {550, 170}, "Child"}};
+        std::vector<NodeReroute> points{{20, 3, {310, 150}}};
+        NodeState state;
+        NodeResult result;
+        NodeOptions options;
+        options.groups = boxes;
+        options.reroutes = points;
+        ItemId nextId = 100;
+        options.allocateId = [&] { return ++nextId; };
+        ImVec2 origin;
+        auto draw = [&] {
+            origin = ImGui::GetCursorScreenPos();
+            result = nodeEditor("clipboardGraph", state, model, connections, {1000, 350}, options);
+        };
+        auto shortcut = [&](ImGuiKey key) {
+            io.AddKeyEvent(ImGuiMod_Ctrl, true);
+            frame(draw);
+            io.AddKeyEvent(key, true);
+            frame(draw);
+        };
+        auto release = [&](ImGuiKey key) {
+            io.AddKeyEvent(key, false);
+            frame(draw);
+            io.AddKeyEvent(ImGuiMod_Ctrl, false);
+            frame(draw);
+        };
+        frame(draw);
+        frame(draw);
+        io.AddMousePosEvent(origin.x + 30, origin.y + 30);
+        io.AddMouseButtonEvent(1, true);
+        frame(draw);
+        io.AddMouseButtonEvent(1, false);
+        frame(draw);
+        frame(draw);
+        check(state.selectedGroups == std::vector<ItemId>{10},
+              "Group context menu selects the clicked group");
+        auto *popup = GImGui->OpenPopupStack.empty() ? nullptr : GImGui->OpenPopupStack.back().Window;
+        check(popup != nullptr, "Node clipboard context menu opens");
+        if (popup) {
+            io.AddMousePosEvent(popup->Pos.x + popup->WindowPadding.x + dp(30),
+                                popup->Pos.y + popup->WindowPadding.y + ImGui::GetFrameHeight() * .5f);
+            io.AddMouseButtonEvent(0, true);
+            frame(draw);
+            io.AddMouseButtonEvent(0, false);
+            frame(draw);
+            frame(draw);
+            NodeFragment copied;
+            std::string error;
+            check(nodesFromJson(clipboard, copied, error) && copied.nodes.size() == 2 &&
+                      copied.groups.size() == 2 && copied.links.size() == 1 && copied.reroutes.size() == 1,
+                  "Context Copy exports nested groups, nodes, pins, links and reroutes through real input");
+            io.AddMousePosEvent(origin.x + 760, origin.y + 300);
+            frame(draw);
+            shortcut(ImGuiKey_V);
+            check(result.created.groups.size() == 2 && result.created.nodes.size() == 2 &&
+                      result.created.links.size() == 1 && result.created.reroutes.size() == 1 &&
+                      result.created.groups[0].position.x == 760,
+                  "Ctrl+V remaps the complete graph and pastes its anchor at the pointer");
+            release(ImGuiKey_V);
+            clipboard = "{invalid";
+            const auto kept = state.selection;
+            shortcut(ImGuiKey_V);
+            check(result.created.nodes.empty() && state.selection == kept && !state.clipboardError.empty(),
+                  "Malformed paste is atomic and preserves selection");
+            release(ImGuiKey_V);
+            options.readOnly = true;
+            shortcut(ImGuiKey_V);
+            check(result.created.nodes.empty(), "Read-only graphs block paste");
+            release(ImGuiKey_V);
+        }
+        platform.Platform_GetClipboardTextFn = get;
+        platform.Platform_SetClipboardTextFn = set;
+    }
     {
         std::vector<Node> movingNodes{{1, {50, 80}, "Inside"}, {2, {600, 80}, "Outside"}};
         std::vector<NodeGroup> movingGroups{{10, {20, 20}, {400, 240}, "Group"}};

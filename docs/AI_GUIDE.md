@@ -1253,10 +1253,37 @@ execution and persistence belong to the host.
 NodeOptions accepts borrowed `groups`, `reroutes` and a fresh nonzero `allocateId`
 callback. Comment groups move/resize/rename, reroutes move, and context menus
 create/remove them. Ctrl+C/V/D copies/pastes/duplicates a selection with internal
-links and reroutes. copyNodeSelection/nodesToJson/nodesFromJson/cloneNodes expose
+links and reroutes. copyGraphSelection/copyNodeSelection/nodesToJson/nodesFromJson/cloneNodes expose
 the bounded JSON contract. Clone remaps every node/pin/link/group/reroute ID;
 original ID namespaces remain independent. The host applies `created`, committed
 overlay edits and removals alongside the existing node edit requests.
+
+Nodes, comment groups, links and reroutes support Ctrl/Shift multiselection,
+Ctrl+A, context **Copy/Paste/Duplicate** and Ctrl+C/V/D. Right-click an unselected
+element targets it; right-click a selected element keeps the mixed selection.
+Box selection includes contained cards/groups and reroutes. Groups copy their
+fully contained subgroups recursively and the nodes whose anchors lie inside.
+Pins, internal links and their reroutes travel with the copied nodes. Explicitly
+copying a link or reroute also includes its endpoint nodes, making the fragment
+self-contained for another graph. Unrelated external links are excluded.
+
+`NodeState::selection` contains node IDs; `selectedGroups`, `selectedLinks` and
+`selectedReroutes` hold the other kinds separately. Use `NodeSelection{nodes,groups,
+links,reroutes}` with `copyGraphSelection` for model-only operations; the legacy
+`copyNodeSelection` keeps its combined node/group ID contract. Separate namespaces
+allow legacy node/link/group IDs to overlap without selecting unrelated elements.
+Python mirrors this with `NodeSelection`, `copy_graph_selection` and snake_case
+state fields. The Python module gallery supplies the complete host application.
+
+Paste anchors the whole fragment at the cursor/context position; Duplicate uses
+a small offset. Every node, pin, link, group and reroute receives a fresh nonzero
+ID, with references remapped and relative layout preserved. Apply `created` as one
+host Undo transaction. Copy is available in read-only mode; Paste/Duplicate require
+`allocateId`. Invalid JSON or allocator conflicts preserve the model and selection.
+JSON v1 import/export uses the same 1 MiB/32-level/65536-node limits as Inspector.
+Delete returns separate `removeNodes`, `removeGroups`, `removeLinks` and
+`removeReroutes`; the host also removes incident links and orphaned reroutes.
+The single-link context action retains `linkRemoved`/`removeLink` for compatibility.
 
 Timeline accepts allocateId for S (split at playhead), Ctrl+D (duplicate selected
 unlocked clips) and new markers. Marker dragging/renaming/removal and lane-name

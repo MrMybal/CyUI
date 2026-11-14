@@ -23,6 +23,7 @@ from cyui_modules.inspector import (PropertySet, PropertyMap, PropertyOptional, 
     make_property_set, make_property_map, make_property_optional, edit_property_collection, property_value_key,
     property_value_editor)
 from cyui_modules.hierarchy import navigate_hierarchy
+from cyui_modules.nodes import NodeSelection, copy_graph_selection
 try:
     import cyui as c
     from imgui_bundle import imgui as i
@@ -251,9 +252,80 @@ class Models(unittest.TestCase):
         self.assertEqual(len(duplicate_timeline_clips(clips, [1, 2], 5, lambda: next(ids))), 3)
         self.assertEqual(reorder_timeline_lane([Lane(1, 'A'), Lane(2, 'B')], 2, 1)[0].id, 2)
 
+    def test_graph_copy_closes_nested_groups_and_explicit_connections(self):
+        nodes = [Node(1, (80, 80), 'A', outputs=[Pin(11)]), Node(2, (400, 80), 'B', inputs=[Pin(21)])]
+        links = [Link(3, 11, 21)]
+        groups = [NodeGroup(10, (20, 20), (650, 220)), NodeGroup(12, (50, 50), (550, 170)), NodeGroup(13, (650, 20), (200, 220))]
+        routes = [NodeReroute(20, 3, (310, 150))]
+        copied = copy_graph_selection(NodeSelection(nodes=[1], groups=[10, 12]), nodes, links, groups, routes)
+        self.assertEqual(([n.id for n in copied.nodes], [g.id for g in copied.groups], len(copied.links), len(copied.reroutes)), ([1, 2], [10, 12], 1, 1))
+        for selection in (NodeSelection(links=[3]), NodeSelection(reroutes=[20])):
+            copied = copy_graph_selection(selection, nodes, links, groups, routes)
+            self.assertEqual((len(copied.nodes), len(copied.groups), len(copied.links), len(copied.reroutes)), (2, 0, 1, 1))
+            cloned = clone_nodes(copied, itertools.count(100).__next__)
+            self.assertEqual(cloned.reroutes[0].link, cloned.links[0].id)
+            self.assertEqual(cloned.links[0].source, cloned.nodes[0].outputs[0].id)
+        self.assertFalse(copy_graph_selection(NodeSelection(nodes=[1]), nodes, links, [NodeGroup(1, (0, 0))]).groups)
+        invalid = nodes_to_json(copied).replace('"id":1,', '"id":0,')
+        with self.assertRaises(ValueError): nodes_from_json(invalid)
+        import json
+        payload = json.loads(nodes_to_json(copied)); payload['nodes'][0]['label'] = {'bad': 'text'}
+        with self.assertRaises(ValueError): nodes_from_json(json.dumps(payload))
+        with self.assertRaises(ValueError): nodes_from_json(nodes_to_json(copied).replace('"version":1', '"version":1,"version":1'))
+
 
 @unittest.skipIf(i is None, 'imgui-bundle is required for UI frames')
 class Frames(unittest.TestCase):
+    def test_graph_context_copy_and_cross_graph_paste(self):
+        i.create_context(); io_ = i.get_io(); io_.set_ini_filename(None); io_.display_size = (1200, 900); io_.delta_time = 1/60
+        io_.backend_flags |= i.BackendFlags_.renderer_has_textures; c.apply()
+        nodes = [Node(1, (80, 80), 'A', outputs=[Pin(11)]), Node(2, (400, 80), 'B', inputs=[Pin(21)])]
+        links = [Link(3, 11, 21)]; groups = [NodeGroup(10, (20, 20), (650, 220), 'Parent'), NodeGroup(12, (50, 50), (550, 170), 'Child')]
+        routes = [NodeReroute(20, 3, (310, 150))]; state = NodeState(); sequence = itertools.count(100)
+        clipboard = ''; copy_at = None; origin = None; result = None; read_only = False
+        original_get, original_set, menu = i.get_clipboard_text, i.set_clipboard_text, i.menu_item
+        def set_clipboard(value):
+            nonlocal clipboard
+            clipboard = value
+        def observe_menu(label, *args, **kwargs):
+            nonlocal copy_at
+            result = menu(label, *args, **kwargs)
+            if label == c.tr_label('Copy'):
+                lo, hi = i.get_item_rect_min(), i.get_item_rect_max(); copy_at = ((lo.x+hi.x)/2, (lo.y+hi.y)/2)
+            return result
+        i.get_clipboard_text = lambda: clipboard; i.set_clipboard_text = set_clipboard; i.menu_item = observe_menu
+        def frame():
+            nonlocal origin, result
+            i.new_frame(); i.set_next_window_pos((0, 0)); i.set_next_window_size((1100, 850)); i.begin('Graph clipboard')
+            at = i.get_cursor_screen_pos(); origin = at.x, at.y
+            result = node_editor('clipboardGraph', state, nodes, links, (1000, 350), groups=groups, reroutes=routes, allocate_id=sequence.__next__, read_only=read_only)
+            i.end(); i.render()
+        def shortcut(key):
+            io_.add_key_event(i.Key.mod_ctrl, True); frame(); io_.add_key_event(key, True); frame()
+        def release(key):
+            io_.add_key_event(key, False); frame(); io_.add_key_event(i.Key.mod_ctrl, False); frame()
+        try:
+            frame(); frame(); io_.add_mouse_pos_event(origin[0]+30, origin[1]+30); io_.add_mouse_button_event(1, True); frame()
+            io_.add_mouse_button_event(1, False); frame(); frame(); self.assertEqual(state.selected_groups, [10]); self.assertIsNotNone(copy_at)
+            io_.add_mouse_pos_event(*copy_at); io_.add_mouse_button_event(0, True); frame(); io_.add_mouse_button_event(0, False); frame(); frame()
+            copied = nodes_from_json(clipboard); self.assertEqual((len(copied.nodes), len(copied.groups), len(copied.links), len(copied.reroutes)), (2, 2, 1, 1))
+            source_scene = nodes, links, groups, routes, state
+            nodes, links, groups, routes, state = [], [], [], [], NodeState()
+            frame(); frame(); io_.add_mouse_pos_event(origin[0]+760, origin[1]+300)
+            io_.add_mouse_button_event(0, True); frame(); io_.add_mouse_button_event(0, False); frame()
+            io_.add_mouse_pos_event(origin[0]+760, origin[1]+300); frame(); shortcut(i.Key.v)
+            created = result['created']; self.assertEqual((len(created.nodes), len(created.groups), len(created.links), len(created.reroutes)), (2, 2, 1, 1))
+            self.assertEqual(created.groups[0].position, (760, 300)); self.assertEqual(created.reroutes[0].link, created.links[0].id); release(i.Key.v)
+            clipboard = '{invalid'; kept = list(state.selection); shortcut(i.Key.v)
+            self.assertFalse(result['created'].nodes); self.assertEqual(state.selection, kept); self.assertTrue(state.error); release(i.Key.v)
+            read_only = True; shortcut(i.Key.v); self.assertFalse(result['created'].nodes); release(i.Key.v)
+            read_only = False; nodes, links, groups, routes, state = source_scene
+            state.selection = []; state.selected_groups = []; state.selected_links = []; state.selected_reroutes = [20]; frame()
+            shortcut(i.Key.c); copied = nodes_from_json(clipboard); release(i.Key.c)
+            self.assertEqual((len(copied.nodes), len(copied.links), len(copied.groups)), (2, 1, 0))
+        finally:
+            i.get_clipboard_text = original_get; i.set_clipboard_text = original_set; i.menu_item = menu; i.destroy_context()
+
     def test_flags_popup_keeps_open_after_toggle(self):
         i.create_context(); io_ = i.get_io(); io_.set_ini_filename(None); io_.display_size = (1200, 900); io_.delta_time = 1/60
         io_.backend_flags |= i.BackendFlags_.renderer_has_textures; c.apply()

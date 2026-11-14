@@ -4,7 +4,7 @@ title: Outils d’édition
 description: Inspecteur typé, hiérarchies, tableaux, sélection de fichiers et commandes partagées.
 section: Guides
 order: 11
-sourceRevision: 3
+sourceRevision: 4
 ---
 
 Les modules d’édition réutilisables reposent sur Core. Sélectionnez `Inspector`,
@@ -221,6 +221,31 @@ contextuel crée/supprime ces éléments. Ctrl+C/V/D échange les nœuds sélect
 avec leurs liens internes et points de reroutage. Le JSON utilise `cyui.nodes`,
 version 1. Le clonage alloue de nouveaux IDs et remappe les références ; les liens
 extérieurs sont exclus. L’hôte applique créations, commits et suppressions.
+
+Nœuds, groupes, liens et points de routage se sélectionnent avec Ctrl/Maj, Ctrl+A
+ou un rectangle (cartes/groupes entièrement dedans ; points par leur position).
+Le clic droit propose **Copier/Coller/Dupliquer**, également accessibles par
+Ctrl+C/V/D. Un clic droit sur un élément sélectionné conserve la sélection mixte.
+Copier un groupe inclut récursivement ses sous-groupes entièrement contenus et les
+nœuds dont l’ancrage est dedans. Les broches, liens internes et points de routage
+suivent les nœuds. Copier explicitement un lien ou un point inclut ses nœuds
+d’extrémité : le fragment reste autonome pour un collage dans un autre graphe.
+
+`NodeState::selection` contient les IDs des nœuds ; `selectedGroups`, `selectedLinks`
+et `selectedReroutes` contiennent les autres types. `copyGraphSelection(NodeSelection,
+...)` expose cette sélection typée sans dessin ; `copyNodeSelection` conserve son
+ancien contrat d’IDs mélangés nœuds/groupes. Python propose les mêmes API et champs
+en snake_case. Les espaces d’IDs restent distincts même avec d’anciens IDs identiques.
+
+Coller positionne le fragment au curseur/point du menu ; Dupliquer le décale.
+Chaque nœud, broche, lien, groupe et point reçoit un nouvel ID non nul ; toutes les
+références sont remappées. Libellés, couleurs, tailles et positions relatives sont
+conservés. Appliquez tout `created` comme une transaction Undo. Copier fonctionne
+en lecture seule ; Coller/Dupliquer nécessitent un allocateur. JSON invalide et
+conflits d’IDs gardent la sélection et ne créent aucun fragment partiel. Import/export
+sont limités à 1 Mio, 32 niveaux JSON et 65536 nœuds. Suppr retourne `removeNodes`,
+`removeGroups`, `removeLinks` et `removeReroutes` ; l’hôte supprime aussi liens
+incidents et points orphelins. L’action sur un lien garde `linkRemoved`/`removeLink`.
 
 Timeline découpe à la tête de lecture (**S**), duplique (**Ctrl+D**), édite les
 marqueurs et réordonne les pistes en glissant leurs noms. L’application fournit

@@ -629,12 +629,16 @@ void imageGraphPage(const GalleryResources& resources)
                 if (node.id == move.id) node.position = move.position;
     if (edit.connect)
         links.push_back({nextLink++, edit.connectFrom, edit.connectTo, 0});
-    if (edit.linkRemoved)
-        links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink& link) {
-            return link.id == edit.removeLink;
-        }), links.end());
+    if (edit.linkRemoved || !edit.removeLinks.empty())
+        links.erase(std::remove_if(links.begin(), links.end(),
+                                   [&](const NodeLink &link) {
+                                       return (edit.linkRemoved && link.id == edit.removeLink) ||
+                                              std::find(edit.removeLinks.begin(), edit.removeLinks.end(),
+                                                        link.id) != edit.removeLinks.end();
+                                   }),
+                    links.end());
     for (auto id : edit.removeNodes) {
-        for (const auto& node : nodes)
+        for (const auto &node : nodes)
             if (node.id == id)
                 links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink& link) {
                     const auto owns = [&](ItemId pin) {
@@ -650,29 +654,46 @@ void imageGraphPage(const GalleryResources& resources)
 void nodesPage(const GalleryResources& resources)
 {
     static int example = 0;
-    if (resources.previewImageGraph) example = 1;
-    const char* examples[]{"Signal graph", "Image graph"};
+    if (resources.previewImageGraph)
+        example = 1;
+    const char *examples[]{"Signal graph", "Image graph"};
     segmented("##nodeExample", examples, 2, &example);
     if (example == 1) {
         imageGraphPage(resources);
         return;
     }
     sectionTitle(tr("Voice graph").c_str());
-    textDim(tr("Drag nodes or connect pins. Ctrl: multi-select. Home: frame. Delete: remove. Execution is host-owned.").c_str());
+    textDim(tr("Drag nodes or connect pins. Ctrl: multi-select. Home: frame. Delete: remove. Execution is "
+               "host-owned.")
+                .c_str());
+    textDim("%s",
+            tr("Copy/paste nodes, groups, links and reroutes: Ctrl+C/V/D or right-click. Paste at pointer.")
+                .c_str());
     static NodeState state;
     static std::vector<Node> nodes{
         {1, {30, 35}, "On note", {}, {{11, "Trigger", 3}, {12, "Pitch", 1}, {13, "Velocity", 2}}, 3},
         {2, {30, 270}, "Voice settings", {}, {{21, "Cutoff", 0}, {22, "Resonance", 0}, {23, "Level", 2}}, 0},
-        {3, {330, 35}, "Oscillator", {{31, "Trigger", 3}, {32, "Pitch", 1}, {33, "Velocity", 2}}, {{34, "Audio", 0}}, 1},
-        {4, {640, 55}, "Filter", {{41, "Audio", 0}, {42, "Cutoff", 0}, {43, "Resonance", 0}}, {{44, "Signal", 0}}, 0},
+        {3,
+         {330, 35},
+         "Oscillator",
+         {{31, "Trigger", 3}, {32, "Pitch", 1}, {33, "Velocity", 2}},
+         {{34, "Audio", 0}},
+         1},
+        {4,
+         {640, 55},
+         "Filter",
+         {{41, "Audio", 0}, {42, "Cutoff", 0}, {43, "Resonance", 0}},
+         {{44, "Signal", 0}},
+         0},
         {5, {640, 290}, "Gain", {{51, "Signal", 0}, {52, "Level", 2}}, {{53, "Output", 0}}, 2},
         {6, {950, 190}, "Stereo output", {{61, "Left", 0}, {62, "Right", 0}}, {}, 3}};
-    static std::vector<NodeLink> links{{1, 11, 31, 3}, {2, 12, 32, 1}, {3, 13, 33, 2},
-                                      {4, 34, 41, 0}, {5, 21, 42, 0}, {6, 22, 43, 0},
-                                      {7, 44, 51, 0}, {8, 23, 52, 2}, {9, 53, 61, 0}, {10, 53, 62, 0}};
+    static std::vector<NodeLink> links{{1, 11, 31, 3}, {2, 12, 32, 1}, {3, 13, 33, 2}, {4, 34, 41, 0},
+                                       {5, 21, 42, 0}, {6, 22, 43, 0}, {7, 44, 51, 0}, {8, 23, 52, 2},
+                                       {9, 53, 61, 0}, {10, 53, 62, 0}};
     static ItemId nextLink = 1000;
-    static std::vector<NodeGroup> groups{{900, {-5, 5}, {570, 405}, "Voice controls", 1}};
-    static std::vector<NodeReroute> reroutes{{901, 5, {570, 250}}};
+    static std::vector<NodeGroup> groups{{900, {-5, 5}, {570, 405}, "Voice controls", 1},
+                                         {903, {15, 235}, {225, 170}, "Voice settings", 0}};
+    static std::vector<NodeReroute> reroutes{{901, 5, {570, 250}}, {902, 1, {265, 95}}};
     const auto size = dp(0, 470);
     static bool framed = false;
     if (!framed) {
@@ -713,20 +734,29 @@ void nodesPage(const GalleryResources& resources)
                     node.position = move.position;
     if (edit.connect)
         links.push_back({nextLink++, edit.connectFrom, edit.connectTo, 0});
-    if (edit.linkRemoved)
-        links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink &link) {
-            return link.id == edit.removeLink;
-        }), links.end());
+    if (edit.linkRemoved || !edit.removeLinks.empty())
+        links.erase(std::remove_if(links.begin(), links.end(),
+                                   [&](const NodeLink &link) {
+                                       return (edit.linkRemoved && link.id == edit.removeLink) ||
+                                              std::find(edit.removeLinks.begin(), edit.removeLinks.end(),
+                                                        link.id) != edit.removeLinks.end();
+                                   }),
+                    links.end());
     for (auto id : edit.removeNodes) {
         for (const auto &node : nodes)
             if (node.id == id)
-                links.erase(std::remove_if(links.begin(), links.end(), [&](const NodeLink &link) {
-                    const auto owns = [&](ItemId pin) {
-                        return std::any_of(node.inputs.begin(), node.inputs.end(), [&](const NodePin &p) { return p.id == pin; }) ||
-                               std::any_of(node.outputs.begin(), node.outputs.end(), [&](const NodePin &p) { return p.id == pin; });
-                    };
-                    return owns(link.from) || owns(link.to);
-                }), links.end());
+                links.erase(std::remove_if(
+                                links.begin(), links.end(),
+                                [&](const NodeLink &link) {
+                                    const auto owns = [&](ItemId pin) {
+                                        return std::any_of(node.inputs.begin(), node.inputs.end(),
+                                                           [&](const NodePin &p) { return p.id == pin; }) ||
+                                               std::any_of(node.outputs.begin(), node.outputs.end(),
+                                                           [&](const NodePin &p) { return p.id == pin; });
+                                    };
+                                    return owns(link.from) || owns(link.to);
+                                }),
+                            links.end());
         nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&](const Node &node) { return node.id == id; }), nodes.end());
     }
     reroutes.erase(std::remove_if(reroutes.begin(), reroutes.end(),

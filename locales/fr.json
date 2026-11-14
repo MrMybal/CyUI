@@ -102,6 +102,7 @@
     "Copy message": "Copier le message",
     "Copy shortcuts as JSON": "Copier les raccourcis en JSON",
     "Copy visible": "Copier les lignes visibles",
+    "Copy/paste nodes, groups, links and reroutes: Ctrl+C/V/D or right-click. Paste at pointer.": "Copier/coller nœuds, groupes, liens et points de routage : Ctrl+C/V/D ou clic droit. Collage au curseur.",
     "Correlation": "Corrélation",
     "Correlation and phase": "Corrélation et phase",
     "Could not open the audio device": "Impossible d'ouvrir le périphérique audio",

@@ -102,6 +102,7 @@
     "Copy message": "Copy message",
     "Copy shortcuts as JSON": "Copy shortcuts as JSON",
     "Copy visible": "Copy visible",
+    "Copy/paste nodes, groups, links and reroutes: Ctrl+C/V/D or right-click. Paste at pointer.": "Copy/paste nodes, groups, links and reroutes: Ctrl+C/V/D or right-click. Paste at pointer.",
     "Correlation": "Correlation",
     "Correlation and phase": "Correlation and phase",
     "Could not open the audio device": "Could not open the audio device",

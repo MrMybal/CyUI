@@ -24,19 +24,63 @@ Point readPoint(const Json &j) {
 } // namespace
 NodeFragment copyNodeSelection(ArrayView<ItemId> ids, ArrayView<Node> nodes, ArrayView<NodeLink> links,
                                ArrayView<NodeGroup> groups, ArrayView<NodeReroute> reroutes) {
+    NodeSelection selection;
+    for (std::size_t i = 0; i < ids.count; ++i) {
+        selection.nodes.push_back(ids[i]);
+        selection.groups.push_back(ids[i]); // legacy combined node/group selection
+    }
+    return copyGraphSelection(selection, nodes, links, groups, reroutes);
+}
+NodeFragment copyGraphSelection(const NodeSelection &selection, ArrayView<Node> nodes,
+                                ArrayView<NodeLink> links, ArrayView<NodeGroup> groups,
+                                ArrayView<NodeReroute> reroutes) {
     NodeFragment f;
-    std::unordered_set<ItemId> chosen(ids.data, ids.data ? ids.data + ids.count : ids.data), pins,
-        connections;
+    std::unordered_set<ItemId> chosen(selection.nodes.begin(), selection.nodes.end()), pins, connections;
+    std::unordered_set<ItemId> pickedGroups(selection.groups.begin(), selection.groups.end());
+    std::unordered_set<ItemId> pickedLinks(selection.links.begin(), selection.links.end());
+    std::unordered_set<ItemId> pickedRoutes(selection.reroutes.begin(), selection.reroutes.end());
+    std::unordered_map<ItemId, const NodeGroup *> groupIndex;
     for (std::size_t i = 0; i < groups.count; ++i)
-        if (chosen.count(groups[i].id)) {
-            const auto &g = groups[i];
-            f.groups.push_back(g);
+        groupIndex[groups[i].id] = &groups[i];
+    std::vector<ItemId> pending(selection.groups);
+    for (std::size_t i = 0; i < pending.size(); ++i) {
+        const auto found = groupIndex.find(pending[i]);
+        if (found != groupIndex.end()) {
+            const auto &g = *found->second;
             for (std::size_t n = 0; n < nodes.count; ++n) {
                 auto p = nodes[n].position;
                 if (p.x >= g.position.x && p.y >= g.position.y && p.x <= g.position.x + g.size.x &&
                     p.y <= g.position.y + g.size.y)
                     chosen.insert(nodes[n].id);
             }
+            for (std::size_t n = 0; n < groups.count; ++n) {
+                const auto &child = groups[n];
+                if (child.position.x >= g.position.x && child.position.y >= g.position.y &&
+                    child.position.x + child.size.x <= g.position.x + g.size.x &&
+                    child.position.y + child.size.y <= g.position.y + g.size.y &&
+                    pickedGroups.insert(child.id).second)
+                    pending.push_back(child.id);
+            }
+        }
+    }
+    for (std::size_t i = 0; i < groups.count; ++i)
+        if (pickedGroups.count(groups[i].id))
+            f.groups.push_back(groups[i]);
+    for (std::size_t i = 0; i < reroutes.count; ++i)
+        if (pickedRoutes.count(reroutes[i].id))
+            pickedLinks.insert(reroutes[i].link);
+    std::unordered_map<ItemId, ItemId> owners;
+    for (std::size_t i = 0; i < nodes.count; ++i) {
+        for (const auto &p : nodes[i].inputs)
+            owners[p.id] = nodes[i].id;
+        for (const auto &p : nodes[i].outputs)
+            owners[p.id] = nodes[i].id;
+    }
+    for (std::size_t i = 0; i < links.count; ++i)
+        if (pickedLinks.count(links[i].id)) {
+            for (auto pin : {links[i].from, links[i].to})
+                if (owners.count(pin))
+                    chosen.insert(owners.at(pin));
         }
     for (std::size_t i = 0; i < nodes.count; ++i)
         if (chosen.count(nodes[i].id)) {
@@ -107,7 +151,12 @@ std::string nodesToJson(const NodeFragment &f) {
         v.fields["position"] = pointJson(r.position);
         j.fields["reroutes"].items.push_back(v);
     }
-    return detail::jsonDump(j);
+    auto text = detail::jsonDump(j);
+    NodeFragment verified;
+    std::string error;
+    if (!nodesFromJson(text, verified, error))
+        throw std::invalid_argument(error);
+    return text;
 }
 bool nodesFromJson(const std::string &text, NodeFragment &out, std::string &error) {
     try {
@@ -118,7 +167,7 @@ bool nodesFromJson(const std::string &text, NodeFragment &out, std::string &erro
         std::unordered_set<ItemId> nodeIds, pinIds, linkIds, groupIds, routeIds, inputs, outputs, links;
         auto id = [](const Json &v, std::unordered_set<ItemId> &ids) {
             auto n = v.get("id").integer<ItemId>();
-            if (!ids.insert(n).second)
+            if (!n || !ids.insert(n).second)
                 throw std::invalid_argument("Duplicate or zero ID");
             return n;
         };

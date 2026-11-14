@@ -4,7 +4,7 @@ title: Editor tools
 description: Typed details, hierarchies, tables, file selection and shared commands.
 section: Guides
 order: 11
-revision: 3
+revision: 4
 ---
 
 The reusable editor modules build on Core. Select `Inspector`, `Hierarchy`,
@@ -208,6 +208,30 @@ move, and context menus create/remove overlays. Ctrl+C/V/D exchanges selected
 nodes with internal links and reroutes. Graph JSON uses `cyui.nodes`, version 1.
 Cloning allocates fresh IDs and remaps all internal references; unrelated links
 are excluded. Apply created elements, committed overlays and removals in the host.
+
+Nodes, groups, links and reroutes can be selected with Ctrl/Shift, Ctrl+A or a box
+(cards/groups fully inside; reroutes by position). Right-click any element for
+**Copy/Paste/Duplicate** or use Ctrl+C/V/D. Right-clicking a selected element keeps
+the mixed selection. A copied group includes fully contained subgroups recursively
+and nodes whose anchors are inside; node pins, internal links and their reroutes
+are preserved. Explicit link/reroute copy includes its endpoint nodes, yielding a
+self-contained fragment that can be pasted into another graph.
+
+`NodeState::selection` holds node IDs; `selectedGroups`, `selectedLinks` and
+`selectedReroutes` hold other kinds. `copyGraphSelection(NodeSelection,...)` exposes
+this typed selection without drawing; legacy `copyNodeSelection` still accepts
+combined node/group IDs. Python mirrors these APIs and state fields in snake_case.
+The namespaces stay separate even when legacy source IDs overlap.
+
+Paste positions the fragment at the cursor/context position; Duplicate offsets it.
+Fresh nonzero IDs are allocated for every node/pin/link/group/reroute and all
+references are remapped, preserving labels, colors, group sizes and relative layout.
+Apply the complete `created` fragment as one Undo transaction. Read-only views allow
+Copy; Paste/Duplicate need an allocator. Invalid JSON/allocator collisions preserve
+the selection and return no partial fragment. Import/export are limited to 1 MiB,
+32 JSON levels and 65536 nodes. Delete returns `removeNodes`, `removeGroups`,
+`removeLinks` and `removeReroutes`; the host removes incident links/orphaned reroutes.
+The single-link context action retains `linkRemoved`/`removeLink`.
 
 Group movement also moves nodes whose anchors were inside its original rectangle
 and their contained reroutes. Apply `groups`, `moved` and `reroutes` commits as one

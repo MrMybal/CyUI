@@ -40,6 +40,10 @@ struct NodeFragment {
     std::vector<NodeGroup> groups;
     std::vector<NodeReroute> reroutes;
 };
+// Source ID namespaces may overlap; keep the selected kinds separate.
+struct NodeSelection {
+    std::vector<ItemId> nodes, groups, links, reroutes;
+};
 struct NodeResult {
     Edit<std::vector<NodeMove>> moved;
     ItemId connectFrom = 0, connectTo = 0; // valid when connect
@@ -50,10 +54,11 @@ struct NodeResult {
     Edit<std::vector<NodeGroup>> groups;
     Edit<std::vector<NodeReroute>> reroutes;
     std::vector<ItemId> removeGroups, removeReroutes;
+    std::vector<ItemId> removeLinks;
 };
 struct NodeState {
     CanvasState canvas;
-    std::vector<ItemId> selection;
+    std::vector<ItemId> selection; // node IDs; groups/links/reroutes have separate selections below
     std::vector<NodeMove> before, preview;
     Point grab, boxStart;
     ItemId wire = 0; // the pin a new link starts from, while wiring
@@ -71,6 +76,7 @@ struct NodeState {
     int contextKind = 0;
     Point contextPosition;
     std::string groupLabel;
+    std::vector<ItemId> selectedGroups, selectedLinks, selectedReroutes;
 };
 struct NodeOptions {
     bool readOnly = false;
@@ -87,6 +93,10 @@ struct NodeOptions {
 };
 CYUI_API NodeFragment copyNodeSelection(ArrayView<ItemId>, ArrayView<Node>, ArrayView<NodeLink>,
                                         ArrayView<NodeGroup> = {}, ArrayView<NodeReroute> = {});
+// Groups include contained groups/nodes. Explicit links/reroutes include their endpoint nodes,
+// making the fragment self-contained and safe to paste into a different graph.
+CYUI_API NodeFragment copyGraphSelection(const NodeSelection &, ArrayView<Node>, ArrayView<NodeLink>,
+                                         ArrayView<NodeGroup> = {}, ArrayView<NodeReroute> = {});
 CYUI_API std::string nodesToJson(const NodeFragment &);
 CYUI_API bool nodesFromJson(const std::string &, NodeFragment &, std::string &error);
 CYUI_API bool cloneNodes(const NodeFragment &, const std::function<ItemId()> &allocateId, Point offset,
