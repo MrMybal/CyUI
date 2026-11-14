@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from copy import deepcopy
-from math import exp, floor, log10
+from math import exp, floor, log10, isfinite
 from .common import Edit, Range, select, snap, ui, zoom_range, take_wheel, wheel_taken
 from .canvas import Canvas, CanvasState
 
@@ -45,13 +45,55 @@ class TimelineState:
     revision: int = 0
     focused: bool = False
     panning: bool = False
+    marker_edit: object = None
+    lane_drag: object = None
+    marker_before: list = field(default_factory=list)
+    marker_preview: list = field(default_factory=list)
+    context_marker: object = None
+    marker_label: str = ''
+    error: str = ''
 
 
-def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhead=0., snap_step=0., revision=0, read_only=False, snap_time=None, format_time=None, draw_clip=None, min_duration=1e-6):
+def _clip_operation(clips, selection, value, allocate_id, split=False, minimum=1e-6):
+    if not allocate_id or not isfinite(value) or not isfinite(minimum) or minimum <= 0: raise ValueError('Invalid timeline operation')
+    used = {clip.id for clip in clips}
+    if len(used) != len(clips) or any(not isfinite(c.start) or not isfinite(c.duration) or c.duration <= 0 or not isfinite(c.start+c.duration) for c in clips): raise ValueError('Invalid clips')
+    result = []
+    for clip in deepcopy(clips):
+        active = clip.id in selection and not clip.locked
+        if split and active and value-clip.start >= minimum and clip.start+clip.duration-value >= minimum:
+            copy = deepcopy(clip); copy.id = allocate_id()
+            if not copy.id or copy.id in used: raise ValueError('Allocator returned duplicate or zero ID')
+            used.add(copy.id); copy.start = value; copy.duration = clip.start+clip.duration-value; clip.duration = value-clip.start; result += [clip, copy]
+        else:
+            result.append(clip)
+            if not split and active:
+                copy = deepcopy(clip); copy.id = allocate_id(); copy.start += value
+                if not copy.id or copy.id in used or not isfinite(copy.start+copy.duration): raise ValueError('Invalid duplicate ID or position')
+                used.add(copy.id); result.append(copy)
+    return result
+
+
+def split_timeline_clips(clips, selection, time, allocate_id, min_duration=1e-6): return _clip_operation(clips, selection, time, allocate_id, True, min_duration)
+def duplicate_timeline_clips(clips, selection, offset, allocate_id): return _clip_operation(clips, selection, offset, allocate_id)
+
+
+def reorder_timeline_lane(lanes, identifier, before=None):
+    moved = next((lane for lane in lanes if lane.id == identifier), None)
+    if moved is None or before == identifier or (before is not None and not any(lane.id == before for lane in lanes)): return list(lanes)
+    result = [lane for lane in lanes if lane.id != identifier]
+    result.insert(next((n for n, lane in enumerate(result) if lane.id == before), len(result)), moved)
+    return result
+
+
+def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhead=0., snap_step=0., revision=0, read_only=False, snap_time=None, format_time=None, draw_clip=None, min_duration=1e-6, allocate_id=None):
     i, c = ui()
-    result = {'clips': Edit(), 'seek': None, 'range_changed': False, 'remove': []}
+    result = {'clips': Edit(), 'seek': None, 'range_changed': False, 'remove': [], 'markers': Edit(), 'lanes': Edit()}
     with Canvas(identifier, CanvasState(), size, False, False) as f:
         io, p, d = i.get_io(), c.palette(), f.draw
+        if (state.marker_edit is not None or state.lane_drag is not None) and (revision != state.revision or read_only or i.is_key_pressed(i.Key.escape)):
+            result['markers'] = Edit('cancel'); state.marker_edit = state.lane_drag = None
+        if state.marker_edit is not None: markers = state.marker_preview
         if not state.view.valid:
             state.view = Range(0, 10)
         header, ruler = min(c.dp(150), f.size[0]*.3), i.get_frame_height()
@@ -122,12 +164,19 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
         if state.selection.minimum != state.selection.maximum:
             d.add_rect_filled((x(min(state.selection.minimum, state.selection.maximum)), f.top[1]+ruler), (x(max(state.selection.minimum, state.selection.maximum)), f.bottom[1]), p.selection)
         d.pop_clip_rect()
+        hit_marker = None
         for marker in markers:
             d.add_line((x(marker.time), f.top[1]), (x(marker.time), f.bottom[1]), p.warning, c.dp(1))
+            if io.mouse_pos.y < f.top[1]+ruler and abs(io.mouse_pos.x-x(marker.time)) < c.dp(7): hit_marker = marker
         d.add_line((x(playhead), f.top[1]), (x(playhead), f.bottom[1]), p.accent, c.dp(2))
         if f.hovered and i.is_mouse_clicked(0):
             state.focused = True
-            if io.mouse_pos.x >= left and io.mouse_pos.y < f.top[1]+ruler:
+            if hit_marker is not None and not read_only:
+                state.marker_edit, state.grab, state.revision = hit_marker.id, mouse, revision
+                state.marker_before = deepcopy(markers); state.marker_preview = deepcopy(markers); result['markers'] = Edit('begin', deepcopy(markers))
+            elif io.mouse_pos.x < left and hovered_lane is not None and not read_only:
+                state.lane_drag, state.revision = hovered_lane, revision
+            elif io.mouse_pos.x >= left and io.mouse_pos.y < f.top[1]+ruler:
                 result['seek'] = snapped(mouse)
             elif hit is not None:
                 if hit not in state.selected or io.key_ctrl:
@@ -144,6 +193,15 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
                     state.selected.clear()
         elif i.is_mouse_clicked(0):
             state.focused = False
+        if state.marker_edit is not None:
+            state.marker_preview = deepcopy(state.marker_before)
+            for marker in state.marker_preview:
+                if marker.id == state.marker_edit: marker.time = snapped(marker.time+mouse-state.grab)
+            if result['markers'].phase != 'begin': result['markers'] = Edit('update' if i.is_mouse_down(0) else 'commit', deepcopy(state.marker_preview))
+            if not i.is_mouse_down(0): state.marker_edit = None
+        if state.lane_drag is not None and not i.is_mouse_down(0):
+            if hovered_lane is not None: result['lanes'] = Edit('commit', reorder_timeline_lane(lanes, state.lane_drag, hovered_lane))
+            state.lane_drag = None
         if state.mode > 0:
             if i.is_mouse_down(0):
                 state.preview = deepcopy(state.before)
@@ -174,4 +232,32 @@ def timeline(identifier, state, lanes, clips, markers=(), size=(0, 300), playhea
                 state.mode = 0
         if state.focused and f.focused and not io.want_text_input and not read_only and i.is_key_pressed(i.Key.delete):
             result['remove'] = [c.id for c in clips if c.id in state.selected and not c.locked]
+        if f.hovered and i.is_mouse_clicked(1):
+            state.context_marker = hit_marker.id if hit_marker else None
+            state.marker_label = hit_marker.label if hit_marker else ''
+            if hit is not None and hit not in state.selected: state.selected = [hit]
+            i.open_popup('##timelineMenu')
+        split = duplicate = False
+        if i.begin_popup('##timelineMenu'):
+            if state.context_marker is not None:
+                accepted, state.marker_label = i.input_text('##label', state.marker_label, i.InputTextFlags_.enter_returns_true)
+                if accepted and not read_only:
+                    values = deepcopy(markers)
+                    for marker in values:
+                        if marker.id == state.context_marker: marker.label = state.marker_label
+                    result['markers'] = Edit('commit', values); i.close_current_popup()
+                if i.menu_item(c.tr_label('Remove marker'), '', False, not read_only)[0]: result['markers'] = Edit('commit', [deepcopy(m) for m in markers if m.id != state.context_marker])
+            else:
+                split = i.menu_item(c.tr_label('Split at playhead'), 'S', False, not read_only and allocate_id is not None)[0]
+                duplicate = i.menu_item(c.tr_label('Duplicate'), 'Ctrl+D', False, not read_only and allocate_id is not None)[0]
+            i.end_popup()
+        if state.focused and f.focused and not io.want_text_input and not read_only and allocate_id:
+            split |= not io.key_ctrl and i.is_key_pressed(i.Key.s)
+            duplicate |= io.key_ctrl and i.is_key_pressed(i.Key.d)
+        try:
+            if split: result['clips'] = Edit('commit', split_timeline_clips(clips, state.selected, playhead, allocate_id, min_duration))
+            if duplicate:
+                picked = [clip for clip in clips if clip.id in state.selected and not clip.locked]
+                if picked: result['clips'] = Edit('commit', duplicate_timeline_clips(clips, state.selected, max(clip.start+clip.duration for clip in picked)-min(clip.start for clip in picked), allocate_id))
+        except ValueError as error: state.error = str(error)
     return result

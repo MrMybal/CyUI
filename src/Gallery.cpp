@@ -667,7 +667,9 @@ void nodesPage(const GalleryResources& resources)
     static std::vector<NodeLink> links{{1, 11, 31, 3}, {2, 12, 32, 1}, {3, 13, 33, 2},
                                       {4, 34, 41, 0}, {5, 21, 42, 0}, {6, 22, 43, 0},
                                       {7, 44, 51, 0}, {8, 23, 52, 2}, {9, 53, 61, 0}, {10, 53, 62, 0}};
-    static ItemId nextLink = 11;
+    static ItemId nextLink = 1000;
+    static std::vector<NodeGroup> groups{{900, {-5, 5}, {570, 405}, "Voice controls", 1}};
+    static std::vector<NodeReroute> reroutes{{901, 5, {570, 250}}};
     const auto size = dp(0, 470);
     static bool framed = false;
     if (!framed) {
@@ -681,8 +683,26 @@ void nodesPage(const GalleryResources& resources)
                     node.position = move.position;
     NodeOptions options;
     options.snap = 8;
+    options.groups = groups;
+    options.reroutes = reroutes;
+    options.allocateId = []() { return nextLink++; };
     const auto shown = translatedNodes(nodes);
     const auto edit = nodeEditor("##nodes", state, shown, links, size, options);
+    if (edit.groups.committed())
+        groups = edit.groups.value;
+    if (edit.reroutes.committed())
+        reroutes = edit.reroutes.value;
+    nodes.insert(nodes.end(), edit.created.nodes.begin(), edit.created.nodes.end());
+    links.insert(links.end(), edit.created.links.begin(), edit.created.links.end());
+    groups.insert(groups.end(), edit.created.groups.begin(), edit.created.groups.end());
+    reroutes.insert(reroutes.end(), edit.created.reroutes.begin(), edit.created.reroutes.end());
+    for (auto key : edit.removeGroups)
+        groups.erase(std::remove_if(groups.begin(), groups.end(), [&](const auto &g) { return g.id == key; }),
+                     groups.end());
+    for (auto key : edit.removeReroutes)
+        reroutes.erase(
+            std::remove_if(reroutes.begin(), reroutes.end(), [&](const auto &r) { return r.id == key; }),
+            reroutes.end());
     if (edit.moved.committed())
         for (const auto &move : edit.moved.value)
             for (auto &node : nodes)
@@ -706,6 +726,15 @@ void nodesPage(const GalleryResources& resources)
                 }), links.end());
         nodes.erase(std::remove_if(nodes.begin(), nodes.end(), [&](const Node &node) { return node.id == id; }), nodes.end());
     }
+    reroutes.erase(std::remove_if(reroutes.begin(), reroutes.end(),
+                                  [&](const auto &route) {
+                                      return std::none_of(links.begin(), links.end(), [&](const auto &link) {
+                                          return route.link == link.id;
+                                      });
+                                  }),
+                   reroutes.end());
+    if (!state.clipboardError.empty())
+        textColoured(palette().error, "%s", tr(state.clipboardError.c_str()).c_str());
 }
 #endif
 
@@ -785,8 +814,73 @@ void assetsPage(const GalleryResources& resources)
 #endif
 
 #if defined(CYUI_HAS_INSPECTOR)
+void advancedInspectorPage() {
+    textDim(
+        "%s",
+        tr("Right-click a field or category to copy/paste JSON. Double-click a number to enter Value*100.")
+            .c_str());
+    static std::vector<Property> first, second;
+    static InspectorState state;
+    static bool multi = false;
+    static std::uint64_t revision = 0;
+    if (first.empty()) {
+        auto field = [](ItemId id, const char *key, const char *category, PropertyValue value) {
+            Property p;
+            p.id = id;
+            p.key = key;
+            p.label = key;
+            p.category = category;
+            p.value = std::move(value);
+            p.defaultValue = p.value;
+            return p;
+        };
+        first = {field(1, "Strength", "Material", 2.56),
+                 field(2, "Enabled", "Material", true),
+                 field(3, "Tint", "Material", PropertyColor{{.4f, .6f, .8f, 1}}),
+                 field(4, "Position", "Transform", PropertyVector{{0, 25, 100}}),
+                 field(5, "Scale", "Transform", PropertyVector{{1, 1, 1}}),
+                 field(6, "Texture", "Resources", PropertyAsset{"Texture", "/Game/Textures/Terrain"}),
+                 field(7, "Tags", "Resources",
+                       PropertyArray{{std::string("Environment"), std::string("Outdoor")}})};
+        first[0].bounded = true;
+        first[0].minimum = 0;
+        first[0].maximum = 10;
+        first[0].help = "Try Value*100: 2.56 becomes 10 because the maximum is 10.";
+        second = first;
+        second[0].value = 5.;
+        second[3].value = PropertyVector{{10, 25, 100}};
+    }
+    if (ImGui::Checkbox(trLabel("Edit two objects").c_str(), &multi))
+        ++revision;
+    auto fields = multi ? commonProperties({first, second}) : first;
+    InspectorOptions options;
+    options.browseAsset = [](ItemId) { notify(tr("The host opens its asset selector here.").c_str()); };
+    static TextFilter filter;
+    filterBox("##advancedFilter", filter);
+    options.filter = &filter;
+    for (const auto &e : inspector("##advanced", state, fields, revision, {}, options))
+        if (e.edit.committed()) {
+            for (auto &p : first)
+                if (p.id == e.id)
+                    p.value = e.edit.value;
+            if (multi)
+                for (auto &p : second)
+                    if (p.id == e.id)
+                        p.value = e.edit.value;
+            ++revision;
+        }
+    if (ghostButton(trLabel("Copy category as JSON").c_str()))
+        ImGui::SetClipboardText(propertyCategoryToJson(first, "Material").c_str());
+}
 void inspectorPage(const GalleryResources& resources)
 {
+    static int view = 1;
+    const char *views[]{"Material example", "Advanced inspector"};
+    segmented("##inspectorExample", views, 2, &view);
+    if (view == 1) {
+        advancedInspectorPage();
+        return;
+    }
     sectionTitle(tr("Details inspector").c_str());
     textDim(tr("Grouped editor properties with typed values, validation, read-only fields and committed edits.").c_str());
     static std::vector<Property> identity, surface, sampling, rendering;
@@ -1366,6 +1460,212 @@ void diffPage()
 }
 #endif
 
+#if defined(CYUI_HAS_HIERARCHY)
+void hierarchyPage() {
+    textDim("%s",
+            tr("Drag to reparent; Shift-drop inserts before a row. Ctrl/Shift selects; F2 renames.").c_str());
+    static std::vector<HierarchyItem> items{{1, 0, "Scene", "Scene"},   {2, 1, "Environment", "Group"},
+                                            {3, 2, "Terrain", "Mesh"},  {4, 2, "Sun", "Light"},
+                                            {5, 1, "Camera", "Camera"}, {6, 1, "Effects", "Group"},
+                                            {7, 6, "Fog", "Volume"}};
+    static HierarchyState state;
+    static ItemId next = 100;
+    for (const auto &r : hierarchy("##hierarchy", state, items, dp(0, 460))) {
+        if (r.action == HierarchyAction::remove) {
+            auto removed = r.ids;
+            bool more = true;
+            while (more) {
+                more = false;
+                for (const auto &item : items)
+                    if (selected(removed, item.parent) && !selected(removed, item.id)) {
+                        removed.push_back(item.id);
+                        more = true;
+                    }
+            }
+            items.erase(std::remove_if(items.begin(), items.end(),
+                                       [&](const auto &item) { return selected(removed, item.id); }),
+                        items.end());
+            continue;
+        }
+        if (r.action == HierarchyAction::duplicate) {
+            std::vector<HierarchyItem> copies;
+            for (const auto &item : items)
+                if (selected(r.ids, item.id)) {
+                    auto copy = item;
+                    copy.id = next++;
+                    copy.label += " (copy)";
+                    copies.push_back(copy);
+                }
+            items.insert(items.end(), copies.begin(), copies.end());
+            continue;
+        }
+        for (auto &item : items)
+            if (selected(r.ids, item.id)) {
+                if (r.action == HierarchyAction::rename)
+                    item.label = r.text;
+                if (r.action == HierarchyAction::visibility)
+                    item.visible = r.value;
+                if (r.action == HierarchyAction::locking)
+                    item.locked = r.value;
+                if (r.action == HierarchyAction::reparent)
+                    item.parent = r.parent;
+            }
+        if (r.action == HierarchyAction::reparent && r.before) {
+            std::vector<HierarchyItem> moved;
+            for (const auto &item : items)
+                if (selected(r.ids, item.id))
+                    moved.push_back(item);
+            items.erase(std::remove_if(items.begin(), items.end(),
+                                       [&](const auto &item) { return selected(r.ids, item.id); }),
+                        items.end());
+            auto at = std::find_if(items.begin(), items.end(),
+                                   [&](const auto &item) { return item.id == r.before; });
+            items.insert(at, moved.begin(), moved.end());
+        }
+    }
+}
+#endif
+#if defined(CYUI_HAS_DATAVIEW)
+void dataViewPage() {
+    textDim(
+        "%s",
+        tr("10,000 rows. Sort headers, filter columns, Shift-select cells, Ctrl+C/V; double-click to edit.")
+            .c_str());
+    static std::vector<DataRow> rows;
+    static DataViewState state;
+    static std::vector<DataColumn> columns{{1, "Name", true, false, 0, 1, 220},
+                                           {2, "Value", true, true, 0, 10, 160},
+                                           {3, "Enabled", true, false, 0, 1, 100},
+                                           {4, "ID", false, false, 0, 1, 150}};
+    if (rows.empty())
+        for (int n = 1; n <= 10000; ++n)
+            rows.push_back({ItemId(n),
+                            {std::string("Object ") + std::to_string(n), double(n % 100) / 10., true,
+                             std::int64_t(9007199254740990LL + n)}});
+    for (const auto &e : dataView("##dataView", state, columns, rows, dp(0, 470)))
+        if (e.edit.committed())
+            for (auto &row : rows)
+                if (row.id == e.row)
+                    for (std::size_t c = 0; c < columns.size(); ++c)
+                        if (columns[c].id == e.column)
+                            row.cells[c] = e.edit.value;
+}
+#endif
+#if defined(CYUI_HAS_FILEPICKER)
+void filePickerPage() {
+    textDim("%s", tr("A virtual project supplied by the host. Selecting or saving here performs no "
+                     "filesystem operation.")
+                      .c_str());
+    static FilePickerState state;
+    static bool initialized = false;
+    static int mode = 0;
+    const char *modes[]{"Open file", "Open files", "Save file", "Select folder"};
+    if (segmented("##pickerMode", modes, 4, &mode)) {
+        state.selection.clear();
+        state.filename.clear();
+    }
+    if (!initialized) {
+        state.directory = state.pathText = "/project";
+        initialized = true;
+    }
+    FilePickerOptions options;
+    options.root = "/project";
+    options.mode = FilePickerMode(mode);
+    options.filters = {{"All files", {}}, {"Images", {"png", "jpg"}}, {"Source", {"cpp", "h"}}};
+    FileListing listing;
+    listing.directory = state.directory;
+    if (state.directory == "/project")
+        listing.entries = {{1, "Images", true},
+                           {2, "Source", true},
+                           {3, "README.md", false, 2300},
+                           {4, "scene.json", false, 48000}};
+    else if (state.directory == "/project/Images")
+        listing.entries = {{5, "Terrain.png", false, 250000}, {6, "Preview.jpg", false, 80000}};
+    else if (state.directory == "/project/Source")
+        listing.entries = {{7, "main.cpp", false, 3200}, {8, "App.h", false, 1200}};
+    else
+        listing.error = tr("Folder not found");
+    const auto result = filePicker("##filePicker", state, listing, dp(0, 490), options);
+    if (result.accepted && !result.paths.empty())
+        notify(result.paths.front().c_str(), Tone::success);
+}
+#endif
+#if defined(CYUI_HAS_TIMELINE)
+void timelinePage() {
+    textDim("%s", tr("Drag clips/edges and markers. Drag lane names to reorder. S: split; Ctrl+D: duplicate; "
+                     "right-click: actions.")
+                      .c_str());
+    static TimelineState state;
+    static std::vector<TimelineLane> lanes{{1, "Video", 70}, {2, "Audio", 80}, {3, "Events", 48}};
+    static std::vector<TimelineClip> clips{{1, 1, 1, 3, "Opening", 0},
+                                           {2, 1, 5, 3, "Sequence", 1},
+                                           {3, 2, .5, 7, "Sound", 2},
+                                           {4, 3, 2, 1, "Marker interval", 3}};
+    static std::vector<TimelineMarker> markers{{1, 4, "Cue"}};
+    static ItemId next = 100;
+    TimelineOptions options;
+    options.playhead = 3.5;
+    options.snap = .25;
+    options.allocateId = []() { return ++next; };
+    auto edit = timeline("##timeline", state, lanes, clips, markers, dp(0, 380), options);
+    if (edit.clips.committed())
+        clips = edit.clips.value;
+    if (edit.lanes.committed())
+        lanes = edit.lanes.value;
+    if (edit.markers.committed())
+        markers = edit.markers.value;
+    for (auto key : edit.remove)
+        clips.erase(std::remove_if(clips.begin(), clips.end(), [&](const auto &c) { return c.id == key; }),
+                    clips.end());
+    if (!state.error.empty())
+        textColoured(palette().error, "%s", tr(state.error.c_str()).c_str());
+}
+#endif
+#if defined(CYUI_HAS_COMMANDS)
+void commandsPage(const GalleryResources &resources) {
+    static CommandRegistry registry;
+    static bool init = false, open = false;
+    static CommandState state;
+    static std::string error;
+    if (!init) {
+        registry.add({1, "Open document", "Ctrl+O", "File"});
+        registry.add({2, "Save document", "Ctrl+S", "File"});
+        registry.add({3, "Frame selection", "Home", "View"});
+        registry.add({4, "Unavailable command", "", "Example", false});
+        init = true;
+    }
+    textDim(
+        "%s",
+        tr("Menus, toolbar and command palette share one registry. Click a shortcut to rebind it.").c_str());
+    if (primaryButton(trLabel("Open command palette").c_str()) || resources.previewCommands)
+        open = true;
+    if (registry.toolbarButton(2, icon::save))
+        notify(tr("Save requested").c_str());
+    if (beginProperties("##bindings")) {
+        for (const auto &command : registry.commands()) {
+            ItemScope key(command.id);
+            property(tr(command.label.c_str()).c_str());
+            auto chord = parseShortcut(command.shortcut);
+            if (shortcutEditor("##binding", chord) && !registry.rebind(command.id, chord))
+                error = tr("Shortcut conflicts with another command");
+        }
+        endProperties();
+    }
+    if (ghostButton(trLabel("Copy shortcuts as JSON").c_str()))
+        ImGui::SetClipboardText(registry.bindingsJson().c_str());
+    ImGui::SameLine();
+    if (ghostButton(trLabel("Paste shortcuts").c_str())) {
+        auto text = ImGui::GetClipboardText();
+        registry.loadBindingsJson(text ? text : "", error);
+    }
+    const auto commands = registry.commands();
+    const auto action = commandPalette("Commands###examplePalette", open, state, commands);
+    if (action || registry.poll())
+        notify(tr("Command requested (handled by the host)").c_str());
+    if (!error.empty())
+        textColoured(palette().error, "%s", tr(error.c_str()).c_str());
+}
+#endif
 void moduleGallery(int selectedTab,const GalleryResources& resources) {
     (void)resources;
     auto page=[&](const char*label,int index,auto body){if(ImGui::BeginTabItem(trLabel(label).c_str(),nullptr,selectedTab==index?ImGuiTabItemFlags_SetSelected:0)){body();ImGui::EndTabItem();}};
@@ -1382,7 +1682,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
     page("Nodes",7,[&]{nodesPage(resources);});
 #endif
 #if defined(CYUI_HAS_TIMELINE)
-    page("Timeline",8,[]{textDim(tr("Wheel: zoom. Shift-wheel: pan. Ctrl-wheel: scroll lanes. Drag clip/edges to move/trim.").c_str());static TimelineState state;static std::vector<TimelineLane>lanes{{1,"Video",70},{2,"Audio",80},{3,"Events",48}};static std::vector<TimelineClip>clips{{1,1,1,3,"Opening",0},{2,1,5,3,"Sequence",1},{3,2,.5,7,"Sound",2},{4,3,2,1,"Marker interval",3}};TimelineMarker marker{1,4,"Cue"};TimelineOptions o;o.playhead=3.5;o.snap=.25;auto e=timeline("##timeline",state,lanes,clips,{&marker,1},dp(0,350),o);if(e.clips.committed())clips=e.clips.value;});
+    page("Timeline", 8, timelinePage);
 #endif
 #if defined(CYUI_HAS_AUDIOVIEWS)
     page("Audio views",9,audioViewsPage);
@@ -1412,7 +1712,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
         });
 #endif
 #if defined(CYUI_HAS_COMMANDS)
-    page("Commands",16,[&]{static bool open=false;static CommandState state;static std::vector<Command>commands{{1,"Open document","Ctrl+O","File"},{2,"Save document","Ctrl+S","File"},{3,"Frame selection","Home","View"},{4,"Unavailable command","","Example",false}};if(primaryButton(trLabel("Open command palette").c_str())||resources.previewCommands)open=true;const auto action=commandPalette("Commands###examplePalette",open,state,commands);if(action)notify(tr("Command requested (handled by the host)").c_str());});
+    page("Commands", 16, [&] { commandsPage(resources); });
 #endif
 #if defined(CYUI_HAS_DIAGNOSTICS)
     page("Diagnostics",17,[]{static LogBuffer buffer;static LogState state;static bool init=false;if(!init){buffer.append(LogLevel::info,"Application initialized");buffer.append(LogLevel::warning,"Example warning");buffer.append(LogLevel::error,"Example diagnostic — no file is modified");init=true;}logView("##log",state,buffer,dp(0,210));std::vector<Diagnostic>rows{{1,LogLevel::warning,"example.cpp","Unused value",8,4},{2,LogLevel::error,"shader.hlsl","Example compiler diagnostic",12,3}};diagnosticList("##diagnostics",rows,dp(0,140));});
@@ -1429,6 +1729,15 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
     });
 #endif
 
+#if defined(CYUI_HAS_HIERARCHY)
+    page("Hierarchy", 30, hierarchyPage);
+#endif
+#if defined(CYUI_HAS_DATAVIEW)
+    page("Data view", 31, dataViewPage);
+#endif
+#if defined(CYUI_HAS_FILEPICKER)
+    page("File picker", 32, filePickerPage);
+#endif
 }
 
 }  // namespace

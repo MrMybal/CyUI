@@ -31,7 +31,7 @@
       "id": "source-include-cyui-core-h",
       "title": "Core.h",
       "locale": "fr",
-      "expectedRevision": "1e3dd3a0320c"
+      "expectedRevision": "f933d09701ea"
     },
     {
       "id": "source-include-cyui-corewidgets-h",
@@ -43,7 +43,7 @@
       "id": "source-include-cyui-cyui-h",
       "title": "CyUI.h",
       "locale": "fr",
-      "expectedRevision": "441acf52dd27"
+      "expectedRevision": "b49333134f47"
     },
     {
       "id": "source-include-cyui-export-h",
@@ -88,6 +88,12 @@
       "expectedRevision": "2558e868ec9e"
     },
     {
+      "id": "source-include-cyui-numeric-h",
+      "title": "Numeric.h",
+      "locale": "fr",
+      "expectedRevision": "14ae626a22da"
+    },
+    {
       "id": "source-include-cyui-theme-h",
       "title": "Theme.h",
       "locale": "fr",
@@ -116,6 +122,12 @@
       "title": "CodeText.h",
       "locale": "fr",
       "expectedRevision": "eb68782f08b4"
+    },
+    {
+      "id": "source-include-cyui-detail-json-h",
+      "title": "Json.h",
+      "locale": "fr",
+      "expectedRevision": "094201a1ca30"
     },
     {
       "id": "source-include-cyui-modules-assets-h",
@@ -172,6 +184,12 @@
       "expectedRevision": "d9deaf5e7af3"
     },
     {
+      "id": "source-include-cyui-modules-dataview-h",
+      "title": "DataView.h",
+      "locale": "fr",
+      "expectedRevision": "650f081df81c"
+    },
+    {
       "id": "source-include-cyui-modules-diagnostics-h",
       "title": "Diagnostics.h",
       "locale": "fr",
@@ -190,6 +208,18 @@
       "expectedRevision": "66b0e96e76c8"
     },
     {
+      "id": "source-include-cyui-modules-filepicker-h",
+      "title": "FilePicker.h",
+      "locale": "fr",
+      "expectedRevision": "d1fe3f0e7332"
+    },
+    {
+      "id": "source-include-cyui-modules-hierarchy-h",
+      "title": "Hierarchy.h",
+      "locale": "fr",
+      "expectedRevision": "6107eb59ab8c"
+    },
+    {
       "id": "source-include-cyui-modules-images-h",
       "title": "Images.h",
       "locale": "fr",
@@ -199,7 +229,7 @@
       "id": "source-include-cyui-modules-inspector-h",
       "title": "Inspector.h",
       "locale": "fr",
-      "expectedRevision": "0f0dc0de3f10"
+      "expectedRevision": "293f8497ab58"
     },
     {
       "id": "source-include-cyui-modules-nodes-h",
@@ -223,7 +253,7 @@
       "id": "source-include-cyui-modules-timeline-h",
       "title": "Timeline.h",
       "locale": "fr",
-      "expectedRevision": "50c9164b75b4"
+      "expectedRevision": "b5b35a8bdb92"
     },
     {
       "id": "source-include-cyui-modules-viewport-h",
@@ -238,5 +268,5 @@
       "expectedRevision": "c3ae0abe47aa"
     }
   ],
-  "current": 18
+  "current": 19
 }

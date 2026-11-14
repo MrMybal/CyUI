@@ -60,7 +60,7 @@ target_link_libraries(app PRIVATE CyUI::Diff)
 ### Without CMake
 
 Add `include/` to the include path. Compile `src/Theme.cpp`, `src/Widgets.cpp`,
-`src/Layout.cpp`, `src/Filter.cpp` alongside the app's ImGui sources for Core. Add
+`src/Layout.cpp`, `src/Filter.cpp`, `src/Numeric.cpp` alongside the app's ImGui sources for Core. Add
 `src/modules/Audio.cpp` for audio controls, and `src/Gallery.cpp` for the gallery.
 Define `CYUI_HAS_AUDIO=1` when compiling Gallery with audio examples.
 
@@ -1035,3 +1035,136 @@ definitions before unloading plugins. Built-in IDs cannot be overwritten.
 Gallery's Code page includes a syntax selector for the shared registry. The
 native backend accepts shared display spans without replacing its lexical state;
 hosts with richer syntax overlays can use `CodeEditor::setSyntaxEnabled(false)`.
+
+## 10. Editor tools: Inspector, Hierarchy, DataView, FilePicker and Commands
+
+`Hierarchy`, `DataView` and `FilePicker` are optional C++17 targets depending only
+on Core. Select them in `CYUI_MODULES`; include their matching `modules/*.h`.
+Gallery tabs 30, 31 and 32 demonstrate them. Inspector tab 12 defaults to its
+advanced example; Nodes (7), Timeline (8) and Commands (16) demonstrate extensions.
+The maintained [editor tools manual](../Documentation/Documentation.html#/en/editor-tools)
+contains the complete data/transaction contract in English and French.
+
+### Numeric expressions
+
+Core includes `Numeric.h` and `evaluateNumericExpression(text, originalValue)`.
+It parses arithmetic, never code: `Value`, `+ - * / % ^`, parentheses, `pi`, `e`,
+the `k` suffix and `abs/sqrt/min/max/clamp/round/floor/ceil`. Syntax, depth,
+division by zero and non-finite results are checked. `Value` means the value at
+edit start, not an incrementally updated result. Input is limited to 4096 bytes
+and 32 nested operations. Function arguments use commas, decimals use a dot.
+
+Core's typed `valueEntry` (used by dragValue, sliderBar and audio controls) accepts
+expressions and clamps the result to its bounds. Invalid input stays open with
+an error. Inspector numbers open an expression editor on double-click, focused
+Enter or the context menu; vector components share Core's numeric entry.
+
+```cpp
+cyui::Property strength;
+strength.id = 1;
+strength.key = "strength";       // portable key, independent of label/translation/object ID
+strength.label = "Strength";
+strength.category = "Material";
+strength.value = 2.56;
+strength.bounded = true;
+strength.minimum = 0;
+strength.maximum = 10;
+cyui::PropertyValue result;
+std::string error;
+cyui::evaluatePropertyExpression(strength, "Value*100", result, error); // double(10)
+```
+
+### Typed property clipboard and multi-object editing
+
+PropertyValue retains its original alternatives and adds `float`,
+`PropertyVector{{x,y[,z[,w]]}}`, `PropertyColor{{r,g,b,a}}`,
+`PropertyAsset{assetType,path}` and `PropertyArray{{atoms...}}` (up to 1024,
+non-nested, homogeneous elements). Colors are data values in [0,1]. The host
+handles asset browsing through `InspectorOptions::browseAsset`.
+
+Right-click a property or category header for JSON copy/paste. `propertyToJson`
+and `propertyFromJson` also work outside drawing. The clipboard schema is versioned:
+
+```json
+{"format":"cyui.inspector","version":1,"kind":"property","property":{"type":"double","value":2.56}}
+```
+
+A category replaces `property` with `properties`, a map keyed by `Property::key`
+(label fallback), and uses `kind:"category"`. Category names and object IDs are
+not part of the match: another object/category with exactly the same keys and
+types is a valid target. Vector dimensions and asset classes must match. Paste
+normalizes/clamps each value, enforces read-only and choice rules and invokes
+the host validator before returning any commits. A category paste is atomic:
+apply the complete edit vector as one host Undo transaction. JSON is limited to
+1 MiB / 32 levels. int64 values are JSON integers and never converted to double.
+Exact int64 literals are supported in expression entry; arithmetic on int64
+originals outside ±(2^53-1) is refused on platforms without wider floating point.
+
+`commonProperties(objects)` keeps compatible fields, marks `mixed`, intersects
+bounds and respects read-only fields. Apply each commit to every matching object
+in one Undo transaction. `defaultValue` enables Reset to default. Advance revision
+when an external replacement makes an active edit stale.
+
+### Hierarchy and tables
+
+`hierarchy(id,state,items,size,options)` renders scenes/layers supplied as flat
+`HierarchyItem{id,parent,label,kind,visible,locked}` data with nonzero IDs, root 0.
+It preserves ancestors during filtering, supports Ctrl/Shift selection and
+rename/duplicate/remove/visibility/lock requests. Drag onto a row to reparent;
+Shift-drop inserts before it; the root drop zone detaches to root. Cycles, locked
+sources/targets and host `canReparent` vetoes are enforced. The host applies edits,
+allocates IDs and decides subtree duplication/deletion semantics.
+
+`dataView` uses ImGui tables with reorderable/hideable/resizable columns,
+multi-column numeric sorting, per-column filters and clipped rows. Cells are
+string/int64/double/bool. Shift-click selects a rectangle; Ctrl+C/V exchanges
+quoted TSV. Double-click edits a cell; Enter commits, Escape cancels. Double
+cells accept arithmetic and bounds. Paste is validated atomically, including
+read-only rows/columns and the host callback. State/options revision cancels stale
+cell editing. `copyDataCells` and `pasteDataCells` expose the same model contract.
+
+### FilePicker and command routing
+
+`filePicker` accepts a cached `FileListing` for the requested directory. The result
+reports navigation, cancellation or accepted paths for openFile/openFiles/saveFile/
+directory modes. Supply async/VFS results on the next frame; stale/loading/error
+snapshots cannot be accepted. Filters are case-insensitive extensions, and save
+asks before replacing an existing entry. Paths are lexically restricted to the
+configured root; OS permissions, symlinks, existence checks at write time and
+actual filesystem operations belong to the host. No OS picker is created.
+
+`CommandRegistry` owns common command metadata for palette snapshots, menuItem,
+toolbarButton and keyboard poll. IDs are nonzero and contexts are ordered from
+most specific to global. Rebinding rejects same-context collisions; the same
+chord may serve distinct contexts. Poll once per frame in the focused host window;
+typing suppresses commands unless allowWhileTyping is set. `bindingsJson` /
+`loadBindingsJson` exchange versioned bindings atomically; shortcutEditor captures
+a chord (Escape cancels, Backspace clears). The registry returns action IDs;
+execution and persistence belong to the host.
+
+### Nodes and Timeline extensions
+
+NodeOptions accepts borrowed `groups`, `reroutes` and a fresh nonzero `allocateId`
+callback. Comment groups move/resize/rename, reroutes move, and context menus
+create/remove them. Ctrl+C/V/D copies/pastes/duplicates a selection with internal
+links and reroutes. copyNodeSelection/nodesToJson/nodesFromJson/cloneNodes expose
+the bounded JSON contract. Clone remaps every node/pin/link/group/reroute ID;
+original ID namespaces remain independent. The host applies `created`, committed
+overlay edits and removals alongside the existing node edit requests.
+
+Timeline accepts allocateId for S (split at playhead), Ctrl+D (duplicate selected
+unlocked clips) and new markers. Marker dragging/renaming/removal and lane-name
+drag reordering return separate markers/lanes Edit vectors. splitTimelineClips,
+duplicateTimelineClips and reorderTimelineLane are usable without drawing. IDs,
+locked clips and minimum durations are preserved. Host revision/read-only/Escape
+cancel stale gestures; the host owns each Undo transaction.
+
+### Python
+
+`cyui_modules.hierarchy`, `dataview`, `filepicker`, `command_registry`, `numeric`
+and Inspector's typed clipboard models import without a renderer. The UI functions
+load imgui-bundle lazily. Python Inspector uses PropertyFloat for float32 and
+PropertyVector/Color/Asset/Array for compound values. property_to_json /
+property_category_from_json and CommandRegistry.bindings_json share the native
+schemas. nodes.py exposes graph fragment helpers and timeline.py exposes clip
+operations. All I/O, resource loading and committed model updates stay in the host.

@@ -4,7 +4,7 @@ title: Intégrer CyUI
 description: Installer les dépendances, sélectionner les modules et initialiser une interface.
 section: Découvrir
 order: 1
-sourceRevision: 2
+sourceRevision: 3
 ---
 
 CyUI ajoute des thèmes et des composants cohérents à Dear ImGui. Conservez une seule instance compatible d’ImGui, votre moteur de rendu et vos modèles métier.
@@ -38,7 +38,7 @@ target_link_libraries(app PRIVATE CyUI::Diff)
 
 ### Sans CMake {#without-cmake}
 
-Ajoutez `include/` aux répertoires d’inclusion. Compilez `src/Theme.cpp`, `src/Widgets.cpp`, `src/Layout.cpp` et `src/Filter.cpp` avec les sources ImGui de l’application. Audio ajoute `src/modules/Audio.cpp` ; Gallery ajoute `src/Gallery.cpp`. Définissez `CYUI_HAS_AUDIO=1` pour les exemples audio de la galerie. Les autres modules et leurs dépendances sont décrits dans [la sélection des modules](doc:modules#select-only-what-an-application-needs).
+Ajoutez `include/` aux répertoires d’inclusion. Compilez `src/Theme.cpp`, `src/Widgets.cpp`, `src/Layout.cpp`, `src/Filter.cpp` et `src/Numeric.cpp` avec les sources ImGui de l’application. Audio ajoute `src/modules/Audio.cpp` ; Gallery ajoute `src/Gallery.cpp`. Définissez `CYUI_HAS_AUDIO=1` pour les exemples audio de la galerie. Les autres modules et leurs dépendances sont décrits dans [la sélection des modules](doc:modules#select-only-what-an-application-needs).
 
 ### Initialisation {#startup}
 

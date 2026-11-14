@@ -36,3 +36,4 @@
 #include "cyui/Icons.h"
 #include "cyui/CoreWidgets.h"
 #include "cyui/Layout.h"
+#include "cyui/Numeric.h"

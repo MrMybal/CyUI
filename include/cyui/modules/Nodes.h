@@ -24,12 +24,32 @@ struct NodeMove {
     ItemId id = 0;
     Point position;
 };
+struct NodeGroup {
+    ItemId id = 0;
+    Point position, size{400, 240};
+    std::string label;
+    int colorIndex = 0;
+};
+struct NodeReroute {
+    ItemId id = 0, link = 0;
+    Point position;
+};
+struct NodeFragment {
+    std::vector<Node> nodes;
+    std::vector<NodeLink> links;
+    std::vector<NodeGroup> groups;
+    std::vector<NodeReroute> reroutes;
+};
 struct NodeResult {
     Edit<std::vector<NodeMove>> moved;
     ItemId connectFrom = 0, connectTo = 0; // valid when connect
     std::vector<ItemId> removeNodes;
     ItemId removeLink = 0; // valid when linkRemoved
     bool connect = false, linkRemoved = false;
+    NodeFragment created;
+    Edit<std::vector<NodeGroup>> groups;
+    Edit<std::vector<NodeReroute>> reroutes;
+    std::vector<ItemId> removeGroups, removeReroutes;
 };
 struct NodeState {
     CanvasState canvas;
@@ -40,6 +60,15 @@ struct NodeState {
     bool wireOutput = false, dragging = false, boxing = false, focused = false;
     std::uint64_t revision = 0;
     bool wiring = false;
+    std::vector<NodeGroup> groupBefore, groupPreview;
+    std::vector<NodeReroute> routeBefore, routePreview;
+    ItemId overlay = 0;
+    int overlayMode = 0; // 1 group move, 2 group resize, 3 reroute move
+    std::string clipboardError;
+    ItemId contextId = 0;
+    int contextKind = 0;
+    Point contextPosition;
+    std::string groupLabel;
 };
 struct NodeOptions {
     bool readOnly = false;
@@ -49,10 +78,19 @@ struct NodeOptions {
     std::function<bool(ItemId, ItemId)> canConnect;
     // Extra drawing inside each card, in screen coordinates (world-to-screen via state.canvas.view).
     std::function<void(const Node &, const Rect &)> drawBody;
+    ArrayView<NodeGroup> groups;
+    ArrayView<NodeReroute> reroutes;
+    std::function<ItemId()> allocateId; // fresh, nonzero IDs across nodes, pins, links and overlays
 };
-CYUI_API NodeResult nodeEditor(const char *id, NodeState &, const std::vector<Node> &, const std::vector<NodeLink> &,
-                      ImVec2 size, const NodeOptions & = {});
+CYUI_API NodeFragment copyNodeSelection(ArrayView<ItemId>, ArrayView<Node>, ArrayView<NodeLink>,
+                                        ArrayView<NodeGroup> = {}, ArrayView<NodeReroute> = {});
+CYUI_API std::string nodesToJson(const NodeFragment &);
+CYUI_API bool nodesFromJson(const std::string &, NodeFragment &, std::string &error);
+CYUI_API bool cloneNodes(const NodeFragment &, const std::function<ItemId()> &allocateId, Point offset,
+                         NodeFragment &, std::string &error);
+CYUI_API NodeResult nodeEditor(const char *id, NodeState &, const std::vector<Node> &,
+                               const std::vector<NodeLink> &, ImVec2 size, const NodeOptions & = {});
 // Layout produces positions; the host decides whether and how to commit them.
 CYUI_API std::vector<NodeMove> arrangeNodes(const std::vector<Node> &, const std::vector<NodeLink> &,
-                                   Point spacing = {240, 130});
+                                            Point spacing = {240, 130});
 } // namespace cyui

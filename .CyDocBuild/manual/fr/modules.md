@@ -4,7 +4,7 @@ title: Sélectionner les modules
 description: Cibles CMake, dépendances et contrats des composants optionnels.
 section: Guides
 order: 10
-sourceRevision: 4
+sourceRevision: 5
 ---
 
 CyUI 1.2 fournit un socle Dear ImGui et des modules d’interface sélectionnables. Le code CyUI est sous MIT. L’application conserve modèles, moteurs, fichiers, services, validation et historique Undo.
@@ -39,6 +39,9 @@ Les en-têtes ci-dessous sont relatifs à `include/cyui/`. Chaque cible porte le
 | Diagnostics | `modules/Diagnostics.h` | Journaux bornés synchronisés, filtres et navigation | Core + threads système |
 | DocumentViews | `modules/DocumentViews.h` | Sous-ensemble Markdown, code, liens, tables et conversations en cache | Code |
 | Web | `modules/Web.h` | Contrat texture/entrée, origines, messages et thème | Core |
+| Hierarchy | `modules/Hierarchy.h` | Scènes/calques, sélection, parents, renommage, visibilité/verrouillage | Core |
+| DataView | `modules/DataView.h` | Tableaux virtuels triés/filtrés, édition typée, collage TSV atomique | Core |
+| FilePicker | `modules/FilePicker.h` | Sélection hôte/VFS, ouverture/enregistrement, filtres et remplacement | Core |
 | Gallery | `Gallery.h` | Exemples et éditeur de thème | Modules activés uniquement |
 
 `CyUI::Code::Diff` est un alias de `CyUI::Diff`. `CyUI::CyUI` regroupe les modules sélectionnés. Un module est une bibliothèque statique, pas un plugin chargé dynamiquement.
@@ -71,7 +74,7 @@ Les dépendances sont automatiques : Diff active Code, sans CodeEditor, audio, t
 
 `CYUI_MODULES` accepte une liste séparée par points-virgules, Core, une liste vide ou All. La démo autonome complète prend All par défaut. Les intégrations et builds sans démo n’activent pas de nouveaux modules optionnels par défaut. Audio et Gallery gardent leur ancien défaut ON : désactivez-les explicitement. Core ne les lie jamais. Les anciennes déclarations Widgets.h/CyUI.h restent compatibles.
 
-Sans CMake, compilez les quatre sources Core et les `src/modules/<Name>.cpp` sélectionnés avec leurs dépendances et macros `CYUI_HAS_<NAME>` pour Gallery/CyUI.h. CodeEditor ajoute `src/modules/PagedCodeEditor.cpp`, TextEditor.cpp, son include et C++20. Code et ses dépendants ajoutent `src/modules/code/*.cpp`, Lexilla lexlib/lexers et les includes Lexilla/Scintilla. Définissez `CYUI_CODE_LANGUAGE_CATALOGUE=1` pour le catalogue étendu. `build_demo.bat` compile la démo Windows complète.
+Sans CMake, compilez les cinq sources Core et les `src/modules/<Name>.cpp` sélectionnés avec leurs dépendances et macros `CYUI_HAS_<NAME>` pour Gallery/CyUI.h. CodeEditor ajoute `src/modules/PagedCodeEditor.cpp`, TextEditor.cpp, son include et C++20. Code et ses dépendants ajoutent `src/modules/code/*.cpp`, Lexilla lexlib/lexers et les includes Lexilla/Scintilla. Définissez `CYUI_CODE_LANGUAGE_CATALOGUE=1` pour le catalogue étendu. `build_demo.bat` compile la démo Windows complète.
 
 ## Contrat commun des données et éditions {#shared-data-and-edit-contract}
 
@@ -109,3 +112,7 @@ copie pas le fichier entier. Les budgets de pages et de saisie restent actifs.
 Cette API C++ native n’a pas encore de liaison Python ou Web. Le packaging source
 l’inclut avec CodeEditor ; compilation Unreal Editor et saisie de chaque plateforme
 restent à valider par l’hôte.
+
+## Outils d’édition {#editor-tools}
+
+[JSON typé, expressions, hiérarchies, tableaux, fichiers, commandes et édition de graphes/timelines](doc:editor-tools).

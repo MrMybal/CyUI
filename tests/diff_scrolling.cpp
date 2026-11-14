@@ -28,7 +28,9 @@ cyui::DiffResult frame(cyui::DiffState &state, const cyui::DiffDocument &documen
     const auto result = cyui::diffViewer("diff", state, document, {0, 650});
     {
         cyui::ScopedFont font(cyui::monoFont());
-        rowHeight = ImGui::GetTextLineHeightWithSpacing();
+        // Diff rows deliberately set ItemSpacing.y to zero. Outside the view,
+        // GetTextLineHeightWithSpacing() includes the restored parent spacing.
+        rowHeight = ImGui::GetTextLineHeight();
     }
     ImGui::End();
     ImGui::Render();

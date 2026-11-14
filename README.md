@@ -185,6 +185,9 @@ adding a code editor, audio engine or browser.
 | `CyUI::Diagnostics` | Bounded logs, filters and diagnostic navigation |
 | `CyUI::DocumentViews` | Markdown subset, code blocks, tables, links and transcripts |
 | `CyUI::Web` | Browser surface, input, origin policy, messages and theme bridge |
+| `CyUI::Hierarchy` | Scene/layer trees, reparenting, renaming and visibility/locking |
+| `CyUI::DataView` | Virtual sorted/filtered tables, typed editing and TSV clipboard |
+| `CyUI::FilePicker` | Host/VFS open/save/directory selection |
 | `CyUI::Gallery` | Widget/module examples and the theme editor |
 
 The optional `CyUI::WebCEF` and `CyUI::ImGuizmo` adapters use host-supplied

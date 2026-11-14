@@ -37,6 +37,8 @@ if(CYUI_SELECTED_MODULE STREQUAL "Audio" OR CYUI_SELECTED_MODULE STREQUAL "Galle
     string(TOUPPER "${CYUI_SELECTED_MODULE}" upper)
     add_executable(consumer "${CYUI_ROOT}/tests/module_smoke.cpp")
     target_compile_definitions(consumer PRIVATE CYUI_TEST_${upper}=1)
+elseif(CYUI_SELECTED_MODULE MATCHES "^(Hierarchy|DataView|FilePicker|Inspector|Nodes|Timeline|Commands)$")
+    add_executable(consumer "${CYUI_ROOT}/tests/editor_modules.cpp")
 else()
     add_executable(consumer "${CYUI_ROOT}/tests/features.cpp")
 endif()

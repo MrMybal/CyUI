@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 4
+revision: 5
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -47,6 +47,9 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | `CyUI::Diagnostics` | `modules/Diagnostics.h` | Bounded thread-safe logs, filters, diagnostic navigation | Core + system threads |
 | `CyUI::DocumentViews` | `modules/DocumentViews.h` | Markdown subset, fenced code, links, tables, cached transcripts | Code |
 | `CyUI::Web` | `modules/Web.h` | Browser panel, texture/input contract, origin policy, messages, theme bridge | Core |
+| `CyUI::Hierarchy` | `modules/Hierarchy.h` | Scene/layer tree, selection, reparent, rename, visibility/locking | Core |
+| `CyUI::DataView` | `modules/DataView.h` | Sorted/filtered virtual tables, typed editing, atomic TSV paste | Core |
+| `CyUI::FilePicker` | `modules/FilePicker.h` | Host/VFS open/save/directory selection, filters and overwrite confirmation | Core |
 | `CyUI::Gallery` | `Gallery.h` | Examples and theme editor | Enabled modules only |
 
 Header paths are relative to `include/cyui/`. `CyUI::Code::Diff` is an alias for
@@ -104,7 +107,7 @@ with the demo disabled default to no new optional modules. Audio and Gallery
 retain their original ON defaults; disable those explicitly when not used.
 `CyUI::Core` never links them. The old Widgets.h/CyUI.h declarations remain source compatible.
 
-Without CMake, compile the four Core sources and only the selected
+Without CMake, compile the five Core sources and only the selected
 `src/modules/<Name>.cpp` files plus their dependency closure. Define the matching
 `CYUI_HAS_<NAME>` macros for Gallery/CyUI.h. CodeEditor also needs `src/modules/PagedCodeEditor.cpp`, TextEditor.cpp,
 its include directory and C++20. Code and its dependents additionally compile
@@ -179,3 +182,7 @@ not inherit the classic lexer's 32 MiB snapshot limit or copy the whole file.
 Per-page and input budgets still apply. This native C++ API has no Python or Web
 binding yet. Source packaging includes it when CodeEditor is selected; Unreal
 Editor compilation and platform input still require host validation.
+
+## Editor tools {#editor-tools}
+
+[Typed Inspector JSON, expressions, hierarchies, tables, file picker, commands and graph/timeline editing](doc:editor-tools).

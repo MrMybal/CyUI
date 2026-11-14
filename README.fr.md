@@ -198,6 +198,9 @@ Les dépendances entre modules sont sélectionnées automatiquement ; par exempl
 | `CyUI::Diagnostics` | Journaux à taille limitée, filtres et navigation dans les diagnostics |
 | `CyUI::DocumentViews` | Sous-ensemble Markdown, blocs de code, tableaux, liens et conversations |
 | `CyUI::Web` | Surface de navigateur, entrées, politique d’origine, messages et passerelle de thème |
+| `CyUI::Hierarchy` | Scènes/calques, réorganisation, renommage et visibilité/verrouillage |
+| `CyUI::DataView` | Tableaux virtuels triés/filtrés, édition typée et presse-papiers TSV |
+| `CyUI::FilePicker` | Sélection hôte/VFS pour ouvrir/enregistrer ou choisir un dossier |
 | `CyUI::Gallery` | Exemples de widgets/modules et éditeur de thème |
 
 Les adaptateurs optionnels `CyUI::WebCEF` et `CyUI::ImGuizmo` utilisent des
