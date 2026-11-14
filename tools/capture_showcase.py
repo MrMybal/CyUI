@@ -39,6 +39,14 @@ PREVIEWS = (
     ("images", "violet", 14, True, "en"),
     ("commands", "mid-grey", 16, True, "en"),
     ("documents", "navy", 18, True, "en"),
+    ("markdown-reader", "mid-grey", 18, True, "en"),
+    ("markdown-reader-fr", "mid-grey", 18, True, "fr"),
+    ("markdown-live", "mid-grey", 24, True, "en"),
+    ("markdown-live-fr", "mid-grey", 24, True, "fr"),
+    ("markdown-split", "navy", 24, True, "en", "--document-mode", "split"),
+    ("markdown-split-fr", "navy", 24, True, "fr", "--document-mode", "split"),
+    ("markdown-zoom", "violet", 18, True, "en", "--document-zoom"),
+    ("markdown-zoom-fr", "violet", 18, True, "fr", "--document-zoom"),
     ("diagnostics", "navy", 17, True, "en"),
     ("viewport", "mid-grey", 15, True, "en"),
 )
@@ -60,7 +68,10 @@ def main():
     startup.wShowWindow = 0
     manifest = {"source_revision": subprocess.check_output(
         ["git", "-c", f"safe.directory={ROOT.as_posix()}", "rev-parse", "HEAD"],
-        cwd=ROOT, text=True).strip(), "images": []}
+        cwd=ROOT, text=True).strip(),
+        "source_dirty": bool(subprocess.check_output(
+            ["git", "-c", f"safe.directory={ROOT.as_posix()}", "status", "--porcelain"],
+            cwd=ROOT, text=True).strip()), "images": []}
     if args.only and (target / "manifest.json").is_file():
         manifest["images"] = json.loads((target / "manifest.json").read_text("utf-8"))["images"]
     with tempfile.TemporaryDirectory(prefix="showcase-captures-", dir=ROOT / "build") as scratch:

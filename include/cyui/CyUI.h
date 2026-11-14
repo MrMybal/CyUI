@@ -75,6 +75,18 @@
 #if defined(CYUI_HAS_DOCUMENTVIEWS)
 #include "cyui/modules/DocumentViews.h"
 #endif
+#if defined(CYUI_HAS_DOCUMENTEDITOR)
+#include "cyui/modules/DocumentEditor.h"
+#endif
+#if defined(CYUI_HAS_DOCUMENTWEB)
+#include "cyui/modules/DocumentWeb.h"
+#endif
+#if defined(CYUI_HAS_DOCUMENTIO)
+#include "cyui/modules/DocumentIO.h"
+#endif
+#if defined(CYUI_HAS_MEDIA)
+#include "cyui/modules/Media.h"
+#endif
 
 #if defined(CYUI_HAS_WEB)
 #include "cyui/modules/Web.h"

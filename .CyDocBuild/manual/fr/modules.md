@@ -4,7 +4,7 @@ title: Sélectionner les modules
 description: Cibles CMake, dépendances et contrats des composants optionnels.
 section: Guides
 order: 10
-sourceRevision: 4
+sourceRevision: 5
 ---
 
 CyUI 1.2 fournit un socle Dear ImGui et des modules d’interface sélectionnables. Le code CyUI est sous MIT. L’application conserve modèles, moteurs, fichiers, services, validation et historique Undo.
@@ -37,7 +37,11 @@ Les en-têtes ci-dessous sont relatifs à `include/cyui/`. Chaque cible porte le
 | Viewport | `modules/Viewport.h` | Surface rendue par l’hôte, caméra orbitale et transformation 2D | Images |
 | Commands | `modules/Commands.h` | Palette de commandes recherchable au clavier | Core |
 | Diagnostics | `modules/Diagnostics.h` | Journaux bornés synchronisés, filtres et navigation | Core + threads système |
-| DocumentViews | `modules/DocumentViews.h` | Sous-ensemble Markdown, code, liens, tables et conversations en cache | Code |
+| DocumentViews | `modules/DocumentViews.h` | Markdown/GFM natif, images, tâches, spoilers, tableaux et conversations | Code, Images, MD4C MIT |
+| `CyUI::DocumentEditor` | `modules/DocumentEditor.h` | Éditeur Direct/Source/Côte à côte/Lecture | DocumentViews, CodeEditor |
+| `CyUI::DocumentIO` | `modules/DocumentIO.h` | Tampons Markdown/CyMD, presse-papiers HTML | DocumentViews, miniz |
+| `CyUI::DocumentWeb` | `modules/DocumentWeb.h` | Adaptateur optionnel vers le moteur web existant | DocumentViews, Web |
+| `CyUI::Media` | `modules/Media.h` | Contrôles de lecture natifs avec moteur hôte | Images |
 | Web | `modules/Web.h` | Contrat texture/entrée, origines, messages et thème | Core |
 | Gallery | `Gallery.h` | Exemples et éditeur de thème | Modules activés uniquement |
 
@@ -109,3 +113,5 @@ copie pas le fichier entier. Les budgets de pages et de saisie restent actifs.
 Cette API C++ native n’a pas encore de liaison Python ou Web. Le packaging source
 l’inclut avec CodeEditor ; compilation Unreal Editor et saisie de chaque plateforme
 restent à valider par l’hôte.
+
+[Guide du Markdown natif](doc:native-markdown).

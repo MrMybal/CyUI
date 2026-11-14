@@ -4,7 +4,7 @@ title: API et recettes des modules
 description: Données, gestes et retours d’action des vues spécialisées.
 section: API
 order: 21
-sourceRevision: 3
+sourceRevision: 4
 ---
 
 Les en-têtes utilisent le préfixe `cyui/` ; liez leurs [cibles correspondantes](doc:modules). Gallery.cpp, onglets 4–19, contient les exemples. Les callbacks et superpositions de l’hôte suivent les règles palette/dp/style.
@@ -298,10 +298,19 @@ Les poignées du gizmo sont des éléments ImGui : elles prennent survol/clic av
 
 - rankCommands correspond à tous les mots et retourne des indices classés stables. commandPalette affiche une modale navigable au clavier et retourne un ID. Les commandes désactivées ne s’exécutent pas ; l’hôte associe les actions.
 - LogBuffer(capacity,maxBytes) synchronise append/clear/snapshot. logView filtre/suit des lignes bornées en cache et retourne l’ID sélectionné ; LogState.levels masque debug/info/warning/error. diagnosticList affiche source/ligne/colonne/message et retourne un ID ; l’hôte ouvre la source.
-- Document::setMarkdown prépare titres, paragraphes, citations, listes, règles, code clôturé, liens, emphase/code inline et tables à barres. documentView retourne liens/copies sans les ouvrir.
-- transcript ignore les messages hors écran déjà mesurés, met les Documents en cache par ID, suit le contenu ajouté/streamé lorsque la lecture est en bas et retourne copie/liens. Un message contient id/role/content/time. Pour un rendu CyMD complet, utilisez Web.
+- DocumentViews parse CommonMark/GFM : styles imbriqués, tâches, tableaux,
+  code, images natives, spoilers, ancres et conversations. Les services de ressources
+  sont explicites et non bloquants ; l’application reçoit les demandes d’action.
+- DocumentEditor ajoute Direct/Source/Côte à côte/Lecture, Undo C++ partagé,
+  barres de formatage, recherche, collage/dépôt et correction optionnelle.
+- DocumentIO gère les tampons `.md`/`.cymd` (UTF-8/UTF-16/BOM, ZIP stocké/DEFLATE,
+  budgets) et convertit le HTML du presse-papiers.
+- Media affiche les contrôles natifs d’un MediaBackend ; DocumentWeb relie les
+  contenus activés à un WebBackend existant de l’application ou de CyUI Web/CEF.
 
-Le sous-ensemble natif n’exécute ni HTML brut ni script. Il utilise le Core et les couleurs de Code ; l’emphase est un sous-ensemble visuel, pas un moteur CommonMark complet.
+Voir [Markdown natif, édition et médias](doc:native-markdown) pour les recettes
+et limites. Aucun lecteur ne lance script, fichier, lien ou téléchargement.
+Galerie : 18 lecteur/conversation, 24 éditeur, 25 lecture simulée.
 
 ### Web / CEF optionnel {#optional-web-cef}
 

@@ -16,7 +16,8 @@ DEPENDENCIES = {
     'Nodes': ['Canvas'], 'Timeline': ['Canvas'], 'AudioViews': ['Plots'],
     'Code': [], 'Diff': ['Code'], 'CodeEditor': ['Code'], 'Inspector': [],
     'Assets': [], 'Images': ['Canvas'], 'Viewport': ['Images'], 'Commands': [],
-    'Diagnostics': [], 'DocumentViews': ['Code'], 'Web': [],
+    'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor'],
+    'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [],
 }
 # Inside the checkout, output may only go to these ignored build folders.
 OUTPUT_FOLDERS = ('build', 'out')
@@ -93,6 +94,10 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     sources += [f'src/modules/{name}.cpp' for name in selected]
     if 'CodeEditor' in selected:
         sources.append('src/modules/PagedCodeEditor.cpp')
+    if 'DocumentViews' in selected:
+        sources += ['src/modules/DocumentParser.cpp', 'third_party/md4c/md4c.cpp']
+    if 'DocumentIO' in selected:
+        sources.append('third_party/miniz/miniz_tinfl.cpp')
     if gallery:
         sources.append('src/Gallery.cpp')
     (library/'src/modules').mkdir(parents=True)
@@ -101,6 +106,12 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
         target = library/source
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT/source, target)
+    if 'DocumentViews' in selected:
+        shutil.copytree(ROOT/'third_party/md4c', library/'third_party/md4c', dirs_exist_ok=True)
+        for name in ('DocumentLayout.h', 'DocumentEntities.h'):
+            shutil.copy2(ROOT/'src/modules'/name, library/'src/modules'/name)
+    if 'DocumentIO' in selected:
+        shutil.copytree(ROOT/'third_party/miniz', library/'third_party/miniz', dirs_exist_ok=True)
     imgui = library/'third_party/imgui'
     imgui.mkdir(parents=True)
     for name in ('imgui.h', 'imgui_internal.h', 'imconfig.h', 'imstb_rectpack.h', 'imstb_textedit.h', 'imstb_truetype.h', 'LICENSE.txt'):

@@ -43,7 +43,7 @@
       "id": "source-include-cyui-cyui-h",
       "title": "CyUI.h",
       "locale": "fr",
-      "expectedRevision": "441acf52dd27"
+      "expectedRevision": "6d4020f4741f"
     },
     {
       "id": "source-include-cyui-export-h",
@@ -184,10 +184,28 @@
       "expectedRevision": "4647076f65b7"
     },
     {
+      "id": "source-include-cyui-modules-documenteditor-h",
+      "title": "DocumentEditor.h",
+      "locale": "fr",
+      "expectedRevision": "a3af87686691"
+    },
+    {
+      "id": "source-include-cyui-modules-documentio-h",
+      "title": "DocumentIO.h",
+      "locale": "fr",
+      "expectedRevision": "e16f82560e9a"
+    },
+    {
       "id": "source-include-cyui-modules-documentviews-h",
       "title": "DocumentViews.h",
       "locale": "fr",
-      "expectedRevision": "66b0e96e76c8"
+      "expectedRevision": "c39734e0e28f"
+    },
+    {
+      "id": "source-include-cyui-modules-documentweb-h",
+      "title": "DocumentWeb.h",
+      "locale": "fr",
+      "expectedRevision": "0e483813b5e8"
     },
     {
       "id": "source-include-cyui-modules-images-h",
@@ -200,6 +218,12 @@
       "title": "Inspector.h",
       "locale": "fr",
       "expectedRevision": "0f0dc0de3f10"
+    },
+    {
+      "id": "source-include-cyui-modules-media-h",
+      "title": "Media.h",
+      "locale": "fr",
+      "expectedRevision": "067d7d1513f8"
     },
     {
       "id": "source-include-cyui-modules-nodes-h",
@@ -238,5 +262,5 @@
       "expectedRevision": "c3ae0abe47aa"
     }
   ],
-  "current": 18
+  "current": 19
 }

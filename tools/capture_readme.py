@@ -19,6 +19,7 @@ PREVIEWS = (
     ('mid-grey', 9, True, 'audio-views.png'),
     ('mid-grey', 22, True, 'audio-analysis.png'),
     ('mid-grey', 23, True, 'audio-spectral.png'),
+    ('navy', 24, True, 'markdown-editor.png', '--document-mode', 'split'),
     ('violet', 7, True, 'nodes.png'),
     ('violet', 7, True, 'image-graph.png', '--image-graph'),
     ('mid-grey', 13, True, 'content-browser.png'),

@@ -13,6 +13,9 @@ own copyright and licenses. Selecting a module does not relicense its dependenci
 | Lexilla, selected lexical engines | HPND-style permissive license (Neil Hodgson and contributors) | Bundled and compiled only with Code or its dependents; no Scintilla editor is linked | [Lexilla license](third_party/lexilla/License.txt) |
 | Scintilla public headers | Same permissive license | Header-only interface for Lexilla; no Scintilla UI sources | [Scintilla license](third_party/scintilla/License.txt) |
 | SciTE keyword/property data | Same permissive license | Generated built-in language profiles | [SciTE properties license](third_party/SciTE-Properties-License.txt) |
+| MD4C | MIT | Bundled CommonMark/GFM parser, only with DocumentViews | [License](third_party/md4c/LICENSE.md), [pinned source and C++ casts](third_party/md4c/UPSTREAM.md) |
+| miniz inflate | MIT | Raw DEFLATE decompressor, only with DocumentIO | [License](third_party/miniz/LICENSE), [pinned source](third_party/miniz/UPSTREAM.md) |
+| markdown-it-py and linkify-it-py | MIT | Python document parsing; external pure Python dependencies | Preserve the installed packages’ licenses, including mdurl and uc-micro-py notices |
 | ImGuizmo | MIT upstream | Optional host-supplied target | Preserve the license of the exact host dependency |
 | Chromium Embedded Framework | BSD-style, three conditions | Optional host-supplied SDK/runtime; no CEF binaries in this repository | Preserve the selected SDK's LICENSE.txt and Chromium CREDITS.html, plus its component notices |
 | imgui-bundle | MIT package, with separately licensed bundled components | Optional external Python UI dependency | Preserve notices in the installed package/distribution |

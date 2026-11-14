@@ -136,6 +136,18 @@ chemin. Chaque vue conserve sa requête. Consultez les
 
 ![Filtres rapides dans un panneau de propriétés et un menu d’export imbriqué](docs/screenshots/filtering.png)
 
+#### Markdown natif et édition de documents
+
+Créez des lecteurs, conversations et éditeurs avec du texte enrichi natif, des
+listes de tâches, tableaux, blocs de code colorés, spoilers et images agrandissables.
+L’éditeur optionnel propose les modes Direct, Source, Côte à côte et Lecture avec
+un historique d’annulation commun. Ajoutez l’import/export, les commandes de
+lecture multimédia ou les contenus web selon vos besoins ; l’application contrôle
+les textures, l’import du presse-papiers et les moteurs multimédias.
+Consultez le [guide des documents natifs](Documentation/Documentation.html#/fr/native-markdown).
+
+![Éditeur Markdown natif avec source et rendu, tâches, tableaux et image](docs/screenshots/markdown-editor.png)
+
 ## Interfaces multilingues, anglais par défaut
 
 Core inclut des catalogues anglais et français, le changement de langue à chaud
@@ -196,7 +208,11 @@ Les dépendances entre modules sont sélectionnées automatiquement ; par exempl
 | `CyUI::Viewport` | Surfaces de scène rendues par l’hôte, caméra orbitale et contrôles de transformation 2D |
 | `CyUI::Commands` | Palette de commandes au clavier avec recherche |
 | `CyUI::Diagnostics` | Journaux à taille limitée, filtres et navigation dans les diagnostics |
-| `CyUI::DocumentViews` | Sous-ensemble Markdown, blocs de code, tableaux, liens et conversations |
+| `CyUI::DocumentViews` | Markdown/GFM natif, images, spoilers, tâches, tableaux et conversations |
+| `CyUI::DocumentEditor` | Éditeur Direct/Source/Côte à côte/Lecture |
+| `CyUI::DocumentIO` | Tampons Markdown/CyMD, presse-papiers HTML |
+| `CyUI::DocumentWeb` | Adaptateur optionnel vers le moteur web existant |
+| `CyUI::Media` | Contrôles de lecture natifs avec moteur hôte |
 | `CyUI::Web` | Surface de navigateur, entrées, politique d’origine, messages et passerelle de thème |
 | `CyUI::Gallery` | Exemples de widgets/modules et éditeur de thème |
 
@@ -420,6 +436,9 @@ les polices du système d’exploitation.
 | [Lexilla](https://github.com/ScintillaOrg/lexilla) | [Licence permissive de type HPND](third_party/lexilla/License.txt) | Moteurs lexicaux sélectionnés pour Code et ses modules dépendants. |
 | [Scintilla](https://github.com/mirror/scintilla) | [Licence permissive](third_party/scintilla/License.txt) | En-têtes publics utilisés par Lexilla ; aucune interface d’éditeur Scintilla. |
 | [Propriétés SciTE](https://github.com/mirror/scite) | [Licence permissive](third_party/SciTE-Properties-License.txt) | Mots-clés et propriétés des profils syntaxiques générés. |
+| [MD4C](https://github.com/mity/md4c) | [MIT](third_party/md4c/LICENSE.md) | Parseur CommonMark/GFM natif fourni pour DocumentViews. |
+| [miniz](https://github.com/richgel999/miniz) | [MIT](third_party/miniz/LICENSE) | Import DEFLATE des archives par DocumentIO optionnel. |
+| [markdown-it-py](https://github.com/executablebooks/markdown-it-py), [linkify-it-py](https://github.com/tsutsu3/linkify-it-py) | MIT | Dépendances Python pures du parsing des documents. |
 | [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) | [MIT](https://github.com/CedricGuillemet/ImGuizmo/blob/master/LICENSE) | Dépendance optionnelle de manipulateurs de transformation fournie par l’hôte. |
 | [CEF / Chromium](https://bitbucket.org/chromiumembedded/cef) | [Licence de type BSD et notices des composants](https://bitbucket.org/chromiumembedded/cef/src/master/LICENSE.txt) | SDK/runtime WebCEF optionnel ; conserver licence, crédits et notices de la distribution choisie. |
 | [Unreal Engine](https://www.unrealengine.com/) | [Conditions séparées d’Epic](https://www.unrealengine.com/en-US/eula/unreal) | Hôte Editor optionnel ; le connecteur CyUI reste MIT. |

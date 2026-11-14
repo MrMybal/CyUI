@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 4
+revision: 5
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -45,7 +45,11 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | `CyUI::Viewport` | `modules/Viewport.h` | Host-rendered scene surface, orbit camera, 2D transform overlay | Images |
 | `CyUI::Commands` | `modules/Commands.h` | Searchable keyboard command palette | Core |
 | `CyUI::Diagnostics` | `modules/Diagnostics.h` | Bounded thread-safe logs, filters, diagnostic navigation | Core + system threads |
-| `CyUI::DocumentViews` | `modules/DocumentViews.h` | Markdown subset, fenced code, links, tables, cached transcripts | Code |
+| `CyUI::DocumentViews` | `modules/DocumentViews.h` | Native Markdown/GFM, images, tasks, spoilers, tables and transcripts | Code, Images, MIT MD4C |
+| `CyUI::DocumentEditor` | `modules/DocumentEditor.h` | Live/source/split/reading editor | DocumentViews, CodeEditor |
+| `CyUI::DocumentIO` | `modules/DocumentIO.h` | Markdown/CyMD buffers, HTML clipboard | DocumentViews, miniz |
+| `CyUI::DocumentWeb` | `modules/DocumentWeb.h` | Optional existing web backend adapter | DocumentViews, Web |
+| `CyUI::Media` | `modules/Media.h` | Native playback controls with a host engine | Images |
 | `CyUI::Web` | `modules/Web.h` | Browser panel, texture/input contract, origin policy, messages, theme bridge | Core |
 | `CyUI::Gallery` | `Gallery.h` | Examples and theme editor | Enabled modules only |
 
@@ -179,3 +183,5 @@ not inherit the classic lexer's 32 MiB snapshot limit or copy the whole file.
 Per-page and input budgets still apply. This native C++ API has no Python or Web
 binding yet. Source packaging includes it when CodeEditor is selected; Unreal
 Editor compilation and platform input still require host validation.
+
+[Native Markdown guide](doc:native-markdown).

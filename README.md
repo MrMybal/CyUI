@@ -126,6 +126,17 @@ See [filtering APIs and examples](Documentation/Documentation.html#/en/filtering
 
 ![Quick filters in a properties panel and a nested export menu](docs/screenshots/filtering.png)
 
+#### Native Markdown and document editing
+
+Build readers, chat transcripts and editors with native styled text, task lists,
+tables, syntax-colored code, spoilers and zoomable images. The optional editor
+offers Live, Source, Split and Reading modes with shared undo history. Add file
+import/export, playback controls or web embeds only when needed; image textures,
+clipboard import and media engines stay under the application's control.
+See the [native document guide](Documentation/Documentation.html#/en/native-markdown).
+
+![Native Markdown editor with source and rendered text, tasks, tables and an image](docs/screenshots/markdown-editor.png)
+
 ## English-first multilingual interfaces
 
 Core includes English and French catalogs, live language switching and an API
@@ -183,7 +194,11 @@ adding a code editor, audio engine or browser.
 | `CyUI::Viewport` | Host-rendered scene surfaces, orbit camera and 2D transform controls |
 | `CyUI::Commands` | Searchable keyboard command palette |
 | `CyUI::Diagnostics` | Bounded logs, filters and diagnostic navigation |
-| `CyUI::DocumentViews` | Markdown subset, code blocks, tables, links and transcripts |
+| `CyUI::DocumentViews` | Native Markdown/GFM, images, spoilers, tasks, tables and transcripts |
+| `CyUI::DocumentEditor` | Live/source/split/reading editor |
+| `CyUI::DocumentIO` | Markdown/CyMD buffers, HTML clipboard |
+| `CyUI::DocumentWeb` | Optional existing web backend adapter |
+| `CyUI::Media` | Native playback controls with a host engine |
 | `CyUI::Web` | Browser surface, input, origin policy, messages and theme bridge |
 | `CyUI::Gallery` | Widget/module examples and the theme editor |
 
@@ -400,6 +415,9 @@ Engine binaries, and does not redistribute operating-system fonts.
 | [Lexilla](https://github.com/ScintillaOrg/lexilla) | [HPND-style permissive license](third_party/lexilla/License.txt) | Selected lexical engines for Code and its dependent modules. |
 | [Scintilla](https://github.com/mirror/scintilla) | [Permissive license](third_party/scintilla/License.txt) | Public headers used by Lexilla; no Scintilla editor UI. |
 | [SciTE properties](https://github.com/mirror/scite) | [Permissive license](third_party/SciTE-Properties-License.txt) | Keyword/property data for generated syntax profiles. |
+| [MD4C](https://github.com/mity/md4c) | [MIT](third_party/md4c/LICENSE.md) | Bundled native CommonMark/GFM parser for DocumentViews. |
+| [miniz](https://github.com/richgel999/miniz) | [MIT](third_party/miniz/LICENSE) | Optional DocumentIO DEFLATE archive imports. |
+| [markdown-it-py](https://github.com/executablebooks/markdown-it-py), [linkify-it-py](https://github.com/tsutsu3/linkify-it-py) | MIT | Pure Python document parsing dependencies. |
 | [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) | [MIT](https://github.com/CedricGuillemet/ImGuizmo/blob/master/LICENSE) | Optional host-supplied transform-gizmo dependency. |
 | [CEF / Chromium](https://bitbucket.org/chromiumembedded/cef) | [BSD-style and component notices](https://bitbucket.org/chromiumembedded/cef/src/master/LICENSE.txt) | Optional WebCEF SDK/runtime; retain the selected distribution's license, credits and component notices. |
 | [Unreal Engine](https://www.unrealengine.com/) | [Epic's separate engine terms](https://www.unrealengine.com/en-US/eula/unreal) | Optional Editor host; CyUI's connector remains MIT. |

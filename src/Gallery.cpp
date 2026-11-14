@@ -1366,6 +1366,132 @@ void diffPage()
 }
 #endif
 
+#if defined(CYUI_HAS_DOCUMENTVIEWS)
+std::string galleryMarkdown() {
+    return locale() == "fr"
+               ? "# Un document, plusieurs usages\n\nÉcrivez des **notes**, du *texte riche* et des guides "
+                 "avec <u>liens</u>, ~~anciennes idées~~ et ||spoilers interactifs||.\n\n"
+                 "![Paysage de démonstration|360](gallery/landscape.png)\n\n"
+                 "## Préparer une version\n\n- [x] Images natives et zoom\n- [ ] Relire la documentation\n  "
+                 "- Vérifier les exemples imbriqués\n\n"
+                 "| Élément | Affichage |\n|:---|---:|\n| **Code** | Coloration native |\n| Médias | "
+                 "Adaptateurs optionnels |\n\n"
+                 "> Les couleurs et les dimensions suivent le thème actif.\n\n```cpp\ncyui::Document "
+                 "notes;\nnotes.setMarkdown(markdown);\n```\n\n"
+                 "<mark>À retenir</mark> : <kbd>Ctrl</kbd> + <kbd>B</kbd> applique le "
+                 "gras.\n\nhttps://example.com/guide\n\n![Démonstration vidéo](gallery/example.mp4)\n"
+               : "# One document, many uses\n\nWrite **notes**, *rich text* and guides with <u>links</u>, "
+                 "~~old ideas~~ and ||interactive spoilers||.\n\n"
+                 "![Demonstration landscape|360](gallery/landscape.png)\n\n"
+                 "## Prepare a release\n\n- [x] Native images and zoom\n- [ ] Review the documentation\n  - "
+                 "Check nested examples\n\n"
+                 "| Element | Display |\n|:---|---:|\n| **Code** | Native syntax colors |\n| Media | "
+                 "Optional adapters |\n\n"
+                 "> Colors and dimensions follow the active theme.\n\n```cpp\ncyui::Document "
+                 "notes;\nnotes.setMarkdown(markdown);\n```\n\n"
+                 "<mark>Remember</mark>: <kbd>Ctrl</kbd> + <kbd>B</kbd> applies "
+                 "bold.\n\nhttps://example.com/guide\n\n![Video demonstration](gallery/example.mp4)\n";
+}
+DocumentServices galleryDocumentServices(const GalleryResources &resources) {
+    DocumentServices services;
+    services.image = [&resources](const std::string &path) {
+        return path == "gallery/landscape.png"
+                   ? ImageData{resources.imagePreviews[0] ? resources.imagePreviews[0] : resources.texture,
+                               256, 160}
+                   : ImageData{};
+    };
+    services.preview = [](const std::string &) {
+        return DocumentLinkPreview{tr("Example guide"),
+                                   tr("A cached link preview, supplied by the application."), "example.com"};
+    };
+    return services;
+}
+void documentsPage(const GalleryResources &resources) {
+    static Document doc;
+    static DocumentState state;
+    static std::string source, lastLocale;
+    if (lastLocale != locale()) {
+        source = galleryMarkdown();
+        lastLocale = locale();
+    }
+    doc.setMarkdown(source);
+    static bool previewZoom = false;
+    if (resources.previewDocumentImage && !previewZoom) {
+        state.enlargedImage = "gallery/landscape.png";
+        state.enlargedCaption = locale() == "fr" ? "Paysage de démonstration" : "Demonstration landscape";
+        state.imageView = {};
+    }
+    previewZoom = resources.previewDocumentImage;
+    auto services = galleryDocumentServices(resources);
+    DocumentOptions options;
+    options.services = &services;
+    options.imageHeight = 180;
+    const auto result = documentView("##document", state, doc, dp(0, 440), options);
+    if (result.taskOffset != std::string::npos)
+        source[result.taskOffset] = result.taskChecked ? 'x' : ' ';
+    static TranscriptState chat;
+    std::vector<TranscriptMessage> messages{
+        {1, tr("User"), tr("Show the result."), "10:00"},
+        {2, tr("Assistant"),
+         "**Markdown** · <u>Native</u> · ||Spoiler||\n```json\n{\"status\": \"ready\"}\n```", "10:01"}};
+    transcript("##chat", chat, messages, dp(0, 180), options);
+}
+#endif
+#if defined(CYUI_HAS_DOCUMENTEDITOR)
+void documentEditorPage(const GalleryResources &resources) {
+    static DocumentEditor editor;
+    static std::string lastLocale;
+    if (lastLocale != locale()) {
+        editor.setMarkdown(galleryMarkdown());
+        lastLocale = locale();
+    }
+    static int lastMode = -1;
+    if (resources.previewDocumentMode >= 0 && resources.previewDocumentMode <= 3 &&
+        resources.previewDocumentMode != lastMode)
+        editor.setMode(DocumentMode(resources.previewDocumentMode));
+    lastMode = resources.previewDocumentMode;
+    auto services = galleryDocumentServices(resources);
+    DocumentEditorOptions options;
+    options.document.services = &services;
+    options.document.imageHeight = 180;
+    editor.draw("##documentEditor", dp(0, 570), options);
+}
+#endif
+#if defined(CYUI_HAS_MEDIA)
+void mediaPage(const GalleryResources &resources) {
+    textDim("%s",
+            tr("Native playback controls with a simulated host backend; no codec is loaded by the gallery.")
+                .c_str());
+    struct Example : MediaBackend {
+        MediaSnapshot value;
+        MediaSnapshot snapshot() const override {
+            return value;
+        }
+        void play(bool v) override {
+            value.playing = v;
+        }
+        void seek(double v) override {
+            value.position = v;
+        }
+        void volume(float v) override {
+            value.volume = v;
+        }
+        void mute(bool v) override {
+            value.muted = v;
+        }
+    };
+    static Example backend;
+    static MediaPlayerState state;
+    backend.value.ready = backend.value.seekable = true;
+    backend.value.duration = 120;
+    backend.value.title = tr("Media player");
+    backend.value.frame = {resources.imagePreviews[0] ? resources.imagePreviews[0] : resources.texture, 256,
+                           160};
+    if (backend.value.playing)
+        backend.value.position = std::fmod(backend.value.position + ImGui::GetIO().DeltaTime, 120.);
+    mediaPlayer("##media", state, backend, dp(0, 470));
+}
+#endif
 void moduleGallery(int selectedTab,const GalleryResources& resources) {
     (void)resources;
     auto page=[&](const char*label,int index,auto body){if(ImGui::BeginTabItem(trLabel(label).c_str(),nullptr,selectedTab==index?ImGuiTabItemFlags_SetSelected:0)){body();ImGui::EndTabItem();}};
@@ -1418,7 +1544,13 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
     page("Diagnostics",17,[]{static LogBuffer buffer;static LogState state;static bool init=false;if(!init){buffer.append(LogLevel::info,"Application initialized");buffer.append(LogLevel::warning,"Example warning");buffer.append(LogLevel::error,"Example diagnostic — no file is modified");init=true;}logView("##log",state,buffer,dp(0,210));std::vector<Diagnostic>rows{{1,LogLevel::warning,"example.cpp","Unused value",8,4},{2,LogLevel::error,"shader.hlsl","Example compiler diagnostic",12,3}};diagnosticList("##diagnostics",rows,dp(0,140));});
 #endif
 #if defined(CYUI_HAS_DOCUMENTVIEWS)
-    page("Documents",18,[]{static Document doc;static DocumentState state;doc.setMarkdown("# Shared documents\nA **formatted** paragraph with `inline code` and a [host-handled link](https://example.com).\n- Reusable document presentation\n> Notes use the active palette.\n| Module | Content |\n|---|---|\n| Documents | Markdown |\n| Code | Source and diff |\n```cpp\nfloat gain = 0.5f;\n```\n");documentView("##document",state,doc,dp(0,300));static TranscriptState chat;std::vector<TranscriptMessage>messages{{1,"User","Show the result.","10:00"},{2,"Assistant","The **result** is ready.\n```json\n{\"status\": \"ready\"}\n```","10:01"}};transcript("##chat",chat,messages,dp(0,260));});
+    page("Documents",18,[&]{documentsPage(resources);});
+#endif
+#if defined(CYUI_HAS_DOCUMENTEDITOR)
+    page("Document editor",24,[&]{documentEditorPage(resources);});
+#endif
+#if defined(CYUI_HAS_MEDIA)
+    page("Media player",25,[&]{mediaPage(resources);});
 #endif
 #if defined(CYUI_HAS_WEB)
     page("Web",19,[&]{textDim(tr("Optional CEF rendering in an ImGui texture. HTML/compiled TypeScript; host-owned messages.").c_str());

@@ -12,7 +12,7 @@ license-files = ["LICENSE", "third_party/jetbrains-mono/OFL.txt"]
 readme = "README.md"
 # `import cyui` draws with imgui_bundle, so it is a dependency, not an extra.
 # The cyui_modules models (ranges, diff, documents, web policy...) still import without it.
-dependencies = ["imgui-bundle>=1.92"]
+dependencies = ["imgui-bundle>=1.92", "markdown-it-py>=4.0,<5", "linkify-it-py>=2.0.3,<3"]
 
 [project.optional-dependencies]
 # Kept so that existing `pip install cyui[ui]` commands keep working.

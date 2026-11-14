@@ -1,23 +1,16 @@
-"""Small, predictable Markdown subset and cached message transcripts."""
+"""Native CommonMark/GFM documents and cached message transcripts."""
 from dataclasses import dataclass, field
 import re
 from .common import ui, item_id
 from .code import CodeDocument, CodeViewState, code_viewer
 
 
-@dataclass
-class Block:
-    kind: str
-    text: str = ''
-    level: int = 0
-    language: str = ''
-    code: object = None
-    rows: list = field(default_factory=list)
+from ._markdown import Block, Inline, parse, BOLD, ITALIC, UNDERLINE, STRIKE, HIGHLIGHT, SPOILER, KEYBOARD, MONO
 
 
 class Document:
     def __init__(self, text=''):
-        self.text, self.blocks = None, []
+        self.text, self.blocks, self.revision = None, [], 0
         self.set_markdown(text)
 
     def set_markdown(self, text):
@@ -25,41 +18,28 @@ class Document:
             return False
         if len(text.encode('utf8')) > 32*1024*1024:
             raise ValueError('Document exceeds 32 MiB')
-        self.text, self.blocks = text, []
-        lines, at = text.splitlines(), 0
-        while at < len(lines):
-            line = lines[at]; at += 1
-            if line.startswith(('```', '~~~')):
-                fence, language, content = line[:3], line[3:].strip(), []
-                while at < len(lines) and not lines[at].startswith(fence):
-                    content.append(lines[at]); at += 1
-                at += at < len(lines)
-                value = '\n'.join(content)+ ('\n' if content else '')
-                self.blocks.append(Block('code', value, language=language, code=CodeDocument(value, language or 'plain')))
-            elif not line.strip():
-                continue
-            elif at < len(lines) and '|' in line and re.fullmatch(r'[\s|:\-]+', lines[at]) and '-' in lines[at]:
-                rows = [[v.strip() for v in line.strip('|').split('|')]]
-                at += 1
-                while at < len(lines) and '|' in lines[at] and lines[at].strip():
-                    rows.append([v.strip() for v in lines[at].strip('|').split('|')]); at += 1
-                self.blocks.append(Block('table', rows=rows))
-            elif line in ('---', '***', '___'):
-                self.blocks.append(Block('rule'))
-            elif match := re.match(r'^(#{1,6})\s+(.*)$', line):
-                self.blocks.append(Block('heading', match[2], len(match[1])))
-            elif line.startswith('> '):
-                self.blocks.append(Block('quote', line[2:]))
-            elif match := re.match(r'^\s*(?:[-*+] |\d+[.)] )(.*)$', line):
-                self.blocks.append(Block('list', match[1]))
-            else:
-                self.blocks.append(Block('paragraph', line))
+        blocks = parse(text)
+        self.text, self.blocks = text, blocks
+        self.revision += 1
         return True
+
+    def plain_text(self):
+        return '\n'.join('\n'.join('\t'.join(row) for row in block.rows) if block.kind == 'table' else block.text for block in self.blocks)
 
 
 @dataclass
 class DocumentState:
     code_views: dict = field(default_factory=dict)
+    spoilers: set = field(default_factory=set)
+    active_embeds: set = field(default_factory=set)
+    anchors: dict = field(default_factory=dict)
+    jump_to: str = ''
+    enlarged_image: str = ''
+    enlarged_caption: str = ''
+    image_view: object = None
+    revision: int = 0
+    scroll: float = 0
+    scroll_max: float = 0
 
 
 # Explicit tokens plus words allow wrapping at each word, including links. The group that
@@ -106,51 +86,25 @@ def _inline(text):
     return link
 
 
-def _content(state, document):
-    i, c = ui()
-    result = {'link': '', 'copied_block': -1}
-    for n, block in enumerate(document.blocks):
-        i.push_id(n)
-        if block.kind == 'heading':
-            c.heading(block.text, min(3, block.level))
-        elif block.kind == 'rule':
-            c.divider()
-        elif block.kind == 'quote':
-            c.callout('info', block.text)
-        elif block.kind == 'code':
-            c.text_faint(block.language)
-            i.same_line()
-            if c.ghost_button(c.tr_label('Copy')):
-                i.set_clipboard_text(block.text)
-                result['copied_block'] = n
-            code_viewer('##code', state.code_views.setdefault(n, CodeViewState()), block.code, (0, c.dp(max(90, min(320, len(block.code.lines)*20+48)))))
-        elif block.kind == 'table':
-            columns = min(32, max(map(len, block.rows)))
-            if i.begin_table('##table', columns, i.TableFlags_.borders | i.TableFlags_.row_bg | i.TableFlags_.sizing_stretch_same):
-                for row, cells in enumerate(block.rows):
-                    i.table_next_row(i.TableRowFlags_.headers if row == 0 else 0)
-                    for col, cell in enumerate(cells[:columns]):
-                        i.push_id(f"{row}-{col}")
-                        i.table_next_column()
-                        link = _inline(cell)
-                        result['link'] = link or result['link']
-                        i.pop_id()
-                i.end_table()
-        else:
-            if block.kind == 'list':
-                i.bullet(); i.same_line()
-            result['link'] = _inline(block.text) or result['link']
-        c.space(3)
-        i.pop_id()
-    return result
+from ._document_ui import DocumentServices, DocumentOptions, DocumentMedia, LinkPreview
+from ._document_ui import content as _content, lightbox as _lightbox
 
 
-def document_view(identifier, state, document, size=(0, 320)):
+def document_view(identifier, state, document, size=(0, 320), options=None):
     i, _ = ui()
+    options = options or DocumentOptions()
     i.push_id(identifier)
     i.begin_child('##document', size)
-    result = _content(state, document)
+    if state.revision != document.revision:
+        state.spoilers.clear(); state.active_embeds.clear(); state.revision = document.revision
+    state.anchors.clear()
+    result = _content(state, document, options)
+    if state.jump_to:
+        if state.jump_to in state.anchors: i.set_scroll_y(state.anchors[state.jump_to])
+        state.jump_to = ''
+    state.scroll, state.scroll_max = i.get_scroll_y(), i.get_scroll_max_y()
     i.end_child()
+    _lightbox(state, options)
     i.pop_id()
     return result
 
@@ -171,7 +125,7 @@ class TranscriptState:
     count: int = 0
 
 
-def transcript(identifier, state, messages, size=(0, 320)):
+def transcript(identifier, state, messages, size=(0, 320), options=None):
     i, c = ui()
     result, changed = {'copy': 0, 'link': ''}, False
     i.push_id(identifier)
@@ -187,7 +141,7 @@ def transcript(identifier, state, messages, size=(0, 320)):
         if c.ghost_button(c.tr_label('Copy message')):
             i.set_clipboard_text(message.content)
             result['copy'] = message.id
-        result['link'] = _content(view, doc)['link'] or result['link']
+        result['link'] = _content(view, doc, options)['link'] or result['link']
         c.divider()
         i.pop_id()
     if state.follow and bottom and (changed or state.count != len(messages)):

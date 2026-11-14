@@ -4,7 +4,7 @@ title: Module API and recipes
 description: Module API and recipes for CyUI integrators.
 section: API
 order: 21
-revision: 3
+revision: 4
 ---
 
 All headers below use the `cyui/` prefix. Link the corresponding target described
@@ -382,18 +382,22 @@ Link CyUI::ImGuizmo only when a compatible host target is supplied.
   returns a selected ID; LogState.levels masks debug/info/warning/error.
   `diagnosticList(id, rows, size)` displays source/line/column/message and returns
   a requested diagnostic ID. The host resolves source navigation.
-- `Document::setMarkdown` caches a small renderer subset: headings, paragraphs,
-  quotes, bullet/numbered items, rules, fenced code, links, inline code/emphasis
-  and pipe tables. `documentView(id, state, document, size)` returns link/copy
-  results. Links are returned to the host, not opened by the renderer.
-- `transcript(id, TranscriptState&, messages, size)` skips offscreen messages it has
-  measured, caches Documents by message
-  ID, follows appended/streamed content when at the bottom, and reports copy/link
-  requests. Messages contain id/role/content/time. Full CyMD rendering can use Web.
+- `Document::setMarkdown` caches CommonMark/GFM blocks, nested inline styles,
+  tasks, sized native images, spoilers, tables, anchors and code. `documentView`
+  returns link/media/task/resize requests and selectable visible text. Assign
+  nonblocking `DocumentServices` for cached native images and link previews.
+- `transcript` uses the same renderer and stable message IDs for streamed content.
+- Optional `DocumentEditor` provides Live/Source/Split/Reading modes, native block
+  rich input, shared C++ Undo, toolbars, search, clipboard/drop hooks and spelling.
+- Optional `DocumentIO` reads/writes `.md`/`.cymd` buffers (UTF-8/UTF-16/BOM,
+  stored/DEFLATE ZIP, resource budgets) and converts clipboard HTML.
+- Optional `mediaPlayer` draws native controls around an existing `MediaBackend`.
+- Optional `DocumentWebAdapter` connects activated embeds to an existing
+  `WebBackend`, from CyUI Web/CEF or the host. The host still pumps its runtime.
 
-The Markdown subset does not interpret raw HTML or run scripts. It intentionally
-uses the same Core widgets and Code colors. Native inline emphasis is a themed
-presentation subset rather than a complete CommonMark layout engine.
+See the [native Markdown guide](doc:native-markdown) for contracts, recipes and limits.
+Unknown HTML stays text. No renderer runs scripts, opens links or fetches URLs.
+Gallery: 18 reader/chat, 24 editor, 25 simulated host playback.
 
 ### Optional Web / CEF {#optional-web-cef}
 

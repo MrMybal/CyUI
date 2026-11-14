@@ -29,6 +29,9 @@ from cyui_modules.commands import Command, CommandState, command_palette
 from cyui_modules.diagnostics import LogBuffer, LogState, Diagnostic, log_view, diagnostic_list
 from cyui_modules.documents import Document, DocumentState, TranscriptMessage, TranscriptState, document_view, transcript
 from cyui_modules.web import web_panel, theme_message
+from cyui_modules.documenteditor import DocumentEditor
+from cyui_modules.media import MediaSnapshot, MediaPlayerState, media_player
+from cyui_modules.documents import DocumentServices, DocumentOptions
 
 
 class ModuleGallery:
@@ -80,6 +83,17 @@ class ModuleGallery:
         self.log.append('info', 'Application initialized'); self.log.append('warning', 'Example warning')
         self.document = Document('# Shared documents\nA paragraph with **emphasis**, `code` and [a link](https://example.com).\n| A | B |\n|---|---|\n| 1 | 2 |\n```cpp\nfloat gain = 0.5;\n```')
         self.document_state, self.chat = DocumentState(), TranscriptState()
+        self.document.set_markdown('# Native Markdown\n\n**Bold**, *italic*, <u>underline</u>, ~~strike~~ and ||spoilers||.\n\n![Native image|320](gallery/image.png)\n\n- [x] Native textures\n- [ ] Review notes\n\n| Element | Display |\n|:---|---:|\n| Code | Syntax colors |\n| Media | Optional backend |\n')
+        self.document_editor = DocumentEditor(self.document.text)
+        self.media_state = MediaPlayerState()
+        class ExampleMedia:
+            def __init__(self): self.value = MediaSnapshot(duration=120, ready=True, seekable=True, title='Media player')
+            def snapshot(self): return self.value
+            def play(self, value): self.value.playing = value
+            def seek(self, value): self.value.position = value
+            def volume(self, value): self.value.volume = value
+            def mute(self, value): self.value.muted = value
+        self.media_backend = ExampleMedia()
         self.gain, self.db, self.meter = .5, -12., MeterState()
         self.spectral_ready = False
 
@@ -239,8 +253,18 @@ class ModuleGallery:
             log_view('log', self.log_state, self.log, (0, 220))
             diagnostic_list('diagnostics', [Diagnostic(1, 'Example warning', 'example.cpp', 8, 4, 'warning')])
         elif name == 'Documents':
-            document_view('document', self.document_state, self.document, (0, 300))
+            services = DocumentServices(image=lambda source: self.image)
+            result = document_view('document', self.document_state, self.document, (0, 400), DocumentOptions(services))
+            if result['task_offset'] is not None:
+                raw = bytearray(self.document.text.encode('utf8')); raw[result['task_offset']] = ord('x' if result['task_checked'] else ' '); self.document.set_markdown(raw.decode('utf8'))
             transcript('chat', self.chat, [TranscriptMessage(1, 'User', 'Show the result.'), TranscriptMessage(2, 'Assistant', 'The **result** is ready.')], (0, 200))
+        elif name == 'Document editor':
+            from cyui_modules.documenteditor import DocumentEditorOptions
+            self.document_editor.draw('document-editor', (0, 550), DocumentEditorOptions(DocumentOptions(DocumentServices(image=lambda source: self.image))))
+        elif name == 'Media player':
+            c.text_dim(c.tr('Native playback controls with a simulated host backend; no codec is loaded by the gallery.'))
+            self.media_backend.value.frame = self.image
+            media_player('media', self.media_state, self.media_backend, (0, 480))
         elif name == 'Web':
             if self.web:
                 for event in web_panel('web', self.web):
@@ -268,7 +292,7 @@ class ModuleGallery:
         help_requested = (i.is_window_focused(i.FocusedFlags_.root_and_child_windows)
                           and i.is_key_pressed(i.Key.f1, False)) or help_requested
         if i.begin_tab_bar('##modules', i.TabBarFlags_.fitting_policy_scroll):
-            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Spectral displays', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Web', 'Filtering'):
+            for name in ('Canvas', 'Plots', 'Curves', 'Nodes', 'Timeline', 'Audio', 'Audio views', 'Audio analysis', 'Spectral displays', 'Code', 'Diff', 'Inspector', 'Assets', 'Images', 'Viewport', 'Commands', 'Diagnostics', 'Documents', 'Document editor', 'Media player', 'Web', 'Filtering'):
                 shown, _ = i.begin_tab_item(c.tr_label(name))
                 if shown:
                     self.active_page = name
@@ -278,7 +302,7 @@ class ModuleGallery:
         if help_requested:
             from cyui_modules.help import open_documentation
             pages = {'Code': ('code', ''), 'Diff': ('diff', ''), 'Filtering': ('filtering', ''),
-                     'Web': ('web', ''), 'Canvas': ('module-recipes', 'canvas-and-numeric-plots'),
+                     'Documents': ('native-markdown', 'reader'), 'Document editor': ('native-markdown', 'editor'), 'Media player': ('native-markdown', 'resources'), 'Web': ('web', ''), 'Canvas': ('module-recipes', 'canvas-and-numeric-plots'),
                      'Plots': ('module-recipes', 'canvas-and-numeric-plots'),
                      'Curves': ('module-recipes', 'curves-graphs-and-timeline'),
                      'Nodes': ('module-recipes', 'curves-graphs-and-timeline'),

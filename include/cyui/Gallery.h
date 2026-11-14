@@ -23,13 +23,15 @@ struct GalleryResources {
     bool previewImageGraph = false;   // Nodes page: show the image-processing example (captures).
     // Optional host action; Gallery never launches a browser or creates a server.
     std::function<void(const char* page, const char* section)> openDocumentation;
+    int previewDocumentMode = -1; // 0 Live, 1 Split, 2 Source, 3 Reading; applied once per change
+    bool previewDocumentImage = false; // native in-window zoom example
 };
 
 // selectTab >= 0 brings that page to the front once (again when the value
 // changes; the tabs stay clickable): 0 text, 1 buttons, 2 controls,
 // 3 containers, 4-19 the optional modules (canvas, plots, curves, nodes,
 // timeline, audio views, code, diff, inspector, assets, images, viewport,
-// commands, diagnostics, documents, web), 20 layout, 21 filtering, 22 audio analysis, 23 spectral displays.
+// commands, diagnostics, documents, web), 20 layout, 21 filtering, 22 audio analysis, 23 spectral displays, 24 document editor, 25 media player.
 CYUI_API void showGallery(bool *open = nullptr, int selectTab = -1);
 CYUI_API void showGallery(bool *open, int selectTab, const GalleryResources &resources);
 // Live palette editor; saves / loads .cytheme files.

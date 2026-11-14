@@ -510,6 +510,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     std::string language = "en";
     auto comfortable = false;
     auto tab = -1;
+    int documentMode = -1;
+    bool documentZoom = false;
     {
         auto count = 0;
         auto** args = ::CommandLineToArgvW(::GetCommandLineW(), &count);
@@ -520,6 +522,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             else if(arg==L"--gallery-only")galleryOnly=true;
             else if(arg==L"--image-graph")imageGraph=true;
             else if(arg==L"--paged-code")pagedCode=true;
+            else if(arg==L"--document-zoom")documentZoom=true;
+            else if(arg==L"--document-mode"){const auto mode=next();documentMode=mode==L"split"?1:mode==L"source"?2:mode==L"reading"?3:0;}
             else if(arg==L"--locale") {
                 language.clear();
                 for (const auto c : next()) {
@@ -606,6 +610,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     (void)webUrl;(void)cefNoSandbox;
 #endif
     app.galleryTab = tab;
+    app.resources.previewDocumentMode=documentMode;
+    app.resources.previewDocumentImage=documentZoom;
     app.resources.previewCommands = !capturePath.empty() && tab == 16;
     cyui::notify(tr("Welcome to the CyUI demo").c_str(), cyui::Tone::accent);
     auto done = false;

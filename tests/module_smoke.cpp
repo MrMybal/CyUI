@@ -95,9 +95,14 @@ bool moduleRegressions() {
         ok &= check(!doc.setMarkdown(""), "an empty document is not reparsed");
         doc.setMarkdown("**kwargs and *ptr **bold** `x`");
         const auto &runs = doc.blocks().front().inlines;
-        ok &= check(runs.size() == 5 && runs[0].text == "**kwargs " && runs[0].kind == DocumentInlineKind::text &&
-                        runs[2].text == "*ptr " && runs[3].kind == DocumentInlineKind::strong &&
-                        runs[3].text == "bold" && runs[4].kind == DocumentInlineKind::code && runs[4].text == "x",
+        std::string literal;
+        bool bold = false, code = false;
+        for (const auto &run : runs) {
+            if (run.kind == DocumentInlineKind::text) literal += run.text;
+            bold |= run.kind == DocumentInlineKind::strong && run.text == "bold";
+            code |= run.kind == DocumentInlineKind::code && run.text == "x";
+        }
+        ok &= check(literal.find("**kwargs and *ptr ") != std::string::npos && bold && code,
                     "unmatched inline markers are shown verbatim");
     }
 #endif

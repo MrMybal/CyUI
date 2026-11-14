@@ -140,7 +140,7 @@ class Models(unittest.TestCase):
             recreated.append('info', 'new')
         self.assertNotEqual(recreated.snapshot()[0], revision)
         self.assertEqual([e.text for e in recreated.snapshot(revision)[1]], ['new']*3)
-        doc = Document('# Title\n```cpp\nint x=1;\n```\n> Note\n| A | B |\n|---|---|\n| 1 | 2 |\n')
+        doc = Document('# Title\n```cpp\nint x=1;\n```\n> Note\n\n| A | B |\n|---|---|\n| 1 | 2 |\n')
         self.assertEqual([b.kind for b in doc.blocks], ['heading', 'code', 'quote', 'table'])
         self.assertEqual(rank_commands([Command(1, 'Save document'), Command(2, 'Open document')], 'document save'), [0])
 
