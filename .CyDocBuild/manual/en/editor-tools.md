@@ -4,7 +4,7 @@ title: Editor tools
 description: Typed details, hierarchies, tables, file selection and shared commands.
 section: Guides
 order: 11
-revision: 1
+revision: 2
 ---
 
 The reusable editor modules build on Core. Select `Inspector`, `Hierarchy`,
@@ -14,7 +14,7 @@ ownership, resource access and Undo transactions stay in the application.
 ## Details inspector {#inspector}
 
 Inspector supports bool, exact int64, double, float, vector2/3/4, RGBA color,
-typed asset references and homogeneous, non-nested arrays of up to 1024 atoms.
+typed asset references, recursive homogeneous arrays, typed records and custom JSON values.
 Assign a stable nonzero ID and an untranslated `key` to each property. `category`
 adds a category header. `defaultValue` enables reset; `readOnly`, bounds, choices
 and the host validator apply to committed changes.
@@ -26,7 +26,8 @@ map. Categories match by property keys and types, independently of object IDs,
 translated labels or category names. Vector dimensions and asset classes must
 match. A category paste validates every field before returning commits; the host
 applies them together as one Undo transaction. Read-only fields or validation
-errors reject the whole category. Input is limited to 1 MiB and 32 JSON levels.
+errors reject the whole category. Import and export are limited to 1 MiB, 32 JSON
+levels and 65536 nodes. These clipboard budgets are independent of view size.
 
 ```cpp
 cyui::Property strength;
@@ -48,6 +49,53 @@ as mixed, intersects bounds and respects read-only fields. Apply a commit to all
 matching objects together. Keep one InspectorState per view and increment its
 revision when replacing the model externally. The gallery's Inspector tab shows
 both a material example and advanced properties with a two-object editing option.
+
+### Virtual arrays and custom types {#virtual-arrays}
+
+Array rows reuse every property editor: bool, exact int64, float/double expressions,
+text/choices, vectors, colors, asset references, arrays, records and custom values.
+Only visible rows and the active offscreen row are submitted. The old 1024-element
+display limit is removed (row indices go up to INT_MAX). Nested arrays and records
+open detail popups, keeping row heights constant. Right-click an element to copy or
+paste typed JSON, duplicate, move up/down or remove it. Add uses the element template
+or the last value. The gallery's **Virtual arrays** tab shows up to 100000 elements.
+
+```cpp
+cyui::Property points;
+points.id = 10;
+points.label = "Points";
+points.value = cyui::makePropertyArray(cyui::PropertyVector{{0,0,0}}, 10000);
+cyui::PropertyObject spawn{"SpawnPoint", {
+    {"Position", cyui::PropertyVector{{1,2,3}}},
+    {"Weights", cyui::makePropertyArray(.5f, 3)}
+}};
+points.value = cyui::makePropertyArray(spawn, 10000);
+```
+
+`makePropertyArray(elementTemplate,count=0)` preserves the element schema even when
+empty and supplies Add defaults. Legacy `PropertyArray{{values...}}` infers its
+schema from the first element; an untyped empty array adds a string. Records use
+stable field keys and a stable type name. Nesting is limited to 12 container levels.
+Parent bounds/choices apply recursively; the host validator checks the whole edit.
+
+`PropertyCustom{type,json}` adapts application-specific types with strict JSON data.
+Use `InspectorOptions::editCustom(id,path,value)` to return an `Edit<PropertyCustom>`
+with begin/update/commit/cancel phases. Draw one frame-height row using the current
+item width. The fallback is a JSON editor. `browseAssetAt(id,path)` identifies nested
+resource fields. Paths contain array indices and object keys. Application models,
+Undo and resource loading remain host-owned. This is an explicit adapter, not
+automatic reflection of arbitrary C++ types.
+
+`arrayHeight` (default 180) uses logical units. `InspectorState::lists` exposes the
+last frame's `renderedRows` count. Large drafts are cached: increment revision for
+every external model replacement/change, including while idle. Full model copying
+and validation happen on edits rather than each idle frame.
+
+Python has matching `PropertyObject`, `PropertyCustom`, `make_property_array` and
+`inspector(..., array_height=180, edit_custom=..., browse_asset=...)` APIs. Numeric
+elements accept expressions directly with Enter. Its callback returns `Edit` and
+receives the same root ID/path. The JSON schema remains version 1 with optional
+array `element` templates and `object`/`objectType`, `custom`/`customType` entries.
 
 ## Numeric expressions {#expressions}
 

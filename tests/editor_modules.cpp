@@ -103,6 +103,56 @@ int main() {
     list.value = PropertyArray{{std::int64_t(3), std::int64_t(4)}};
     list.bounded = false;
     check(bool(propertyFromJson(list, propertyToJson(list))), "collection round trip");
+    auto typedEmpty = list;
+    typedEmpty.value = makePropertyArray(PropertyVector{{1, 2, 3}});
+    auto emptyStrings = list;
+    emptyStrings.value = makePropertyArray(std::string{});
+    check(!propertyFromJson(typedEmpty, propertyToJson(emptyStrings)),
+          "empty collections preserve their element schema");
+    check(bool(propertyFromJson(typedEmpty, propertyToJson(typedEmpty))),
+          "typed empty collection round trip");
+    auto largeList = list;
+    largeList.value = makePropertyArray(2.56, 10000);
+    check(bool(propertyFromJson(largeList, propertyToJson(largeList))),
+          "JSON collections are no longer capped at 1024 elements");
+    PropertyObject record{"SpawnPoint",
+                          {{"name", std::string("A")},
+                           {"position", PropertyVector{{1, 2, 3}}},
+                           {"weights", makePropertyArray(.5f, 3)}}};
+    auto records = list;
+    records.value = makePropertyArray(record, 2);
+    check(bool(propertyFromJson(records, propertyToJson(records))),
+          "arrays of records and nested arrays round trip");
+    auto wrongRecords = records;
+    std::get<PropertyObject>(std::get<PropertyArray>(wrongRecords.value).values[1]).fields["name"] = 42.;
+    check(!propertyFromJson(records, propertyToJson(wrongRecords)),
+          "nested record field types are validated atomically");
+    auto fewerRecords = records;
+    fewerRecords.value = makePropertyArray(record, 1);
+    check(commonProperties({{records}, {fewerRecords}}).size() == 1,
+          "record collection schema is independent of element count/values");
+    auto wrongSchema = records;
+    wrongSchema.value = makePropertyArray(PropertyObject{"SpawnPoint", {{"name", 42.}}}, 1);
+    check(commonProperties({{records}, {wrongSchema}}).empty(),
+          "multi-object collections require matching recursive schemas");
+    auto custom = list;
+    custom.value = makePropertyArray(PropertyCustom{"Angle", "45"}, 2);
+    check(bool(propertyFromJson(custom, propertyToJson(custom))),
+          "host-defined types use portable JSON payloads");
+    auto wrongCustom = custom;
+    wrongCustom.value = makePropertyArray(PropertyCustom{"Time", "45"}, 2);
+    check(!propertyFromJson(custom, propertyToJson(wrongCustom)),
+          "custom type identifiers prevent incompatible paste");
+    auto invalidCustom = custom;
+    auto customValue = PropertyValue{makePropertyArray(PropertyCustom{"Angle", "{bad json}"}, 2)};
+    check(!normalizePropertyValue(invalidCustom, customValue, error), "custom payloads must be strict JSON");
+    PropertyValue tooDeep = 1.;
+    for (int n = 0; n < 14; ++n)
+        tooDeep = PropertyArray{{std::move(tooDeep)}};
+    auto deepProperty = list;
+    deepProperty.value = tooDeep;
+    check(!normalizePropertyValue(deepProperty, tooDeep, error),
+          "recursive models have a bounded nesting depth");
     std::vector<Property> fields{p, other};
     fields[1].key = "name";
     auto category = propertyCategoryToJson(fields, "Material");
@@ -343,6 +393,160 @@ int main() {
         });
     }
 #if defined(CYUI_HAS_INSPECTOR)
+    {
+        Property field;
+        field.id = 500;
+        field.label = "Large collection";
+        field.value = makePropertyArray(PropertyCustom{"Counter", "0"}, 100000);
+        std::vector<Property> model{std::move(field)};
+        InspectorState state;
+        InspectorOptions options;
+        options.arrayHeight = 150;
+        ImGuiWindow *listWindow = nullptr;
+        ImVec2 firstButton;
+        std::vector<std::string> rendered;
+        options.editCustom = [&](ItemId owner, const std::vector<std::string> &path,
+                                 const PropertyCustom &v) {
+            check(owner == 500 && path.size() == 1, "custom editor receives owner and element path");
+            rendered.push_back(path.front());
+            listWindow = ImGui::GetCurrentWindow();
+            const bool clicked = ImGui::Button((v.json + "##counter").c_str());
+            if (path.front() == "0") {
+                const auto min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+                firstButton = {(min.x + max.x) * .5f, (min.y + max.y) * .5f};
+            }
+            return clicked ? Edit<PropertyCustom>{EditPhase::commit, {v.type, "1"}} : Edit<PropertyCustom>{};
+        };
+        auto draw = [&] {
+            rendered.clear();
+            for (const auto &event : inspector("large", state, model, 0, {}, options))
+                if (event.edit.committed())
+                    model[0].value = event.edit.value;
+        };
+        frame(draw);
+        frame(draw);
+        check(!rendered.empty() && rendered.size() < 20,
+              "100000 elements only submit visible collection rows");
+        auto data = std::get<PropertyArray>(state.drafts[500].value).values.data();
+        frame(draw);
+        check(data == std::get<PropertyArray>(state.drafts[500].value).values.data(),
+              "idle large collection drafts do not copy the model each frame");
+        const float pitch = ImGui::GetFrameHeightWithSpacing();
+        check(listWindow && std::abs(listWindow->ContentSize.y - pitch * 100000) < pitch * 3,
+              "virtual collection scrollbar covers the full model");
+        io.AddMousePosEvent(firstButton.x, firstButton.y);
+        io.AddMouseButtonEvent(0, true);
+        frame(draw);
+        ImGui::SetScrollY(listWindow, listWindow->ScrollMax.y * .5f);
+        frame(draw);
+        frame(draw);
+        check(std::find(rendered.begin(), rendered.end(), "0") != rendered.end() && rendered.size() < 22,
+              "active collection row remains submitted when scrolled outside the viewport");
+        io.AddMouseButtonEvent(0, false);
+        frame(draw);
+        ImGui::SetScrollY(listWindow, 0);
+        frame(draw);
+        frame(draw);
+        io.AddMousePosEvent(firstButton.x, firstButton.y);
+        io.AddMouseButtonEvent(0, true);
+        frame(draw);
+        io.AddMouseButtonEvent(0, false);
+        frame(draw);
+        check(std::get<PropertyCustom>(std::get<PropertyArray>(model[0].value).values[0]).json == "1",
+              "custom collection editor commits a validated parent transaction");
+        model[0].readOnly = true;
+        options.editCustom = [](ItemId, const std::vector<std::string> &, const PropertyCustom &v) {
+            ImGui::Button("Read only");
+            return Edit<PropertyCustom>{EditPhase::commit, {v.type, "99"}};
+        };
+        frame([&] {
+            check(inspector("large", state, model, 1, {}, options).empty(),
+                  "read-only collection suppresses custom editor proposals");
+        });
+        check(std::get<PropertyCustom>(std::get<PropertyArray>(state.drafts[500].value).values[0]).json ==
+                  "1",
+              "read-only custom drafts remain unchanged");
+    }
+    for (auto density : {Density::compact, Density::comfortable}) {
+        setDensity(density);
+        std::vector<PropertyValue> kinds{true,
+                                         INT64_MAX,
+                                         2.56f,
+                                         2.56,
+                                         std::string("Text"),
+                                         PropertyVector{{1, 2}},
+                                         PropertyVector{{1, 2, 3}},
+                                         PropertyVector{{1, 2, 3, 4}},
+                                         PropertyColor{},
+                                         PropertyAsset{"Texture", "/Game/Test"},
+                                         makePropertyArray(2.56, 3),
+                                         record,
+                                         PropertyCustom{"Angle", "45"}};
+        for (const auto &kind : kinds) {
+            Property field;
+            field.id = 501;
+            field.label = "Typed array";
+            field.value = makePropertyArray(kind, 100);
+            std::vector<Property> model{field};
+            InspectorState state;
+            InspectorOptions options;
+            options.arrayHeight = 150;
+            frame([&] { inspector("kinds", state, model, 0, {}, options); });
+            frame([&] { inspector("kinds", state, model, 0, {}, options); });
+            check(!state.lists.empty() && state.lists.begin()->second.renderedRows > 0 &&
+                      state.lists.begin()->second.renderedRows < 20,
+                  "every built-in, nested, object and custom array type uses the same virtual rows at both "
+                  "densities");
+        }
+    }
+    setDensity(Density::compact);
+    {
+        Property field = p;
+        field.id = 502;
+        field.category.clear();
+        field.label = "Numeric elements";
+        field.value = makePropertyArray(2.56f, 10000);
+        std::vector<Property> model{field};
+        InspectorState state;
+        auto draw = [&] {
+            for (const auto &event : inspector("numericArray", state, model))
+                if (event.edit.committed())
+                    model[0].value = event.edit.value;
+        };
+        frame(draw);
+        frame(draw);
+        ImGuiWindow *child = nullptr;
+        for (auto *window : ImGui::GetCurrentContext()->Windows)
+            if (window->LastFrameActive == ImGui::GetFrameCount() && std::strstr(window->Name, "##array"))
+                child = window;
+        check(child != nullptr, "numeric array has its own virtual viewport");
+        if (child) {
+            const ImVec2 mouse{child->Pos.x + dp(100), child->Pos.y + ImGui::GetStyle().WindowPadding.y +
+                                                           ImGui::GetFrameHeight() * .5f};
+            io.AddMousePosEvent(mouse.x, mouse.y);
+            io.AddMouseButtonEvent(0, true);
+            frame(draw);
+            io.AddMouseButtonEvent(0, false);
+            frame(draw);
+            io.AddMouseButtonEvent(0, true);
+            frame(draw);
+            io.AddMouseButtonEvent(0, false);
+            frame(draw);
+            frame(draw);
+            bool open = false;
+            for (const auto &entry : state.elements)
+                open |= entry.second.expressionOpen;
+            check(open, "double-click numeric array element opens expression entry");
+            io.AddInputCharactersUTF8("Value*100");
+            frame(draw);
+            io.AddKeyEvent(ImGuiKey_Enter, true);
+            frame(draw);
+            io.AddKeyEvent(ImGuiKey_Enter, false);
+            frame(draw);
+            check(std::get<float>(std::get<PropertyArray>(model[0].value).values[0]) == 10,
+                  "float array expression commits and clamps the parent property");
+        }
+    }
     {
         Property field = p;
         field.id = 400;

@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'python'))
 from cyui_modules.numeric import evaluate_numeric_expression
 from cyui_modules.inspector import (Property, InspectorState, inspector, PropertyVector, PropertyColor,
     PropertyAsset, PropertyArray, PropertyFloat, property_to_json, property_from_json,
+    PropertyObject, PropertyCustom, make_property_array, normalize_property_value,
     property_category_to_json, property_category_from_json, evaluate_property_expression, common_properties)
 from cyui_modules.hierarchy import HierarchyItem, HierarchyState, hierarchy_rows, can_reparent_hierarchy, hierarchy
 from cyui_modules.dataview import DataColumn, DataRow, DataViewState, data_view_rows, copy_data_cells, paste_data_cells, data_view
@@ -25,6 +26,32 @@ except ImportError:
 
 
 class Models(unittest.TestCase):
+    def test_recursive_collections_and_empty_schemas(self):
+        record = PropertyObject('SpawnPoint', {'name': 'A', 'position': PropertyVector([1., 2., 3.]), 'weights': make_property_array(PropertyFloat(.5), 3)})
+        prop = Property(1, 'Records', make_property_array(record, 2))
+        self.assertEqual(property_from_json(prop, property_to_json(prop))[0][1].value, prop.value)
+        empty = replace(prop, value=make_property_array(PropertyVector([0., 0., 0.])))
+        self.assertEqual(property_from_json(empty, property_to_json(empty))[0][1].value, empty.value)
+        with self.assertRaises(ValueError): property_from_json(empty, property_to_json(replace(empty, value=make_property_array(''))))
+        wrong = make_property_array(record, 2); wrong.values[1].fields['name'] = 42.
+        with self.assertRaises(ValueError): property_from_json(prop, property_to_json(replace(prop, value=wrong)))
+        self.assertFalse(common_properties([[prop], [replace(prop, value=make_property_array(PropertyObject('SpawnPoint', {'name': 42.}), 1))]]))
+        large = replace(prop, value=make_property_array(2.56, 10000))
+        self.assertEqual(len(property_from_json(large, property_to_json(large))[0][1].value.values), 10000)
+        self.assertIsNot(prop.value.values[0], prop.value.values[1])
+
+    def test_custom_collection_payloads_and_recursive_bounds(self):
+        prop = Property(1, 'Angles', make_property_array(PropertyCustom('Angle', '45'), 2))
+        self.assertEqual(property_from_json(prop, property_to_json(prop))[0][1].value, prop.value)
+        with self.assertRaises(ValueError): property_from_json(prop, property_to_json(replace(prop, value=make_property_array(PropertyCustom('Time', '45'), 2))))
+        with self.assertRaises(ValueError): normalize_property_value(prop, make_property_array(PropertyCustom('Angle', '{broken}'), 1))
+        vector = Property(2, 'Nested', make_property_array(make_property_array(PropertyVector([1., 2., 3.]), 2), 2), minimum=0., maximum=10.)
+        changed = make_property_array(make_property_array(PropertyVector([256., -1., 3.]), 2), 2)
+        self.assertEqual(normalize_property_value(vector, changed).values[0].values[0].values, [10., 0., 3.])
+        deep = 1.
+        for _ in range(14): deep = PropertyArray([deep])
+        with self.assertRaises(ValueError): normalize_property_value(Property(3, 'Deep', deep), deep)
+
     def test_arithmetic_is_bounded_and_does_not_execute_code(self):
         self.assertAlmostEqual(evaluate_numeric_expression('Value*100', 2.56), 256)
         self.assertEqual(evaluate_numeric_expression('-2^2+2^3^2', 0), 508)
@@ -113,6 +140,54 @@ class Models(unittest.TestCase):
 
 @unittest.skipIf(i is None, 'imgui-bundle is required for UI frames')
 class Frames(unittest.TestCase):
+    def test_virtual_collections_all_types_and_large_models(self):
+        from cyui_modules.common import Edit
+        i.create_context(); io_ = i.get_io(); io_.set_ini_filename(None); io_.display_size = (1200, 900); io_.delta_time = 1/60
+        io_.backend_flags |= i.BackendFlags_.renderer_has_textures
+        c.apply()
+        def frame(draw):
+            i.new_frame(); i.set_next_window_pos((0, 0)); i.set_next_window_size((1100, 850)); i.begin('Arrays'); draw(); i.end(); i.render()
+        try:
+            record = PropertyObject('Record', {'name': 'A', 'position': PropertyVector([1., 2., 3.]), 'weights': make_property_array(PropertyFloat(.5), 3)})
+            kinds = [True, (1 << 63)-1, 2.56, PropertyFloat(2.56), 'Text', PropertyVector([1., 2.]), PropertyVector([1., 2., 3.]), PropertyVector([1., 2., 3., 4.]), PropertyColor(), PropertyAsset('Texture', '/Game/Test'), make_property_array(2.56, 3), record, PropertyCustom('Angle', '45')]
+            for theme in ('mid-grey', 'light-grey', 'amber-night', 'violet', 'navy'):
+                c.set_theme(theme)
+                for kind in kinds:
+                    state = InspectorState(); prop = Property(1, 'Collection', make_property_array(kind, 100))
+                    frame(lambda: inspector('typed', state, [prop], array_height=150))
+                    frame(lambda: inspector('typed', state, [prop], array_height=150))
+                    listing = next(iter(state.lists.values()))
+                    self.assertGreater(listing['rendered_rows'], 0); self.assertLess(listing['rendered_rows'], 20)
+            state = InspectorState(); prop = Property(500, 'Large', make_property_array(PropertyCustom('Counter', '0'), 100000))
+            rendered = []; first = None; window = None
+            def editor(owner, path, value):
+                nonlocal first, window
+                self.assertEqual(owner, 500); self.assertEqual(len(path), 1)
+                rendered.append(path[0]); window = i.internal.get_current_window()
+                clicked = c.button(value.json+'##counter')
+                if path[0] == '0':
+                    lo, hi = i.get_item_rect_min(), i.get_item_rect_max(); first = ((lo.x+hi.x)/2, (lo.y+hi.y)/2)
+                return Edit('commit', PropertyCustom(value.type, '1')) if clicked else Edit()
+            def draw():
+                rendered.clear()
+                for _, edit in inspector('large', state, [prop], array_height=150, edit_custom=editor):
+                    if edit.committed: prop.value = edit.value
+            frame(draw); frame(draw)
+            draft = state.drafts[500]
+            frame(draw); self.assertIs(draft, state.drafts[500])
+            self.assertLess(len(rendered), 20)
+            self.assertAlmostEqual(window.content_size.y, i.get_frame_height_with_spacing()*100000, delta=i.get_frame_height_with_spacing()*4)
+            io_.add_mouse_pos_event(*first); io_.add_mouse_button_event(0, True); frame(draw)
+            window.scroll.y = window.scroll_max.y*.5
+            frame(draw); frame(draw)
+            self.assertIn('0', rendered); self.assertLess(len(rendered), 22)
+            io_.add_mouse_button_event(0, False); frame(draw)
+            window.scroll.y = 0; frame(draw); frame(draw)
+            io_.add_mouse_pos_event(*first); io_.add_mouse_button_event(0, True); frame(draw)
+            io_.add_mouse_button_event(0, False); frame(draw)
+            self.assertEqual(prop.value.values[0].json, '1')
+        finally: i.destroy_context()
+
     def test_new_modules_in_every_theme(self):
         i.create_context(); io_ = i.get_io(); io_.set_ini_filename(None); io_.display_size = (1200, 900); io_.delta_time = 1/60
         io_.backend_flags |= i.BackendFlags_.renderer_has_textures

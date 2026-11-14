@@ -1078,9 +1078,51 @@ cyui::evaluatePropertyExpression(strength, "Value*100", result, error); // doubl
 
 PropertyValue retains its original alternatives and adds `float`,
 `PropertyVector{{x,y[,z[,w]]}}`, `PropertyColor{{r,g,b,a}}`,
-`PropertyAsset{assetType,path}` and `PropertyArray{{atoms...}}` (up to 1024,
-non-nested, homogeneous elements). Colors are data values in [0,1]. The host
-handles asset browsing through `InspectorOptions::browseAsset`.
+`PropertyAsset{assetType,path}`, recursive `PropertyArray`, typed `PropertyObject`
+records and host-defined `PropertyCustom` values. Colors are data values in [0,1].
+Arrays are homogeneous and use a fixed-height virtual ListView: only visible rows
+and an active offscreen row are submitted. There is no 1024-element display cap;
+the ImGui row index limit is INT_MAX. `InspectorOptions::arrayHeight` is in logical
+units (default 180). Nested arrays and records open detail popups, preserving fixed
+row heights and independent scrollbars. Numeric elements and vector components
+accept expressions, including float and exact int64 entry. Element context menus
+support typed JSON copy/paste, duplicate, move up/down and removal.
+
+```cpp
+cyui::Property points;
+points.id = 1;
+points.label = "Points";
+// Explicit immutable element template preserves the schema when empty and supplies Add defaults.
+points.value = cyui::makePropertyArray(cyui::PropertyVector{{0,0,0}}, 10000);
+cyui::PropertyObject spawn{"SpawnPoint", {
+    {"Name", std::string("Spawn")},
+    {"Position", cyui::PropertyVector{{1,2,3}}},
+    {"Weights", cyui::makePropertyArray(.5f, 3)}
+}};
+points.value = cyui::makePropertyArray(spawn, 10000);
+// PropertyArray{{values...}} remains supported; its first element supplies the schema.
+// An empty array without a template starts with a string when Add is clicked.
+```
+
+`PropertyObject{type,fields}` uses stable untranslated field keys and validates the
+entire recursive schema. `PropertyCustom{type,json}` carries any strict JSON payload;
+the stable type identifier must match on paste. Provide `InspectorOptions::editCustom`
+to adapt application-specific C++ values. Its callback receives the root property ID,
+an array-index/object-key path and the custom value, and returns `Edit<PropertyCustom>`.
+Draw one frame-height row respecting the current item width; report begin/update/
+commit/cancel and let the host apply parent property commits as usual. Without a
+callback, a JSON editor is available. `browseAssetAt(id,path)` identifies array and
+record resource fields; `browseAsset(id)` is the legacy root-only fallback.
+
+Python exposes equivalent `PropertyObject`, `PropertyCustom`, `make_property_array`,
+and `inspector(..., array_height=180, edit_custom=..., browse_asset=...)`; callbacks
+use `Edit` and the same root ID/path contract. Nested numeric entries accept
+expressions directly with Enter. `InspectorState::lists` (`state.lists` in Python)
+reports last-frame `renderedRows` (`rendered_rows`) for profiling. Large collection
+drafts are cached: increment revision whenever the host changes/replaces the model
+externally, including changes while idle. Commits and structural edits invalidate
+the affected draft automatically. Full model validation/copying happens on edits,
+not on each idle frame. Property nesting is limited to 12 container levels.
 
 Right-click a property or category header for JSON copy/paste. `propertyToJson`
 and `propertyFromJson` also work outside drawing. The clipboard schema is versioned:
@@ -1096,7 +1138,10 @@ types is a valid target. Vector dimensions and asset classes must match. Paste
 normalizes/clamps each value, enforces read-only and choice rules and invokes
 the host validator before returning any commits. A category paste is atomic:
 apply the complete edit vector as one host Undo transaction. JSON is limited to
-1 MiB / 32 levels. int64 values are JSON integers and never converted to double.
+1 MiB / 32 JSON levels / 65536 nodes, independently of the number of displayed rows.
+Version 1 adds optional typed `element` templates to arrays, `object`/`objectType`
+records and `custom`/`customType` payloads; existing scalar/array envelopes still work.
+Export enforces the same budgets as import. int64 values are JSON integers and never converted to double.
 Exact int64 literals are supported in expression entry; arithmetic on int64
 originals outside ±(2^53-1) is refused on platforms without wider floating point.
 

@@ -814,6 +814,72 @@ void assetsPage(const GalleryResources& resources)
 #endif
 
 #if defined(CYUI_HAS_INSPECTOR)
+void virtualArraysPage() {
+    textDim("%s",
+            tr("Only visible rows are drawn. Right-click an element to copy, paste, duplicate or move it.")
+                .c_str());
+    static int kind = 6, count = 1, builtKind = -1, builtCount = -1;
+    const char *kinds[]{"Bool",    "Int64", "Float", "Double",        "Text",    "Vector2",    "Vector3",
+                        "Vector4", "Color", "Asset", "Nested arrays", "Objects", "Custom type"};
+    const char *counts[]{"100", "10000", "100000"};
+    ImGui::SetNextItemWidth(dp(160));
+    combo(trLabel("Element type").c_str(), &kind, kinds, 13);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(110));
+    combo(trLabel("Element count").c_str(), &count, counts, 3);
+    static std::vector<Property> fields(1);
+    static InspectorState state;
+    static std::uint64_t revision = 0;
+    if (kind != builtKind || count != builtCount) {
+        std::vector<PropertyValue> prototypes{true,
+                                              std::int64_t(9007199254740993LL),
+                                              2.56f,
+                                              2.56,
+                                              std::string("Element"),
+                                              PropertyVector{{2.56, 5}},
+                                              PropertyVector{{2.56, 5, 8}},
+                                              PropertyVector{{2.56, 5, 8, 10}},
+                                              PropertyColor{{.35f, .65f, .8f, 1}},
+                                              PropertyAsset{"Texture", "/Game/Textures/Terrain"},
+                                              makePropertyArray(PropertyVector{{1, 2, 3}}, 3),
+                                              PropertyObject{"SpawnPoint",
+                                                             {{"Name", std::string("Spawn")},
+                                                              {"Position", PropertyVector{{1, 2, 3}}},
+                                                              {"Weights", makePropertyArray(.5f, 3)}}},
+                                              PropertyCustom{"Angle", "45"}};
+        auto &field = fields[0];
+        field.id = 900;
+        field.label = "Values";
+        field.value = makePropertyArray(prototypes[kind], std::size_t(std::stoul(counts[count])));
+        builtKind = kind;
+        builtCount = count;
+        ++revision;
+    }
+    InspectorOptions options;
+    options.arrayHeight = 280;
+    options.browseAssetAt = [](ItemId, const std::vector<std::string> &path) {
+        notify((tr("Asset element requested") + ": " + (path.empty() ? "" : path.front())).c_str());
+    };
+    options.editCustom = [](ItemId, const std::vector<std::string> &, const PropertyCustom &value) {
+        if (button((value.json + " deg###angle").c_str()))
+            return Edit<PropertyCustom>{
+                EditPhase::commit, {value.type, std::to_string(std::fmod(std::stod(value.json) + 15, 360))}};
+        return Edit<PropertyCustom>{};
+    };
+    for (const auto &event : inspector("##virtualArrays", state, fields, revision, {}, options))
+        if (event.edit.committed()) {
+            fields[0].value = event.edit.value;
+            ++revision;
+        }
+    std::size_t drawn = 0;
+    for (const auto &list : state.lists)
+        drawn += list.second.renderedRows;
+    textDim(tr("Visible rows: %zu / %zu").c_str(), drawn,
+            std::get<PropertyArray>(fields[0].value).values.size());
+    textDim("%s", tr("Nested arrays and objects open a detail editor. Custom types use a host callback or "
+                     "the JSON editor.")
+                      .c_str());
+}
 void advancedInspectorPage() {
     textDim(
         "%s",
@@ -1697,6 +1763,7 @@ void moduleGallery(int selectedTab,const GalleryResources& resources) {
 #endif
 #if defined(CYUI_HAS_INSPECTOR)
     page("Inspector",12,[&]{inspectorPage(resources);});
+    page("Virtual arrays", 33, virtualArraysPage);
 #endif
 #if defined(CYUI_HAS_ASSETS)
     page("Assets",13,[&]{assetsPage(resources);});

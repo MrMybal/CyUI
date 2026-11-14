@@ -9,6 +9,8 @@
 #include <array>
 #include <optional>
 #include <unordered_set>
+#include <map>
+#include <memory>
 #include "cyui/Numeric.h"
 
 namespace cyui {
@@ -30,17 +32,39 @@ struct PropertyAsset {
         return type == b.type && path == b.path;
     }
 };
-using PropertyAtom = std::variant<bool, std::int64_t, double, std::string, float, PropertyVector,
-                                  PropertyColor, PropertyAsset>;
-struct PropertyArray {
-    std::vector<PropertyAtom> values;
-    bool operator==(const PropertyArray &b) const {
-        return values == b.values;
+struct PropertyArray;
+struct PropertyObject;
+// A host-defined value with a stable type identifier and a JSON payload.
+struct PropertyCustom {
+    std::string type, json = "null";
+    bool operator==(const PropertyCustom &b) const {
+        return type == b.type && json == b.json;
     }
 };
-// Existing scalar alternative indices are preserved.
-using PropertyValue = std::variant<bool, std::int64_t, double, std::string, float, PropertyVector,
-                                   PropertyColor, PropertyAsset, PropertyArray>;
+// Recursive containers have value semantics. Existing scalar alternative indices are preserved.
+using PropertyValue =
+    std::variant<bool, std::int64_t, double, std::string, float, PropertyVector, PropertyColor, PropertyAsset,
+                 PropertyArray, PropertyObject, PropertyCustom>;
+using PropertyAtom = PropertyValue; // source-compatible name; elements may now be recursive
+struct PropertyArray {
+    std::vector<PropertyValue> values;
+    // Immutable schema/default for Add and empty collections. Otherwise the first element is used.
+    std::shared_ptr<const PropertyValue> elementTemplate;
+    bool operator==(const PropertyArray &b) const;
+};
+struct PropertyObject {
+    std::string type;
+    std::map<std::string, PropertyValue> fields; // stable, untranslated field keys
+    bool operator==(const PropertyObject &b) const;
+};
+inline bool PropertyArray::operator==(const PropertyArray &b) const {
+    return values == b.values && bool(elementTemplate) == bool(b.elementTemplate) &&
+           (!elementTemplate || *elementTemplate == *b.elementTemplate);
+}
+inline bool PropertyObject::operator==(const PropertyObject &b) const {
+    return type == b.type && fields == b.fields;
+}
+CYUI_API PropertyArray makePropertyArray(PropertyValue elementTemplate, std::size_t count = 0);
 struct Property {
     ItemId id = 0;
     std::string label, help;
@@ -65,12 +89,20 @@ struct PropertyDraft {
     bool cancelled = false;
     std::string expression;
     bool expressionOpen = false, expressionFresh = false;
+    bool initialized = false;
+    ImGuiID activeId = 0;
+};
+struct PropertyListState {
+    int activeRow = -1;
+    std::size_t renderedRows = 0; // last frame; useful for profiling large collections
 };
 struct InspectorState {
     std::unordered_map<ItemId, PropertyDraft> drafts;
     std::uint64_t revision = 0;
     std::string clipboardError;
     std::unordered_set<std::string> collapsedCategories;
+    std::unordered_map<ImGuiID, PropertyListState> lists;
+    std::unordered_map<ImGuiID, PropertyDraft> elements;
 };
 using PropertyValidator = std::function<std::string(ItemId, const PropertyValue &)>;
 struct InspectorOptions {
@@ -78,6 +110,13 @@ struct InspectorOptions {
     const char *filterContext = nullptr; // optional section/path, borrowed during the call
     bool clipboard = true, categories = true;
     std::function<void(ItemId)> browseAsset; // host selects/loads resources
+    float arrayHeight = 180;                 // logical units; dp() is applied by the view
+    // Custom editors must draw one frame-height row. Commit only on a completed edit;
+    // the inspector normalizes the JSON and validates the entire parent property.
+    // path contains array indices / object keys, from the root property to this value.
+    std::function<Edit<PropertyCustom>(ItemId, const std::vector<std::string> &path, const PropertyCustom &)>
+        editCustom;
+    std::function<void(ItemId, const std::vector<std::string> &path)> browseAssetAt;
 };
 struct PropertyPasteResult {
     std::vector<PropertyEdit> edits; // all-or-nothing validated commits; model remains host-owned

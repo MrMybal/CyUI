@@ -4,6 +4,7 @@ from copy import deepcopy
 from .common import Edit, ui, item_id
 from .locale import tr
 from .inspector_data import (PropertyVector, PropertyColor, PropertyAsset, PropertyFloat, PropertyArray,
+    PropertyObject, PropertyCustom, make_property_array,
     property_type, normalize_property_value, evaluate_property_expression, property_to_json,
     property_from_json, property_category_to_json, property_category_from_json, common_properties)
 
@@ -37,22 +38,31 @@ class InspectorState:
     expression_before: dict = field(default_factory=dict)
     clipboard_error: str = ''
     collapsed_categories: set = field(default_factory=set)
+    lists: dict = field(default_factory=dict)
+    elements: dict = field(default_factory=dict)
+    cached: set = field(default_factory=set)
+    active_ids: dict = field(default_factory=dict)
 
 
 def property_matches(filter_state, prop, context=''):
     return filter_state.matches(prop.label, context+' '+tr(context)+' '+prop.help+' '+tr(prop.help))
 
 
-def inspector(identifier, state, properties, revision=0, validate=None, filter_state=None, filter_context=''):
+def inspector(identifier, state, properties, revision=0, validate=None, filter_state=None, filter_context='',
+              array_height=180, edit_custom=None, browse_asset=None):
     i, c = ui()
     events = []
+    for listing in state.lists.values(): listing['rendered_rows'] = 0
     if state.revision != revision:
+        if i.internal.get_active_id() in state.active_ids.values(): i.internal.clear_active_id()
         events.extend((key, Edit('cancel')) for key in state.active)
         state.active.clear()
         state.drafts.clear()
         state.errors.clear()
         state.expressions.clear()
         state.expression_before.clear()
+        state.lists.clear(); state.elements.clear(); state.cached.clear()
+        state.active_ids.clear()
         state.revision = revision
     present = {p.id for p in properties}
     for key in set(state.drafts)-present:
@@ -60,6 +70,7 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
         state.before.pop(key, None)
         state.errors.pop(key, None)
         state.active.discard(key)
+        state.cached.discard(key)
     i.push_id(identifier)
     visible = 0
     categories = set()
@@ -68,7 +79,7 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
         if filter_state is not None and not property_matches(filter_state, prop, filter_context):
             if key in state.active:
                 i.push_id(item_id(key))
-                if i.internal.get_active_id() == i.get_id('##value'):
+                if i.internal.get_active_id() in (i.get_id('##value'), state.active_ids.get(key, 0)):
                     i.internal.clear_active_id()
                 i.pop_id()
                 state.drafts[key] = deepcopy(state.before[key])
@@ -84,28 +95,36 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
                 state.collapsed_categories.remove(prop.category) if prop.category in state.collapsed_categories else state.collapsed_categories.add(prop.category)
             if i.begin_popup_context_item('##category:'+prop.category):
                 if i.menu_item(c.tr_label('Copy category as JSON'), '', False)[0]:
-                    i.set_clipboard_text(property_category_to_json(properties, prop.category))
+                    try: i.set_clipboard_text(property_category_to_json(properties, prop.category))
+                    except ValueError as error: state.clipboard_error = str(error)
                 if i.menu_item(c.tr_label('Paste category'), '', False)[0]:
                     try:
                         events += property_category_from_json(properties, prop.category, i.get_clipboard_text(), validate)
                         state.clipboard_error = ''
+                        state.active.clear(); state.drafts.clear(); state.cached.clear(); state.elements.clear()
+                        for listing in state.lists.values(): listing['active_row'] = -1
                     except (ValueError, KeyError, TypeError) as error:
                         state.clipboard_error = str(error)
                 i.end_popup()
         if prop.category in state.collapsed_categories and not (filter_state and filter_state.active()):
             if key in state.active:
+                if state.active_ids.get(key) == i.internal.get_active_id(): i.internal.clear_active_id()
                 state.active.discard(key); state.drafts[key] = deepcopy(state.before[key]); events.append((key, Edit('cancel', deepcopy(state.before[key]))))
             continue
-        if key not in state.active:
+        cached = isinstance(prop.value, (PropertyArray, PropertyObject))
+        if key not in state.active and (not cached or key not in state.cached):
             state.drafts[key] = deepcopy(prop.value)
+            if cached: state.cached.add(key)
         value = state.drafts[key]
         i.push_id(item_id(key))
         i.text_unformatted(c.tr(prop.label))
+        if i.is_item_clicked(1): i.open_popup('##propertyMenu')
         if prop.help and i.is_item_hovered():
             i.set_tooltip(c.tr(prop.help))
         i.set_next_item_width(-1)
         i.begin_disabled(prop.read_only)
         immediate = False
+        compound = None
         if isinstance(value, bool):
             changed, value = i.checkbox('##value', value)
             immediate = True
@@ -118,7 +137,7 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
                 changed = False
         elif isinstance(value, float):
             changed, value = i.input_double('##value', value, 0., 0., '%.9g')
-        elif prop.choices:
+        elif isinstance(value, str) and prop.choices:
             index = prop.choices.index(value) if value in prop.choices else -1
             changed, index = i.combo('##value', index, [c.tr(choice) for choice in prop.choices])
             if changed:
@@ -130,56 +149,23 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
                 changed, value = i.input_text_multiline('##value', value, (0, c.dp(80)), flags)
             else:
                 changed, value = i.input_text('##value', value, flags)
-        elif isinstance(value, PropertyVector):
-            changed = False
-            i.begin_group()
-            for index, component in enumerate(value.values):
-                i.push_id(index)
-                edited_component, component = i.input_double('##component', component, 0., 0., '%.9g')
-                changed |= edited_component
-                value.values[index] = component
-                i.pop_id()
-            i.end_group()
-        elif isinstance(value, PropertyColor):
-            changed, rgba = i.color_edit4('##value', value.rgba)
-            value = PropertyColor(tuple(rgba))
-        elif isinstance(value, PropertyAsset):
-            changed, value.path = i.input_text('##value', value.path)
-        elif isinstance(value, PropertyFloat):
-            changed, value.value = i.input_float('##value', value.value)
-        elif isinstance(value, PropertyArray):
-            changed = False
-            i.begin_group()
-            for index, atom in enumerate(value.values):
-                i.push_id(index)
-                if type(atom) is str: edit, atom = i.input_text('##atom', atom)
-                elif type(atom) is bool: edit, atom = i.checkbox('##atom', atom)
-                elif type(atom) is float: edit, atom = i.input_double('##atom', atom)
-                elif type(atom) is int:
-                    edit, text = i.input_text('##atom', str(atom))
-                    try: atom = int(text)
-                    except ValueError: edit = False
-                else:
-                    i.text_unformatted(str(atom)); edit = False
-                changed |= edit
-                value.values[index] = atom
-                i.same_line()
-                if c.ghost_button('-'):
-                    value.values.pop(index); changed = immediate = True
-                    i.pop_id(); break
-                i.pop_id()
-            if len(value.values) < 1024 and c.ghost_button(c.tr('Add element')):
-                value.values.append(deepcopy(value.values[-1]) if value.values else '')
-                changed = immediate = True
-            i.end_group()
+        elif isinstance(value, (PropertyVector, PropertyColor, PropertyAsset, PropertyFloat, PropertyArray, PropertyObject, PropertyCustom)):
+            from .property_editor import draw_property_value
+            compound, value = draw_property_value(value, prop, state, height=array_height, edit_custom=edit_custom,
+                                                  browse_asset=browse_asset, full_array=True)
+            changed, immediate = compound.changed, compound.immediate
         else:
             i.text_unformatted(str(value))
             changed = False
         activated, active = i.is_item_activated(), i.is_item_active()
         deactivated, edited = i.is_item_deactivated(), i.is_item_deactivated_after_edit()
+        if compound:
+            activated, active, deactivated, edited = compound.activated, compound.active, compound.deactivated, compound.edited
+        if active and i.internal.get_active_id(): state.active_ids[key] = i.internal.get_active_id()
         escape = i.is_key_pressed(i.Key.escape, False)
         i.end_disabled()
         if prop.read_only:
+            if changed: state.drafts[key] = deepcopy(prop.value)
             changed = False
         if not prop.read_only and (activated or (changed and key not in state.active)):
             state.active.add(key)
@@ -196,18 +182,20 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
             state.drafts[key] = value
         # As in C++: Escape cancels only the field being edited. A text field takes Escape
         # itself and deactivates on that frame, so a field that has just let go counts too.
-        if key in state.active and escape and (active or deactivated):
+        if key in state.active and ((compound and compound.cancelled) or (escape and (active or deactivated))):
             if active and hasattr(i, 'internal'):
                 i.internal.clear_active_id()
             state.drafts[key] = deepcopy(state.before[key])
             state.active.discard(key)
+            state.cached.discard(key)
             state.errors.pop(key, None)
             events.append((key, Edit('cancel')))
         elif key in state.active and ((immediate and changed) or edited) and not state.errors.get(key):
             # Switches and choices commit at once; text and numbers when they let go.
             state.active.discard(key)
+            state.cached.discard(key)
             events.append((key, Edit('commit', deepcopy(state.drafts[key]))))
-        elif key in state.active and deactivated and not edited and not (immediate and changed):
+        elif key in state.active and deactivated and not active and not edited and not (immediate and changed):
             # Activated and left without an edit: let prop.value refresh the field again.
             state.drafts[key] = deepcopy(state.before[key])
             state.active.discard(key)
@@ -215,13 +203,16 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
             events.append((key, Edit('cancel')))
         expression_requested = type(prop.value) in (int, float) or isinstance(prop.value, PropertyFloat)
         open_expression = expression_requested and not prop.read_only and i.is_item_hovered() and i.is_mouse_double_clicked(0)
-        if i.begin_popup_context_item('##propertyMenu'):
+        if not isinstance(prop.value, PropertyArray) and i.is_item_clicked(1): i.open_popup('##propertyMenu')
+        if i.begin_popup('##propertyMenu'):
             if i.menu_item(c.tr_label('Copy as JSON'), '', False, not prop.password and not prop.mixed)[0]:
-                i.set_clipboard_text(property_to_json(prop))
+                try: i.set_clipboard_text(property_to_json(prop))
+                except ValueError as error: state.clipboard_error = str(error)
             if i.menu_item(c.tr_label('Paste value'), '', False, not prop.read_only)[0]:
                 try:
                     events += property_from_json(prop, i.get_clipboard_text(), validate)
                     state.clipboard_error = ''
+                    state.cached.discard(key); state.active.discard(key); state.elements.clear()
                 except (ValueError, TypeError, KeyError) as error:
                     state.clipboard_error = str(error)
             if expression_requested and i.menu_item(c.tr_label('Edit expression...'), '', False, not prop.read_only)[0]:
@@ -230,6 +221,7 @@ def inspector(identifier, state, properties, revision=0, validate=None, filter_s
                 try:
                     events += property_from_json(prop, property_to_json(replace(prop, value=prop.default_value)), validate)
                     state.clipboard_error = ''
+                    state.cached.discard(key); state.active.discard(key); state.elements.clear()
                 except (ValueError, TypeError, KeyError) as error:
                     state.clipboard_error = str(error)
             i.end_popup()

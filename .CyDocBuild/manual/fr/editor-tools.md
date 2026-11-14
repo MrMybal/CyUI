@@ -4,7 +4,7 @@ title: Outils d’édition
 description: Inspecteur typé, hiérarchies, tableaux, sélection de fichiers et commandes partagées.
 section: Guides
 order: 11
-sourceRevision: 1
+sourceRevision: 2
 ---
 
 Les modules d’édition réutilisables reposent sur Core. Sélectionnez `Inspector`,
@@ -14,8 +14,8 @@ besoins ; l’application conserve modèles, accès aux ressources et transactio
 ## Inspecteur de propriétés {#inspector}
 
 Inspector accepte booléens, int64 exacts, doubles, floats, vecteurs 2/3/4, couleurs
-RGBA, références de ressources typées et tableaux homogènes non imbriqués de
-1024 éléments maximum. Donnez à chaque propriété un ID stable non nul et une
+RGBA, références de ressources typées, tableaux homogènes récursifs, structures
+typées et valeurs JSON personnalisées. Donnez à chaque propriété un ID stable non nul et une
 `key` non traduite. `category` ajoute un en-tête ; `defaultValue` permet la remise
 à zéro. Lecture seule, bornes, choix et validation hôte encadrent les modifications.
 
@@ -27,7 +27,8 @@ IDs d’objets, traductions ou noms de catégories. Dimensions des vecteurs et c
 de ressources doivent correspondre. Le collage valide tous les champs avant de
 retourner les commits ; l’hôte les applique dans une transaction Undo unique.
 Un champ en lecture seule ou invalide refuse toute la catégorie. Le JSON est
-limité à 1 Mio et 32 niveaux.
+limité à 1 Mio, 32 niveaux JSON et 65536 nœuds, à l’import comme à l’export.
+Ces budgets de presse-papiers sont indépendants de la taille affichée.
 
 ```cpp
 cyui::Property strength;
@@ -49,6 +50,56 @@ différentes, intersecte les bornes et respecte la lecture seule. Appliquez un c
 à tous les objets correspondants ensemble. Gardez un InspectorState par vue et
 incrémentez sa révision lors d’un remplacement externe. L’onglet Inspector de la
 galerie présente un matériau et les propriétés avancées avec édition de deux objets.
+
+### Tableaux virtuels et types personnalisés {#virtual-arrays}
+
+Les lignes réutilisent tous les éditeurs : booléens, int64 exacts, expressions
+float/double, textes/choix, vecteurs, couleurs, ressources, tableaux, structures et
+valeurs personnalisées. Seules les lignes visibles et la ligne active hors écran
+sont dessinées. La limite d’affichage de 1024 éléments est supprimée (indices jusqu’à
+INT_MAX). Les tableaux imbriqués et structures ouvrent un éditeur de détail, ce qui
+garde une hauteur de ligne constante. Le menu contextuel copie/colle le JSON typé,
+duplique, déplace ou supprime une ligne. L’onglet **Tableaux virtuels** de la galerie
+propose jusqu’à 100000 éléments.
+
+```cpp
+cyui::Property points;
+points.id = 10;
+points.label = "Points";
+points.value = cyui::makePropertyArray(cyui::PropertyVector{{0,0,0}}, 10000);
+cyui::PropertyObject spawn{"SpawnPoint", {
+    {"Position", cyui::PropertyVector{{1,2,3}}},
+    {"Weights", cyui::makePropertyArray(.5f, 3)}
+}};
+points.value = cyui::makePropertyArray(spawn, 10000);
+```
+
+`makePropertyArray(elementTemplate,count=0)` conserve le type même à vide et fournit
+la valeur par défaut du bouton Ajouter. `PropertyArray{{values...}}` déduit son type
+du premier élément ; un tableau vide sans modèle ajoute un texte. Les structures
+utilisent des clés et un nom de type stables. L’imbrication est limitée à 12 niveaux
+de conteneurs. Les bornes/choix du parent s’appliquent récursivement ; la validation
+hôte reçoit toute la modification.
+
+`PropertyCustom{type,json}` adapte les types de l’application avec du JSON strict.
+`InspectorOptions::editCustom(id,path,value)` retourne un `Edit<PropertyCustom>`
+avec les phases begin/update/commit/cancel. Dessinez une ligne de hauteur de frame
+en respectant la largeur courante. Sans callback, un éditeur JSON est disponible.
+`browseAssetAt(id,path)` identifie les ressources imbriquées. Les chemins contiennent
+les indices et clés de champs. Modèles, Undo et chargement des ressources restent
+dans l’application. Il s’agit d’un adaptateur explicite, pas de réflexion C++ automatique.
+
+`arrayHeight` vaut 180 unités logiques par défaut. `InspectorState::lists` expose
+`renderedRows` pour la dernière frame. Les grands brouillons sont en cache : augmentez
+la révision à chaque modification/remplacement externe du modèle, même hors édition.
+La copie et la validation complètes se produisent lors des modifications, pas à
+chaque frame au repos.
+
+Python propose `PropertyObject`, `PropertyCustom`, `make_property_array` et
+`inspector(..., array_height=180, edit_custom=..., browse_asset=...)`. Les éléments
+numériques acceptent directement les expressions avec Entrée. Le callback retourne
+un `Edit` et reçoit le même ID racine/chemin. Le JSON reste en version 1 avec les
+modèles `element` optionnels des tableaux, `object`/`objectType` et `custom`/`customType`.
 
 ## Expressions numériques {#expressions}
 

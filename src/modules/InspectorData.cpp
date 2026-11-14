@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <charconv>
 #include <type_traits>
+#include <climits>
 
 namespace cyui {
 namespace {
@@ -10,9 +11,11 @@ using detail::Json;
 std::string key(const Property &p) {
     return p.key.empty() ? p.label : p.key;
 }
-template <class V> Json encode(const V &value) {
+template <class V> Json encode(const V &value, int depth = 0) {
+    if (depth > 12)
+        throw std::invalid_argument("Property nesting exceeds 12 levels");
     return std::visit(
-        [](const auto &v) -> Json {
+        [depth](const auto &v) -> Json {
             using T = std::decay_t<decltype(v)>;
             Json j = Json::obj();
             if constexpr (std::is_same_v<T, bool>) {
@@ -43,18 +46,33 @@ template <class V> Json encode(const V &value) {
                 j.fields["type"] = Json::str("asset");
                 j.fields["assetType"] = Json::str(v.type);
                 j.fields["value"] = Json::str(v.path);
+            } else if constexpr (std::is_same_v<T, PropertyCustom>) {
+                j.fields["type"] = Json::str("custom");
+                j.fields["customType"] = Json::str(v.type);
+                j.fields["value"] = detail::jsonParse(v.json);
+            } else if constexpr (std::is_same_v<T, PropertyObject>) {
+                j.fields["type"] = Json::str("object");
+                j.fields["objectType"] = Json::str(v.type);
+                auto fields = Json::obj();
+                for (const auto &field : v.fields)
+                    fields.fields[field.first] = encode(field.second, depth + 1);
+                j.fields["value"] = std::move(fields);
             } else {
                 j.fields["type"] = Json::str("array");
+                if (v.elementTemplate)
+                    j.fields["element"] = encode(*v.elementTemplate, depth + 1);
                 auto a = Json::list();
                 for (const auto &atom : v.values)
-                    a.items.push_back(encode(atom));
+                    a.items.push_back(encode(atom, depth + 1));
                 j.fields["value"] = std::move(a);
             }
             return j;
         },
         value);
 }
-PropertyValue decode(const Json &j) {
+PropertyValue decode(const Json &j, int depth = 0) {
+    if (depth > 12)
+        throw std::invalid_argument("Property nesting exceeds 12 levels");
     auto type = j.get("type").str();
     const auto &v = j.get("value");
     if (type == "bool")
@@ -69,6 +87,16 @@ PropertyValue decode(const Json &j) {
         return v.str();
     if (type == "asset")
         return PropertyAsset{j.get("assetType").str(), v.str()};
+    if (type == "custom")
+        return PropertyCustom{j.get("customType").str(), detail::jsonDump(v)};
+    if (type == "object") {
+        if (v.kind != Json::object)
+            throw std::invalid_argument("Invalid object");
+        PropertyObject object{j.get("objectType").str(), {}};
+        for (const auto &field : v.fields)
+            object.fields[field.first] = decode(field.second, depth + 1);
+        return object;
+    }
     if (type == "color") {
         if (v.kind != Json::array || v.items.size() != 4)
             throw std::invalid_argument("Invalid color");
@@ -86,21 +114,13 @@ PropertyValue decode(const Json &j) {
         return p;
     }
     if (type == "array") {
-        if (v.kind != Json::array || v.items.size() > 1024)
+        if (v.kind != Json::array)
             throw std::invalid_argument("Invalid collection");
         PropertyArray a;
-        for (const auto &item : v.items) {
-            if (item.get("type").str() == "array")
-                throw std::invalid_argument("Nested collections are unsupported");
-            auto atom = decode(item);
-            std::visit(
-                [&](const auto &n) {
-                    using T = std::decay_t<decltype(n)>;
-                    if constexpr (!std::is_same_v<T, PropertyArray>)
-                        a.values.emplace_back(n);
-                },
-                atom);
-        }
+        if (j.fields.count("element"))
+            a.elementTemplate = std::make_shared<PropertyValue>(decode(j.get("element"), depth + 1));
+        for (const auto &item : v.items)
+            a.values.push_back(decode(item, depth + 1));
         return a;
     }
     throw std::invalid_argument("Unknown property type");
@@ -133,6 +153,14 @@ PropertyEdit checked(const Property &p, PropertyValue v, const PropertyValidator
     return {p.id, {EditPhase::commit, std::move(v)}};
 }
 } // namespace
+PropertyArray makePropertyArray(PropertyValue elementTemplate, std::size_t count) {
+    if (count > std::size_t(INT_MAX))
+        throw std::length_error("Too many collection rows");
+    PropertyArray result;
+    result.elementTemplate = std::make_shared<const PropertyValue>(std::move(elementTemplate));
+    result.values.assign(count, *result.elementTemplate);
+    return result;
+}
 std::string propertyType(const PropertyValue &v) {
     return std::visit(
         [](const auto &n) -> std::string {
@@ -153,14 +181,20 @@ std::string propertyType(const PropertyValue &v) {
                 return "color";
             else if constexpr (std::is_same_v<T, PropertyAsset>)
                 return "asset:" + n.type;
+            else if constexpr (std::is_same_v<T, PropertyObject>)
+                return "object:" + n.type;
+            else if constexpr (std::is_same_v<T, PropertyCustom>)
+                return "custom:" + n.type;
             else
                 return "array";
         },
         v);
 }
-bool normalizePropertyValue(const Property &p, PropertyValue &v, std::string &error) {
+static bool normalizeAt(const Property &p, PropertyValue &v, std::string &error, int depth) {
     error.clear();
     try {
+        if (depth > 12)
+            throw std::invalid_argument("Property nesting exceeds 12 levels");
         if (propertyType(p.value) != propertyType(v))
             throw std::invalid_argument("Incompatible property type");
         auto number = [&](auto &n) {
@@ -202,28 +236,67 @@ bool normalizePropertyValue(const Property &p, PropertyValue &v, std::string &er
                         std::find(p.choices.begin(), p.choices.end(), n) == p.choices.end())
                         throw std::invalid_argument("Value is not an available choice");
                 } else if constexpr (std::is_same_v<T, PropertyArray>) {
-                    if (n.values.size() > 1024)
-                        throw std::invalid_argument("Collection exceeds 1024 elements");
+                    if (n.values.size() > std::size_t(INT_MAX))
+                        throw std::invalid_argument("Too many collection rows");
                     const auto &source = std::get<PropertyArray>(p.value);
-                    for (auto &atom : n.values) {
-                        Property field = p;
-                        field.value = std::visit([](const auto &a) -> PropertyValue { return a; }, atom);
-                        if (!source.values.empty()) {
-                            field.value = std::visit([](const auto &a) -> PropertyValue { return a; },
-                                                     source.values.front());
-                        }
-                        auto value = std::visit([](const auto &a) -> PropertyValue { return a; }, atom);
-                        std::string e;
-                        if (!normalizePropertyValue(field, value, e))
-                            throw std::invalid_argument(e);
-                        std::visit(
-                            [&](const auto &a) {
-                                using A = std::decay_t<decltype(a)>;
-                                if constexpr (!std::is_same_v<A, PropertyArray>)
-                                    atom = a;
-                            },
-                            value);
+                    const PropertyValue *prototype =
+                        source.elementTemplate ? source.elementTemplate.get()
+                                               : (source.values.empty() ? nullptr : &source.values.front());
+                    if (!prototype)
+                        prototype = n.elementTemplate ? n.elementTemplate.get()
+                                                      : (n.values.empty() ? nullptr : &n.values.front());
+                    std::optional<PropertyValue> stablePrototype;
+                    if (prototype) {
+                        stablePrototype = *prototype;
+                        prototype = &*stablePrototype;
                     }
+                    auto normalizeElement = [&](PropertyValue &element) {
+                        Property field;
+                        field.value = *prototype;
+                        field.bounded = p.bounded;
+                        field.minimum = p.minimum;
+                        field.maximum = p.maximum;
+                        field.integerMinimum = p.integerMinimum;
+                        field.integerMaximum = p.integerMaximum;
+                        field.choices = p.choices;
+                        std::string e;
+                        if (!normalizeAt(field, element, e, depth + 1))
+                            throw std::invalid_argument(e);
+                    };
+                    if (prototype && n.elementTemplate) {
+                        auto element = *n.elementTemplate;
+                        normalizeElement(element);
+                        n.elementTemplate = std::make_shared<const PropertyValue>(std::move(element));
+                    }
+                    for (auto &atom : n.values) {
+                        normalizeElement(atom);
+                    }
+                    if (source.elementTemplate)
+                        n.elementTemplate = source.elementTemplate;
+                } else if constexpr (std::is_same_v<T, PropertyObject>) {
+                    const auto &source = std::get<PropertyObject>(p.value);
+                    if (n.type.empty() || source.fields.size() != n.fields.size())
+                        throw std::invalid_argument("Object schema mismatch");
+                    for (auto &field : n.fields) {
+                        const auto target = source.fields.find(field.first);
+                        if (target == source.fields.end())
+                            throw std::invalid_argument("Object schema mismatch");
+                        Property child;
+                        child.value = target->second;
+                        child.bounded = p.bounded;
+                        child.minimum = p.minimum;
+                        child.maximum = p.maximum;
+                        child.integerMinimum = p.integerMinimum;
+                        child.integerMaximum = p.integerMaximum;
+                        child.choices = p.choices;
+                        std::string e;
+                        if (!normalizeAt(child, field.second, e, depth + 1))
+                            throw std::invalid_argument(e);
+                    }
+                } else if constexpr (std::is_same_v<T, PropertyCustom>) {
+                    if (n.type.empty())
+                        throw std::invalid_argument("Custom type identifier is required");
+                    n.json = detail::jsonDump(detail::jsonParse(n.json));
                 }
             },
             v);
@@ -232,6 +305,9 @@ bool normalizePropertyValue(const Property &p, PropertyValue &v, std::string &er
         error = e.what();
         return false;
     }
+}
+bool normalizePropertyValue(const Property &p, PropertyValue &v, std::string &error) {
+    return normalizeAt(p, v, error, 0);
 }
 bool evaluatePropertyExpression(const Property &p, const std::string &expression, PropertyValue &out,
                                 std::string &error) {
@@ -290,7 +366,9 @@ bool evaluatePropertyExpression(const Property &p, const std::string &expression
 std::string propertyToJson(const Property &p) {
     auto j = envelope("property");
     j.fields["property"] = encode(p.value);
-    return detail::jsonDump(j);
+    auto text = detail::jsonDump(j);
+    read(text, "property"); // exported clipboard data must fit the same budgets as import
+    return text;
 }
 std::string propertyCategoryToJson(ArrayView<Property> fields, const std::string &category) {
     auto j = envelope("category");
@@ -301,7 +379,9 @@ std::string propertyCategoryToJson(ArrayView<Property> fields, const std::string
                 throw std::invalid_argument("Duplicate clipboard key");
         }
     j.fields["properties"] = std::move(values);
-    return detail::jsonDump(j);
+    auto text = detail::jsonDump(j);
+    read(text, "category");
+    return text;
 }
 PropertyPasteResult propertyFromJson(const Property &p, const std::string &text,
                                      const PropertyValidator &validate) {
@@ -337,6 +417,30 @@ PropertyPasteResult propertyCategoryFromJson(ArrayView<Property> fields, const s
         return {{}, e.what()};
     }
 }
+static bool sameSchema(const PropertyValue &a, const PropertyValue &b, int depth = 0) {
+    if (depth > 12 || propertyType(a) != propertyType(b))
+        return false;
+    if (auto array = std::get_if<PropertyArray>(&a)) {
+        const auto &other = std::get<PropertyArray>(b);
+        const auto *left = array->elementTemplate
+                               ? array->elementTemplate.get()
+                               : (array->values.empty() ? nullptr : &array->values.front());
+        const auto *right = other.elementTemplate ? other.elementTemplate.get()
+                                                  : (other.values.empty() ? nullptr : &other.values.front());
+        return !left || !right || sameSchema(*left, *right, depth + 1);
+    }
+    if (auto object = std::get_if<PropertyObject>(&a)) {
+        const auto &other = std::get<PropertyObject>(b);
+        if (object->fields.size() != other.fields.size())
+            return false;
+        for (const auto &field : object->fields) {
+            const auto target = other.fields.find(field.first);
+            if (target == other.fields.end() || !sameSchema(field.second, target->second, depth + 1))
+                return false;
+        }
+    }
+    return true;
+}
 std::vector<Property> commonProperties(const std::vector<std::vector<Property>> &objects) {
     if (objects.empty())
         return {};
@@ -347,7 +451,7 @@ std::vector<Property> commonProperties(const std::vector<std::vector<Property>> 
             auto found = std::find_if(objects[i].begin(), objects[i].end(), [&](const auto &v) {
                 return v.category == p.category && key(v) == key(p);
             });
-            if (found == objects[i].end() || propertyType(p.value) != propertyType(found->value)) {
+            if (found == objects[i].end() || !sameSchema(p.value, found->value)) {
                 common = false;
                 break;
             }
