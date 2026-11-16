@@ -6,7 +6,10 @@
 
 namespace cyui {
 
-struct DocumentAsset { std::string path; std::vector<unsigned char> bytes; };
+struct DocumentAsset {
+    std::string path;
+    std::vector<unsigned char> bytes;
+};
 enum class DocumentBlockKind { paragraph, heading, quote, list, code, rule, table };
 enum class DocumentInlineKind { text, code, strong, emphasis, link, image, softBreak };
 enum DocumentStyle : unsigned {
@@ -48,10 +51,16 @@ struct DocumentBlock {
 class CYUI_API Document {
   public:
     bool setMarkdown(const std::string &);
-    const std::string &markdown() const { return text_; }
-    std::uint64_t revision() const { return revision_; }
+    const std::string &markdown() const {
+        return text_;
+    }
+    std::uint64_t revision() const {
+        return revision_;
+    }
     std::string plainText() const;
-    const std::vector<DocumentBlock> &blocks() const { return blocks_; }
+    const std::vector<DocumentBlock> &blocks() const {
+        return blocks_;
+    }
 
   private:
     std::string text_;
@@ -122,30 +131,102 @@ CYUI_API DocumentResult documentView(const char *id, DocumentState &, const Docu
 CYUI_API DocumentMediaKind documentMediaKind(const std::string &source);
 // Escapes data and emits portable HTML. No script, fetching, filesystem access or browser engine.
 CYUI_API std::string documentHtml(const Document &, const std::string &title = "Document");
+struct TranscriptAttachment {
+    ItemId id = 0;
+    std::string name, source;
+    std::uint64_t bytes = 0;
+    bool image = false;
+};
 struct TranscriptMessage {
     ItemId id = 0;
     std::string role, content, time;
+    std::vector<TranscriptAttachment> attachments;
+    bool own = true, edited = false;
+    ItemId replyTo = 0;
 };
 struct TranscriptRowCache {
     float height = 0;
     std::size_t signature = 0; // role and time
+    std::size_t index = 0;
+    std::uint64_t used = 0;
+    std::string role, preview;
+};
+// The host owns storage and page loading. message() returns nullptr for an unloaded row;
+// request() queues a range for the host (never perform blocking I/O in draw).
+// Returned messages remain valid until the next message() call. IDs must be stable/nonzero.
+struct TranscriptSource {
+    ItemId id = 0;
+    std::size_t count = 0;
+    std::uint64_t revision = 0; // increment on prepend, reorder or removal; append needs only count
+    std::function<const TranscriptMessage *(std::size_t)> message;
+    std::function<std::size_t(ItemId)> indexOf; // optional indexed lookup; npos when absent
+    std::function<void(std::size_t first, std::size_t count)> request;
 };
 struct TranscriptState {
     std::unordered_map<ItemId, Document> documents;
     std::unordered_map<ItemId, DocumentState> views;
     bool follow = true;
     std::size_t count = 0;
-    // Measured message heights: offscreen messages only reserve them. Remeasured when the layout
-    // (width, font size, frame height, item spacing) or a message's role/time/content changes.
+    // Bounded cache for rendered rows. Height indexing is sparse and contains no message text.
     std::unordered_map<ItemId, TranscriptRowCache> heights;
     ImVec4 layout{};
+    ItemId scrollTo = 0, hovered = 0;
+    bool jumpToBottom = false;
+    std::size_t scrollToIndex = std::string::npos;
+    double scroll = 0, scrollMax = 0; // logical pixels; rendering stays near the viewport origin
+    std::size_t firstVisible = 0, lastVisible = 0, fetched = 0;
+    // Sparse Fenwick tree of measured-height deviations, O(log count) seeks and updates.
+    std::unordered_map<std::size_t, double> heightIndex;
+    std::size_t heightCapacity = 0;
+    double estimatedHeight = 0;
+    ItemId sourceId = 0;
+    std::uint64_t sourceRevision = 0, frame = 0;
+    std::size_t requestedFirst = std::string::npos, requestedCount = 0;
+};
+struct TranscriptOptions {
+    DocumentOptions document;
+    ItemId editing = 0;
+    // The host owns the editing draft, validation and history. No editor dependency in DocumentViews.
+    std::function<void(const TranscriptMessage &, float width)> editor;
+    std::size_t cacheMessages = 128, prefetchRows = 8;
+    float estimatedRowHeight = 80; // logical units; measured lazily for visible rows
+    std::uint64_t revision = 0;    // array overload: increment on prepend/reorder
 };
 struct TranscriptResult {
     ItemId copy = 0; // message to copy, 0 for none: give messages nonzero IDs
     std::string link;
+    ItemId edit = 0, erase = 0, reply = 0;
+    ItemId attachmentMessage = 0;
+    std::size_t attachmentIndex = std::string::npos;
+    bool download = false;
 };
 CYUI_API TranscriptResult transcript(const char *id, TranscriptState &, ArrayView<TranscriptMessage>,
                                      ImVec2 size = {});
 CYUI_API TranscriptResult transcript(const char *id, TranscriptState &, ArrayView<TranscriptMessage>,
                                      ImVec2 size, const DocumentOptions &);
+CYUI_API TranscriptResult transcript(const char *id, TranscriptState &, ArrayView<TranscriptMessage>,
+                                     ImVec2 size, const TranscriptOptions &);
+CYUI_API TranscriptResult transcript(const char *id, TranscriptState &, const TranscriptSource &,
+                                     ImVec2 size = {}, const TranscriptOptions & = {});
+
+// Native message input: Enter submits, Shift+Enter inserts a line, Escape cancels.
+// No filesystem, OS clipboard-image import or message mutation is performed by the widget.
+struct MessageComposerState {
+    std::string text;
+    bool focus = false;
+    int first = 0, last = 0;
+    ImGuiID input = 0;
+    std::string synchronized; // native input synchronization; hosts change text directly
+};
+struct MessageComposerOptions {
+    bool attachments = true, canSubmitEmpty = false, editing = false;
+    float maxHeight = 180; // logical units; grows with the wrapped draft
+    // Return true to consume paste; replacement may be empty when the host imported attachments.
+    std::function<bool(std::string &replacement)> paste;
+};
+struct MessageComposerResult {
+    bool submitted = false, cancelled = false, attach = false, changed = false, focused = false;
+};
+CYUI_API MessageComposerResult messageComposer(const char *id, MessageComposerState &, ImVec2 size = {},
+                                               const MessageComposerOptions & = {});
 } // namespace cyui

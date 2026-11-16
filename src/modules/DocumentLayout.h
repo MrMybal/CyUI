@@ -292,12 +292,13 @@ struct DocumentRenderer {
             case DocumentBlockKind::code:
                 textFaint("%s", b.language.c_str());
                 ImGui::SameLine();
-                if (ghostButton(trLabel("Copy").c_str())) {
+                if (iconButton(icon::copy, tr("Copy code").c_str())) {
                     ImGui::SetClipboardText(b.text.c_str());
                     result.copiedBlock = int(n);
                 }
+                s.codeViews[n].searchBar = s.codeViews[n].lineNumbers = false;
                 codeViewer("##block", s.codeViews[n], b.code,
-                           {0, dp(std::clamp(float(b.code.lines().size()) * 20 + 48, 90.f, 320.f))});
+                           {0, dp(std::clamp(float(b.code.lines().size()) * 20 + 16, 48.f, 320.f))});
                 break;
             case DocumentBlockKind::table: {
                 const auto columns = std::min<std::size_t>(32, b.alignments.size());
@@ -436,7 +437,7 @@ void documentLightbox(DocumentState &s, const DocumentOptions &o) {
     ImGui::SetNextWindowSize({v->WorkSize.x * .9f, v->WorkSize.y * .9f}, ImGuiCond_Always);
     bool open = true;
     if (ImGui::BeginPopupModal("##documentImage", &open, ImGuiWindowFlags_NoSavedSettings)) {
-        if (ghostButton(trLabel("Close").c_str()) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (iconButton(icon::close, tr("Close content").c_str()) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             open = false;
             ImGui::CloseCurrentPopup();
         }

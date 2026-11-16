@@ -104,6 +104,8 @@ std::pair<std::size_t, std::size_t> blockRange(const DocumentBlock &b, const std
     auto end = source.find('\n', std::min(b.sourceEnd, source.size()));
     if (end == std::string::npos)
         end = source.size();
+    if (end && source[end - 1] == '\r')
+        --end;
     return {begin == std::string::npos ? 0 : begin + 1, end};
 }
 std::string prefix(const DocumentBlock &b) {
@@ -129,38 +131,18 @@ struct LiveField {
     std::vector<std::size_t> projection;
     std::size_t regionFirst = 0, blocks = 1, revision = 0;
     bool cached = false;
+    int requestCursor = -1;
 };
 std::string liveMarkup(const DocumentBlock &block, const RichText &rich) {
     const auto text = rich.markdown();
-    std::string output;
-    auto continuation = block;
-    continuation.kind = DocumentBlockKind::paragraph;
-    const auto ordinary = prefix(continuation);
-    unsigned number = block.number;
-    bool list = block.kind == DocumentBlockKind::list;
-    std::size_t line = 0;
-    for (std::size_t at = 0; at <= text.size(); ++line) {
-        const auto end = text.find('\n', at);
-        const auto part = text.substr(at, end == std::string::npos ? end : end - at);
-        if (line)
-            output += '\n';
-        if (list && part.empty() && end != std::string::npos)
-            list = false;
-        if (line == 0 && (!part.empty() || end == std::string::npos))
-            output += prefix(block);
-        else if (list) {
-            auto item = block;
-            item.number = number;
-            item.checked = false;
-            output += prefix(item);
-        } else
-            output += ordinary;
-        output += part;
-        if (number)
-            ++number;
-        if (end == std::string::npos)
-            break;
-        at = end + 1;
+    std::string output = prefix(block);
+    // This is one rich block. Inline breaks must survive parsing at its end, in headings
+    // and list items too. Paragraph boundaries are separate source transactions.
+    for (const auto c : text) {
+        if (c == '\n')
+            output += "<br>";
+        else if (c != '\r')
+            output += c;
     }
     return output;
 }
@@ -169,7 +151,7 @@ void projectField(LiveField &field) {
     field.projection.assign(plain.size() + 1, field.regionFirst);
     Document projected;
     projected.setMarkdown(field.canonical);
-    field.blocks = projected.blocks().size();
+    field.blocks = std::max<std::size_t>(1, projected.blocks().size());
     if (field.block.kind == DocumentBlockKind::code) {
         const auto body = field.canonical.find('\n');
         const auto offset = body == std::string::npos ? 0 : body + 1;
@@ -204,16 +186,89 @@ int liveCallback(ImGuiInputTextCallbackData *data) {
         s.buffer.resize(std::size_t(data->BufSize));
         data->Buf = s.buffer.data();
     } else {
+        if (s.requestCursor >= 0) {
+            data->CursorPos = data->SelectionStart = data->SelectionEnd =
+                std::min(s.requestCursor, data->BufTextLen);
+            s.requestCursor = -1;
+        }
         s.first = data->SelectionStart;
         s.last = data->SelectionEnd;
         s.cursor = data->CursorPos;
     }
     return 0;
 }
+int liveLines(const std::string &text, float wrap) {
+    const auto *at = text.data(), *end = at + text.size();
+    int lines = 0;
+    while (at < end) {
+        ++lines;
+        const auto *next = ImFontCalcWordWrapPositionEx(ImGui::GetFont(), ImGui::GetFontSize(), at, end, wrap,
+                                                        ImDrawTextFlags_WrapKeepBlanks);
+        at = next > at ? next : at + 1;
+        if (at < end && *at == '\n')
+            ++at;
+    }
+    if (!lines || (!text.empty() && text.back() == '\n'))
+        ++lines;
+    return lines;
+}
+// Size the native field for this frame's input, including a newly inserted empty line.
+// Otherwise InputText scrolls the old, shorter field and hides the preceding text.
+std::string livePendingText(ImGuiID id, const std::string &plain, bool code, bool readOnly) {
+    auto text = plain;
+    const auto *input = ImGui::GetInputTextState(id);
+    if (readOnly || GImGui->ActiveId != id || !input)
+        return text;
+    auto first = std::min<std::size_t>(std::max(0, input->GetSelectionStart()), text.size());
+    auto last = std::min<std::size_t>(std::max(0, input->GetSelectionEnd()), text.size());
+    if (first > last)
+        std::swap(first, last);
+    auto replace = [&](const std::string &value) {
+        text.replace(first, last - first, value);
+        first += value.size();
+        last = first;
+    };
+    const auto &io = ImGui::GetIO();
+    const bool modifier = io.KeyCtrl || io.KeySuper;
+    if (!modifier || io.KeyAlt) {
+        std::string typed;
+        for (const auto c : io.InputQueueCharacters) {
+            if (c < 32 || c == 127)
+                continue;
+            char utf8[5]{};
+            ImTextCharToUtf8(utf8, c);
+            typed += utf8;
+        }
+        if (!typed.empty())
+            replace(typed);
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_Enter) && (io.KeyShift || (code && !modifier)))
+        replace("\n");
+    else if (modifier && ImGui::IsKeyPressed(ImGuiKey_V, false) &&
+             (ImGui::GetKeyOwner(ImGuiKey_V) == ImGuiKeyOwner_NoOwner ||
+              ImGui::GetKeyOwner(ImGuiKey_V) == id)) {
+        if (const auto *clipboard = ImGui::GetClipboardText())
+            replace(clipboard);
+    } else if (!modifier && ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+        if (first == last && first) {
+            --first;
+            while (first && !boundary(text, first))
+                --first;
+        }
+        replace("");
+    } else if (!modifier && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+        if (first == last && last < text.size())
+            last = nextDocumentChar(text, last);
+        replace("");
+    }
+    return text;
+}
 // Rich glyphs share the input field's exact advances and wrap positions, preserving native
 // selection, keyboard and IME geometry. Appending to its child draw list keeps clipping/order.
 void decorateLive(ImGuiID id, const RichText &rich, const std::vector<CodeToken> *tokens = nullptr,
-                  const std::vector<DocumentSpellingIssue> *issues = nullptr) {
+                  const std::vector<DocumentSpellingIssue> *issues = nullptr, DocumentState *view = nullptr,
+                  DocumentResult *result = nullptr, const std::vector<std::size_t> *projection = nullptr,
+                  std::pair<std::size_t, std::size_t> selection = {}) {
     auto *parent = ImGui::GetCurrentWindow();
     ImGuiWindow *child = nullptr;
     for (auto *candidate : parent->DC.ChildWindows)
@@ -239,12 +294,8 @@ void decorateLive(ImGuiID id, const RichText &rich, const std::vector<CodeToken>
     std::size_t at = 0, runIndex = 0, runEnd = rich.runs().empty() ? 0 : rich.runs()[0].text.size();
     const char *lineEnd = ImFontCalcWordWrapPositionEx(font, size, plain.data(), plain.data() + plain.size(),
                                                        wrap, ImDrawTextFlags_WrapKeepBlanks);
-    const int cursor = input ? input->GetCursorPos() : -1;
     std::size_t tokenIndex = 0;
     while (at <= plain.size()) {
-        if (at == std::size_t(cursor) && input && GImGui->ActiveId == id &&
-            std::fmod(input->CursorAnim, 1.2f) < .8f)
-            draw->AddLine(p, {p.x, p.y + size}, palette().text, dp(1));
         if (at == plain.size())
             break;
         if (plain.data() + at == lineEnd) {
@@ -279,9 +330,28 @@ void decorateLive(ImGuiID id, const RichText &rich, const std::vector<CodeToken>
             if (tokenIndex < tokens->size() && at >= (*tokens)[tokenIndex].start)
                 color = tokenColor((*tokens)[tokenIndex].role, palette().bg0);
         }
+        const std::size_t runStart = runEnd - r.text.size();
+        const auto sourceAt = projection && at < projection->size()
+                                  ? (*projection)[at]
+                                  : r.sourceBegin + std::min(at - runStart, r.sourceEnd - r.sourceBegin);
+        const auto sourceEnd = projection && next < projection->size()
+                                   ? (*projection)[next]
+                                   : r.sourceBegin + std::min(next - runStart, r.sourceEnd - r.sourceBegin);
+        if (sourceEnd > selection.first && sourceAt < selection.second)
+            draw->AddRectFilled(p, {p.x + width, p.y + size}, palette().selection);
         const int vertex = draw->VtxBuffer.Size;
         auto *shown = (r.style & documentBold) && boldFont() ? boldFont() : font;
-        draw->AddText(shown, size, p, color, plain.data() + at, plain.data() + next);
+        const bool hidden = (r.style & documentSpoiler) && !(input && GImGui->ActiveId == id);
+        if (hidden)
+            draw->AddRectFilled(p, {p.x + width, p.y + size}, palette().bg4, dp(2));
+        else
+            draw->AddText(shown, size, p, color, plain.data() + at, plain.data() + next);
+        if (view)
+            view->hits.push_back(
+                {{p, {p.x + width, p.y + size}}, plain.substr(at, next - at), sourceAt, sourceEnd});
+        if (result && !r.target.empty() && (ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper) && ImGui::IsMouseClicked(0) &&
+            hitDocument({p, {p.x + width, p.y + size}}, ImGui::GetIO().MousePos))
+            result->link = r.target;
         if (r.style & documentItalic)
             for (int v = vertex; v < draw->VtxBuffer.Size; ++v)
                 draw->VtxBuffer[v].pos.x += (p.y + size - draw->VtxBuffer[v].pos.y) * .14f;
@@ -290,10 +360,7 @@ void decorateLive(ImGuiID id, const RichText &rich, const std::vector<CodeToken>
         if (r.style & documentStrike)
             draw->AddLine({p.x, p.y + size * .55f}, {p.x + width, p.y + size * .55f}, color, dp(1));
         if (issues) {
-            std::size_t runStart = 0;
-            for (std::size_t n = 0; n < runIndex; ++n)
-                runStart += rich.runs()[n].text.size();
-            const auto source = r.sourceBegin + at - runStart;
+            const auto source = sourceAt;
             for (const auto &issue : *issues)
                 if (source >= issue.begin && source < issue.end) {
                     draw->AddLine({p.x, p.y + size}, {p.x + width, p.y + size}, palette().warning, dp(1));
@@ -342,7 +409,7 @@ bool RichText::replace(std::size_t first, std::size_t last, const std::string &v
     bool found = false;
     for (const auto &r : runs_) {
         const auto end = at + r.text.size();
-        if (!found && first >= at && first <= end) {
+        if (!found && first >= at && (first < end || (first == end && first == plain.size()))) {
             inserted = r;
             inserted.kind = r.kind == DocumentInlineKind::image ? DocumentInlineKind::text : r.kind;
             found = true;
@@ -390,6 +457,13 @@ struct DocumentEditor::Impl {
     std::array<char, 2048> link{};
     ImVec2 floatingPosition{};
     std::pair<std::size_t, std::size_t> floatingSelection{};
+    std::size_t focusAt = std::string::npos, emptyAt = std::string::npos;
+    std::size_t activationAt = std::string::npos;
+    bool documentSelection = false;
+    std::size_t gestureAnchor = 0;
+    ImRect gestureBounds;
+    bool gestureArmed = false;
+    bool openLink = false;
     Impl() {
         source.setLanguage(CodeLanguage::markdown);
         source.native().SetWordWrapEnabled(true);
@@ -424,12 +498,117 @@ struct DocumentEditor::Impl {
     }
     DocumentResult live(const char *id, ImVec2 size, const DocumentOptions &options) {
         ImGui::BeginChild(id, size);
+        // InputText intentionally ignores character input on its activation frame. A paragraph
+        // transition must nevertheless accept characters already queued by a fast typist.
+        if ((focusAt != std::string::npos || activationAt != std::string::npos) && !readOnly &&
+            !ImGui::GetIO().InputQueueCharacters.empty()) {
+            std::string queued;
+            for (const auto c : ImGui::GetIO().InputQueueCharacters) {
+                char utf8[5]{};
+                ImTextCharToUtf8(utf8, c);
+                queued += utf8;
+            }
+            const auto at =
+                std::min(focusAt != std::string::npos ? focusAt : activationAt, source.text().size());
+            replace(at, at, queued);
+            focusAt = at + queued.size();
+            first = last = focusAt;
+            ImGui::GetIO().InputQueueCharacters.clear();
+            refresh();
+        }
         const auto current = source.text();
         DocumentRenderer renderer{view, doc, options};
+        const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+        auto &io = ImGui::GetIO();
+        if (focused && (io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_A, false)) {
+            documentSelection = true;
+            first = 0;
+            last = current.size();
+            ImGui::SetKeyOwner(ImGuiKey_A, ImGui::GetID("##selectAll"), ImGuiInputFlags_LockThisFrame);
+            ImGui::ClearActiveID();
+            ImGui::FocusWindow(ImGui::GetCurrentWindow());
+        }
+        std::string selectedText;
+        if (documentSelection) {
+            if (std::min(first, last) == 0 && std::max(first, last) == current.size())
+                selectedText = doc.plainText();
+            else {
+                float y = -FLT_MAX;
+                for (const auto &hit : view.hits)
+                    if (hit.end > std::min(first, last) && hit.begin < std::max(first, last)) {
+                        if (y != hit.bounds.min.y && !selectedText.empty())
+                            selectedText += '\n';
+                        selectedText += hit.text;
+                        y = hit.bounds.min.y;
+                    }
+            }
+        }
+        view.hits.clear();
+        if (documentSelection && ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
+            ImGui::SetNextFrameWantCaptureKeyboard(true);
+            if ((io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_C))
+                ImGui::SetClipboardText(selectedText.c_str());
+            std::string inserted;
+            for (const auto c : io.InputQueueCharacters) {
+                char utf8[5]{};
+                ImTextCharToUtf8(utf8, c);
+                inserted += utf8;
+            }
+            const bool cut = (io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_X);
+            const bool erase =
+                ImGui::IsKeyPressed(ImGuiKey_Backspace) || ImGui::IsKeyPressed(ImGuiKey_Delete);
+            if ((io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_V)) {
+                if (const auto *clipboard = ImGui::GetClipboardText())
+                    inserted = clipboard;
+            }
+            if (cut)
+                ImGui::SetClipboardText(selectedText.c_str());
+            if (!readOnly && (!inserted.empty() || erase || cut)) {
+                replace(std::min(first, last), std::max(first, last), inserted);
+                focusAt = std::min(first, last) + inserted.size();
+                first = last = focusAt;
+                io.InputQueueCharacters.clear();
+                documentSelection = false;
+                fields.clear();
+                ImGui::EndChild();
+                return {};
+            }
+        }
+        if (ImGui::IsMouseClicked(0))
+            gestureArmed = false;
+        auto blocks = doc.blocks();
+        const auto blankAt = [&](std::size_t at) {
+            DocumentBlock blank;
+            blank.sourceBegin = blank.sourceEnd = at;
+            const auto next = std::find_if(blocks.begin(), blocks.end(),
+                                           [&](const auto &b) { return b.sourceBegin >= at; });
+            blocks.insert(next, std::move(blank));
+        };
+        if (emptyAt != std::string::npos && emptyAt <= current.size() &&
+            std::none_of(blocks.begin(), blocks.end(),
+                         [&](const auto &b) { return b.sourceBegin <= emptyAt && b.sourceEnd > emptyAt; }))
+            blankAt(emptyAt);
+        if (!readOnly &&
+            (blocks.empty() || blocks.back().sourceEnd != current.size() || !blocks.back().inlines.empty()))
+            blankAt(current.size());
+        const auto requestedFocus = focusAt;
+        focusAt = std::string::npos;
+        bool focusApplied = false;
+        if (requestedFocus != std::string::npos) {
+            fields.clear();
+            if (GImGui->ActiveId == activeInput)
+                ImGui::ClearActiveID();
+            if (GImGui->InputTextDeactivatedState.ID == activeInput)
+                GImGui->InputTextDeactivatedState.ID = 0;
+            if (auto *input = ImGui::GetInputTextState(activeInput)) {
+                input->ID = 0;
+                input->WantReloadUserBuf = false;
+            }
+        }
         std::vector<std::tuple<std::size_t, std::size_t, std::string>> edits;
         LiveField *pending = nullptr;
         std::size_t blockIndex = 0;
-        for (std::size_t n = 0; n < doc.blocks().size() + 2; ++n) {
+        for (std::size_t n = 0; n < blocks.size() + 2; ++n) {
             ScopedID key{int(n)};
             auto &field = fields[n];
             const auto inputId = ImGui::GetID("##rich");
@@ -450,15 +629,14 @@ struct DocumentEditor::Impl {
                     }
                 }
             }
-            const bool empty = doc.blocks().empty() && n == 0;
-            if (blockIndex >= doc.blocks().size() && !cached && !empty)
+            const bool empty = blocks.empty() && n == 0;
+            if (blockIndex >= blocks.size() && !cached && !empty)
                 break;
             DocumentBlock blank;
             blank.sourceBegin = blank.sourceEnd = 0;
-            const auto &b = cached                             ? field.block
-                            : blockIndex < doc.blocks().size() ? doc.blocks()[blockIndex]
-                                                               : blank;
-            const std::size_t consumed = cached ? field.blocks : blockIndex < doc.blocks().size() ? 1 : 0;
+            const auto &b = cached ? field.block : blockIndex < blocks.size() ? blocks[blockIndex] : blank;
+            const std::size_t consumed = cached ? field.blocks : blockIndex < blocks.size() ? 1 : 0;
+            const bool synthetic = b.inlines.empty() && b.text.empty() && b.sourceBegin == b.sourceEnd;
             const bool special =
                 b.kind == DocumentBlockKind::table || b.kind == DocumentBlockKind::rule ||
                 b.sourceBegin > b.sourceEnd ||
@@ -499,14 +677,19 @@ struct DocumentEditor::Impl {
                         gridOptions.readOnly = readOnly;
                         gridOptions.history = false;
                         gridOptions.formatting = false;
+                        gridOptions.toolbar = gridOptions.rowHeaders = gridOptions.columnHeaders = false;
+                        gridOptions.rowHeight = 26;
+                        gridOptions.columnWidth = std::max(80.f, ImGui::GetContentRegionAvail().x / dp(1) /
+                                                                     float(session.grid.columns()));
                         gridOptions.display = [](std::size_t, std::size_t, const GridCell &cell) {
                             Document parsed;
                             parsed.setMarkdown(cell.text);
                             return parsed.plainText();
                         };
-                        const auto edit = dataGrid(
-                            "##table", session.state, session.grid,
-                            {0, dp(std::min(360.f, 95.f + float(session.grid.rows()) * 30))}, gridOptions);
+                        const auto edit = dataGrid("##table", session.state, session.grid,
+                                                   {0, dp(std::min(360.f, 12.f + float(session.grid.rows()) *
+                                                                                     gridOptions.rowHeight))},
+                                                   gridOptions);
                         if (edit.changed) {
                             std::string markup;
                             for (std::size_t row = 0; row < session.grid.rows(); ++row) {
@@ -550,11 +733,14 @@ struct DocumentEditor::Impl {
                     renderer.text(b.inlines);
                 if (b.kind == DocumentBlockKind::table || b.kind == DocumentBlockKind::code ||
                     b.sourceBegin > b.sourceEnd) {
-                    if (ghostButton(trLabel("Edit source").c_str())) {
-                        mode = DocumentMode::source;
-                        first = b.sourceBegin;
-                        last = first;
-                        source.native().SetCursor(position(current, first));
+                    if (ImGui::BeginPopupContextItem("##blockActions")) {
+                        if (ImGui::MenuItem(trLabel("Edit source").c_str())) {
+                            mode = DocumentMode::source;
+                            first = b.sourceBegin;
+                            last = first;
+                            source.native().SetCursor(position(current, first));
+                        }
+                        ImGui::EndPopup();
                     }
                 }
                 if (!renderer.result.resizedImage.empty() && !readOnly) {
@@ -609,40 +795,127 @@ struct DocumentEditor::Impl {
                                                                         : b.level == 2 ? 1.25f
                                                                                        : 1.1f)
                                                                      : 1;
-            ImGui::PushFont(code && monoFont() ? monoFont() : ImGui::GetFont(), ImGui::GetFontSize() * scale);
+            ImGui::PushFont(code && monoFont()                                   ? monoFont()
+                            : b.kind == DocumentBlockKind::heading && boldFont() ? boldFont()
+                                                                                 : ImGui::GetFont(),
+                            ImGui::GetFontSize() * scale);
+            ScopedVar fieldPadding{ImGuiStyleVar_FramePadding, dp(0, 2)};
             const float width = std::max(dp(40), ImGui::GetContentRegionAvail().x);
-            const auto measured =
-                ImGui::CalcTextSize(plain.c_str(), nullptr, false, std::max(dp(1), width - dp(32)));
-            const float height = std::clamp(measured.y + ImGui::GetStyle().FramePadding.y * 2 + dp(4),
-                                            ImGui::GetFontSize() + dp(12), dp(900));
+            const auto pendingText = livePendingText(inputId, plain, code, readOnly || documentSelection);
+            const float wrap = std::max(dp(1), width - ImGui::GetStyle().ScrollbarSize);
+            const float height = std::clamp(float(liveLines(pendingText, wrap)) * ImGui::GetFontSize() +
+                                                ImGui::GetStyle().FramePadding.y * 2,
+                                            std::max(dp(20), ImGui::GetFontSize() + dp(4)), dp(900));
+            auto sourceOffset = [&](std::size_t pos, bool right) {
+                if (cached && !field.projection.empty())
+                    return field.projection[std::min(pos, field.projection.size() - 1)];
+                std::size_t sum = 0;
+                for (const auto &run : rich.runs()) {
+                    if (pos < sum + run.text.size() || (!right && pos == sum + run.text.size())) {
+                        const auto local = pos - sum;
+                        if (run.text.size() != run.sourceEnd - run.sourceBegin)
+                            return local == 0 ? run.sourceBegin : run.sourceEnd;
+                        return run.sourceBegin + local;
+                    }
+                    sum += run.text.size();
+                }
+                return !code && right && !synthetic ? blockRange(b, current).second : b.sourceEnd;
+            };
+            const auto focusRange =
+                synthetic ? std::make_pair(b.sourceBegin, b.sourceEnd) : blockRange(b, current);
+            if (!focusApplied && requestedFocus != std::string::npos && requestedFocus >= focusRange.first &&
+                requestedFocus <= focusRange.second) {
+                std::size_t cursor = 0;
+                while (cursor < plain.size() && sourceOffset(cursor, true) < requestedFocus)
+                    cursor = nextDocumentChar(plain, cursor);
+                field.requestCursor = int(cursor);
+                activationAt = requestedFocus;
+                ImGui::SetKeyboardFocusHere();
+                focusApplied = true;
+            }
+            if (!readOnly && (GImGui->ActiveId == inputId || field.requestCursor >= 0)) {
+                const auto *input = ImGui::GetInputTextState(inputId);
+                const auto cursor = std::size_t(field.requestCursor >= 0 ? field.requestCursor
+                                                : input                  ? std::max(0, input->GetCursorPos())
+                                                                         : 0);
+                const bool collapsed = field.requestCursor >= 0 ||
+                                       (input && input->GetSelectionStart() == input->GetSelectionEnd());
+                if (collapsed && ImGui::IsKeyPressed(ImGuiKey_Enter) && !io.KeyShift && !code) {
+                    auto at = cursor == plain.size() ? b.sourceEnd : sourceOffset(cursor, true);
+                    if (cursor == plain.size() && !synthetic)
+                        at = blockRange(b, current).second;
+                    // InputText processes queued characters before Enter. The source split must
+                    // use that same order when both arrive in one frame.
+                    if (pendingText.size() > plain.size())
+                        at += pendingText.size() - plain.size();
+                    const auto newline = preserveCRLF ? "\r\n" : "\n";
+                    std::string insert = std::string(newline) + newline;
+                    if (b.kind == DocumentBlockKind::list && !pendingText.empty()) {
+                        auto next = b;
+                        if (next.number)
+                            ++next.number;
+                        next.checked = false;
+                        insert = std::string(newline) + prefix(next);
+                    }
+                    if (b.kind == DocumentBlockKind::list && pendingText.empty()) {
+                        const auto range = blockRange(b, current);
+                        edits.emplace_back(range.first, range.second, "");
+                        focusAt = emptyAt = range.first;
+                    } else {
+                        edits.emplace_back(at, at, insert);
+                        focusAt = emptyAt = at + insert.size();
+                    }
+                    ImGui::SetKeyOwner(ImGuiKey_Enter, ImGui::GetID("##paragraph"),
+                                       ImGuiInputFlags_LockThisFrame);
+                }
+                if (collapsed && cursor == 0 && blockIndex &&
+                    ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
+                    const auto &previous = blocks[blockIndex - 1];
+                    if (previous.kind != DocumentBlockKind::table &&
+                        previous.kind != DocumentBlockKind::code) {
+                        const auto a = blockRange(previous, current);
+                        const auto z =
+                            synthetic ? std::make_pair(b.sourceBegin, b.sourceEnd) : blockRange(b, current);
+                        const auto before = liveMarkup(previous, RichText(previous.inlines));
+                        edits.emplace_back(a.first, z.second, before + liveMarkup(DocumentBlock{}, rich));
+                        focusAt = a.first + before.size();
+                        emptyAt = std::string::npos;
+                        ImGui::SetKeyOwner(ImGuiKey_Backspace, ImGui::GetID("##join"),
+                                           ImGuiInputFlags_LockThisFrame);
+                    }
+                }
+                const bool back = collapsed && cursor == 0 &&
+                                  (ImGui::IsKeyPressed(ImGuiKey_UpArrow, false) ||
+                                   ImGui::IsKeyPressed(ImGuiKey_LeftArrow, false));
+                const bool forward = collapsed && cursor == plain.size() &&
+                                     (ImGui::IsKeyPressed(ImGuiKey_DownArrow, false) ||
+                                      ImGui::IsKeyPressed(ImGuiKey_RightArrow, false));
+                if (back && blockIndex)
+                    focusAt = blocks[blockIndex - 1].sourceEnd;
+                if (forward && blockIndex + 1 < blocks.size())
+                    focusAt = blocks[blockIndex + 1].sourceBegin;
+            }
             ImGui::PushStyleColor(ImGuiCol_Text, alpha(palette().text, 0));
             ImGui::PushStyleColor(ImGuiCol_FrameBg, alpha(palette().bg0, 0));
+            ImGui::PushStyleColor(ImGuiCol_NavCursor, alpha(palette().accent, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0);
             const bool edit = ImGui::InputTextMultiline(
                 "##rich", field.buffer.data(), field.buffer.size(), {width, height},
                 ImGuiInputTextFlags_WordWrap | ImGuiInputTextFlags_CallbackResize |
                     ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_NoUndoRedo |
-                    (readOnly ? ImGuiInputTextFlags_ReadOnly : 0),
+                    (readOnly || documentSelection ? ImGuiInputTextFlags_ReadOnly : 0),
                 liveCallback, &field);
             ImGui::PopStyleVar();
-            ImGui::PopStyleColor(2);
-            if (ImGui::IsItemActive()) {
+            ImGui::PopStyleColor(3);
+            if (ImGui::IsItemClicked()) {
+                documentSelection = false;
+                gestureAnchor = sourceOffset(std::size_t(std::max(0, field.cursor)), true);
+                gestureBounds = {ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
+                gestureArmed = true;
+            }
+            if (ImGui::IsItemActive() && !documentSelection) {
                 activeInput = inputId;
-                auto sourceOffset = [&](std::size_t pos, bool right) {
-                    if (cached && !field.projection.empty())
-                        return field.projection[std::min(pos, field.projection.size() - 1)];
-                    std::size_t sum = 0;
-                    for (const auto &run : rich.runs()) {
-                        if (pos < sum + run.text.size() || (!right && pos == sum + run.text.size())) {
-                            const auto local = pos - sum;
-                            if (run.text.size() != run.sourceEnd - run.sourceBegin)
-                                return local == 0 ? run.sourceBegin : run.sourceEnd;
-                            return run.sourceBegin + local;
-                        }
-                        sum += run.text.size();
-                    }
-                    return b.sourceEnd;
-                };
+                activationAt = std::string::npos;
                 first = sourceOffset(std::size_t(std::max(0, field.first)), true);
                 last = sourceOffset(std::size_t(std::max(0, field.last)), field.first == field.last);
             }
@@ -658,41 +931,103 @@ struct DocumentEditor::Impl {
                     ++z;
                 while (z && (!boundary(plain, plain.size() - z) || !boundary(next, next.size() - z)))
                     --z;
+                // Map through the unmodified runs: replacement runs have no source offsets yet.
+                const auto insertionAt = synthetic ? b.sourceBegin : sourceOffset(a, true);
                 rich.replace(a, plain.size() - z, next.substr(a, next.size() - a - z));
                 auto range =
-                    cached ? std::make_pair(field.regionFirst, field.regionFirst + field.canonical.size())
-                           : blockRange(b, current);
+                    synthetic ? std::make_pair(b.sourceBegin, b.sourceEnd)
+                    : cached  ? std::make_pair(field.regionFirst, field.regionFirst + field.canonical.size())
+                              : blockRange(b, current);
                 auto replacement = liveMarkup(b, rich);
-                if (code) {
-                    if (!cached && range.first) {
-                        auto previous = current.rfind('\n', range.first > 1 ? range.first - 2 : 0);
-                        previous = previous == std::string::npos ? 0 : previous + 1;
-                        const auto line = current.substr(previous, range.first - previous);
-                        if (line.find("```") != std::string::npos || line.find("~~~") != std::string::npos)
-                            range.first = previous;
+                // Insert typed Markdown into the canonical source, then project the caret back onto
+                // visible text. This recognizes headings and delimiters instead of escaping them.
+                const auto typed = next.substr(a, next.size() - a - z);
+                if (!code && a == plain.size() - z) {
+                    const auto at = insertionAt;
+                    auto inserted = typed;
+                    if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Enter) && !inserted.empty() &&
+                        inserted.back() == '\n')
+                        inserted.replace(inserted.size() - 1, 1, "<br>");
+                    if (synthetic && at && current.substr(0, at).find_last_not_of("\r\n") == at - 1)
+                        inserted = "\n\n" + inserted;
+                    if (preserveCRLF) {
+                        std::string crlf;
+                        for (char ch : inserted) {
+                            if (ch == '\n' && (crlf.empty() || crlf.back() != '\r'))
+                                crlf += '\r';
+                            crlf += ch;
+                        }
+                        inserted = std::move(crlf);
                     }
-                    std::string fence = "```";
-                    while (next.find(fence) != std::string::npos)
-                        fence += '`';
-                    replacement = fence + b.language + "\n" + next +
-                                  (next.empty() || next.back() != '\n' ? "\n" : "") + fence;
-                }
-                if (preserveCRLF) {
-                    std::string crlf;
-                    for (char ch : replacement) {
-                        if (ch == '\n' && (crlf.empty() || crlf.back() != '\r'))
-                            crlf += '\r';
-                        crlf += ch;
+                    edits.emplace_back(at, at, inserted);
+                    auto canonical = current.substr(range.first, range.second - range.first);
+                    canonical.insert(at - range.first, inserted);
+                    Document parsed;
+                    parsed.setMarkdown(canonical);
+                    // Keep the native input/caret for ordinary typing and soft line breaks.
+                    // Only reproject when Markdown actually changes the visible text or block type.
+                    auto visible = next;
+                    while (!visible.empty() && std::strchr(" \t\r\n", visible.back()))
+                        visible.pop_back();
+                    const auto parsedText = parsed.blocks().size() == 1
+                                                ? RichText(parsed.blocks().front().inlines).text()
+                                                : std::string{};
+                    const bool sameText =
+                        parsed.blocks().size() == 1 && (parsedText == next || parsedText == visible);
+                    if ((sameText && parsed.blocks().front().kind == b.kind) ||
+                        (parsed.blocks().empty() && visible.empty())) {
+                        field.rich = sameText ? RichText(parsed.blocks().front().inlines) : rich;
+                        if (sameText && parsedText.size() < next.size())
+                            field.rich.replace(parsedText.size(), parsedText.size(),
+                                               next.substr(parsedText.size()));
+                        field.block = b;
+                        field.block.sourceEnd = range.first + canonical.size();
+                        field.canonical = std::move(canonical);
+                        field.regionFirst = range.first;
+                        field.cached = true;
+                        pending = &field;
+                    } else {
+                        focusAt = at + inserted.size();
+                        field.cached = false;
                     }
-                    replacement = std::move(crlf);
+                } else {
+                    if (code) {
+                        if (!cached && range.first) {
+                            auto previous = current.rfind('\n', range.first > 1 ? range.first - 2 : 0);
+                            previous = previous == std::string::npos ? 0 : previous + 1;
+                            const auto line = current.substr(previous, range.first - previous);
+                            if (line.find("```") != std::string::npos ||
+                                line.find("~~~") != std::string::npos)
+                                range.first = previous;
+                        }
+                        std::string fence = "```";
+                        while (next.find(fence) != std::string::npos)
+                            fence += '`';
+                        replacement = fence + b.language + "\n" + next +
+                                      (next.empty() || next.back() != '\n' ? "\n" : "") + fence;
+                    }
+                    if (preserveCRLF) {
+                        std::string crlf;
+                        for (char ch : replacement) {
+                            if (ch == '\n' && (crlf.empty() || crlf.back() != '\r'))
+                                crlf += '\r';
+                            crlf += ch;
+                        }
+                        replacement = std::move(crlf);
+                    }
+                    field.rich = rich;
+                    field.block = b;
+                    field.block.sourceEnd = range.first + replacement.size();
+                    field.canonical = replacement;
+                    field.regionFirst = range.first;
+                    if (synthetic && range.first && current[range.first - 1] != '\n') {
+                        field.canonical = "\n\n" + field.canonical;
+                        replacement = field.canonical;
+                    }
+                    field.cached = true;
+                    pending = &field;
+                    edits.emplace_back(range.first, range.second, std::move(replacement));
                 }
-                field.rich = rich;
-                field.block = b;
-                field.canonical = replacement;
-                field.regionFirst = range.first;
-                field.cached = true;
-                pending = &field;
-                edits.emplace_back(range.first, range.second, std::move(replacement));
             }
             if (code &&
                 (field.lexicalSource != rich.text() || field.languageRevision != codeLanguageRevision())) {
@@ -700,13 +1035,37 @@ struct DocumentEditor::Impl {
                 field.languageRevision = codeLanguageRevision();
                 field.tokens = highlightCode(field.lexicalSource, codeLanguageFromName(b.language));
             }
-            decorateLive(inputId, rich, code ? &field.tokens : nullptr, code ? nullptr : &issues);
+            decorateLive(inputId, rich, code ? &field.tokens : nullptr, code ? nullptr : &issues, &view,
+                         &renderer.result, cached ? &field.projection : nullptr,
+                         documentSelection ? std::make_pair(std::min(first, last), std::max(first, last))
+                                           : std::pair<std::size_t, std::size_t>{});
             ImGui::PopFont();
             if (indent > 0)
                 ImGui::Unindent(indent);
-            space(3);
+            if (b.kind != DocumentBlockKind::list)
+                space(3);
             blockIndex += consumed;
         }
+        if (gestureArmed && ImGui::IsMouseDragging(0) && !gestureBounds.Contains(io.MousePos) &&
+            !view.hits.empty()) {
+            const DocumentHit *nearest = &view.hits.front();
+            float distance = FLT_MAX;
+            for (const auto &hit : view.hits) {
+                const auto dx = io.MousePos.x - hit.bounds.min.x, dy = io.MousePos.y - hit.bounds.min.y;
+                const auto next = dx * dx + dy * dy * 16;
+                if (next < distance) {
+                    nearest = &hit;
+                    distance = next;
+                }
+            }
+            first = gestureAnchor;
+            last = nearest->end;
+            documentSelection = true;
+            ImGui::ClearActiveID();
+            ImGui::FocusWindow(ImGui::GetCurrentWindow());
+        }
+        if (!ImGui::IsMouseDown(0))
+            gestureArmed = false;
         if (doc.blocks().empty()) {
             if (ghostButton(trLabel("Start writing").c_str()) && !readOnly)
                 replace(0, 0, tr("New paragraph").c_str());
@@ -714,6 +1073,8 @@ struct DocumentEditor::Impl {
         ImGui::EndChild();
         for (auto it = edits.rbegin(); it != edits.rend(); ++it)
             replace(std::get<0>(*it), std::get<1>(*it), std::get<2>(*it));
+        if (focusAt != std::string::npos)
+            first = last = focusAt;
         if (pending) {
             const auto updated = source.text();
             pending->cached =
@@ -742,6 +1103,8 @@ void DocumentEditor::setMarkdown(const std::string &value) {
     impl_->source.setText(value);
     impl_->first = impl_->last = 0;
     impl_->fields.clear();
+    impl_->focusAt = impl_->emptyAt = impl_->activationAt = std::string::npos;
+    impl_->documentSelection = false;
     impl_->view = {};
     impl_->refresh();
     impl_->reload();
@@ -772,6 +1135,12 @@ bool DocumentEditor::select(std::size_t first, std::size_t last) {
 }
 std::pair<std::size_t, std::size_t> DocumentEditor::selection() const {
     return {impl_->first, impl_->last};
+}
+void DocumentEditor::focus() {
+    impl_->focusAt = std::min(impl_->last, markdown().size());
+    impl_->documentSelection = false;
+    if (impl_->mode == DocumentMode::source || impl_->mode == DocumentMode::split)
+        impl_->source.native().SetFocus();
 }
 bool DocumentEditor::insert(const std::string &value) {
     auto &s = *impl_;
@@ -869,7 +1238,7 @@ bool DocumentEditor::command(DocumentCommand command, const std::string &argumen
                 flat += run.text.size();
             }
             const auto range = blockRange(block, value);
-            const auto replacement = prefix(block) + RichText(std::move(runs)).markdown();
+            const auto replacement = liveMarkup(block, RichText(std::move(runs)));
             if (!s.replace(range.first, range.second, replacement))
                 return false;
             s.refresh();
@@ -1003,7 +1372,8 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
         if (ImGui::Combo("##mode", &mode, items, 4))
             setMode(DocumentMode(mode));
     }
-    bool linkRequested = false;
+    bool linkRequested = s.openLink;
+    s.openLink = false;
     if (options.toolbar) {
         ImGui::BeginDisabled(options.readOnly);
         const std::pair<const char *, DocumentCommand> buttons[]{{"Bold", DocumentCommand::bold},
@@ -1015,15 +1385,17 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
                                                                  {"Task list", DocumentCommand::task},
                                                                  {"Undo", DocumentCommand::undo},
                                                                  {"Redo", DocumentCommand::redo}};
-        const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+        const char *glyphs[]{"B", "I", "U", "S", "||", "</>", icon::check, icon::undo, icon::redo};
+        if (options.modeSelector)
+            ImGui::SameLine();
         for (std::size_t n = 0; n < std::size(buttons); ++n) {
-            const auto label = tr(buttons[n].first);
-            if (n && ImGui::GetItemRectMax().x + ImGui::CalcTextSize(label.c_str()).x + dp(32) < right)
-                ImGui::SameLine();
-            if (ghostButton(trLabel(buttons[n].first).c_str()))
+            if (n)
+                ImGui::SameLine(0, dp(2));
+            if (iconButton(glyphs[n], tr(buttons[n].first).c_str()))
                 command(buttons[n].second);
         }
-        if (ghostButton(trLabel("More formatting").c_str()))
+        ImGui::SameLine(0, dp(2));
+        if (iconButton(icon::more, tr("More formatting").c_str()))
             ImGui::OpenPopup("##formatMore");
         if (ImGui::BeginPopup("##formatMore")) {
             const std::pair<const char *, DocumentCommand> extra[]{
@@ -1062,7 +1434,7 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
             ImGui::EndPopup();
         }
     }
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
         auto &io = ImGui::GetIO();
         const bool mod = io.KeyCtrl || io.KeySuper;
         if (mod) {
@@ -1192,7 +1564,7 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
     const bool formatFocused =
         formatWindow && GImGui->NavWindow && formatWindow->RootWindow == GImGui->NavWindow->RootWindow;
     if (options.floatingToolbar && !options.readOnly && s.mode == DocumentMode::live && s.first != s.last &&
-        (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || formatFocused)) {
+        (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) || formatFocused)) {
         const auto selection = std::make_pair(s.first, s.last);
         const auto *viewport = ImGui::GetMainViewport();
         if (selection != s.floatingSelection) {
@@ -1209,16 +1581,22 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
                          ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing)) {
             ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
-            const std::pair<const char *, DocumentCommand> buttons[]{
-                {"Bold", DocumentCommand::bold},
-                {"Italic", DocumentCommand::italic},
-                {"Underline", DocumentCommand::underline},
-                {"Spoiler", DocumentCommand::spoiler}};
-            for (std::size_t n = 0; n < std::size(buttons); ++n) {
+            const char *glyphs[]{"B", "I", "U", "S", "</>", "||", icon::connect};
+            const char *tips[]{"Bold", "Italic",  "Underline",  "Strikethrough",
+                               "Code", "Spoiler", "Insert link"};
+            const DocumentCommand commands[]{DocumentCommand::bold,      DocumentCommand::italic,
+                                             DocumentCommand::underline, DocumentCommand::strike,
+                                             DocumentCommand::code,      DocumentCommand::spoiler,
+                                             DocumentCommand::link};
+            for (std::size_t n = 0; n < std::size(commands); ++n) {
                 if (n)
-                    ImGui::SameLine();
-                if (ghostButton(trLabel(buttons[n].first).c_str()))
-                    command(buttons[n].second);
+                    ImGui::SameLine(0, dp(2));
+                if (iconButton(glyphs[n], tr(tips[n]).c_str())) {
+                    if (commands[n] == DocumentCommand::link) {
+                        s.openLink = true;
+                    } else
+                        command(commands[n]);
+                }
             }
         }
         ImGui::End();

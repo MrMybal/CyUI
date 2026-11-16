@@ -364,6 +364,32 @@ See the [Python gallery](examples/python_modules.py) and [Python integration gui
   It is an Editor integration, not a runtime/UMG backend. See
   [Unreal integration and supported configurations](Documentation/Documentation.html#/en/unreal).
 
+### Try Markdown in a standalone app
+
+The SDL3 app uses the same source on Windows, Linux and macOS:
+
+```sh
+cmake -S . -B build/markdown -DCYUI_BUILD_DEMO=OFF -DCYUI_BUILD_AUDIO=OFF -DCYUI_BUILD_GALLERY=OFF -DCYUI_BUILD_MARKDOWN_DEMO=ON
+cmake --build build/markdown --config Release --parallel
+```
+
+Run `build/markdown/cyui_markdown_test` (on Windows, `build/markdown/Release/cyui_markdown_test.exe`
+with Visual Studio). The Windows shortcut remains `build_markdown_demo.bat`, then
+`build\cyui_markdown_test.exe`. Enable `CYUI_BUILD_PORTABLE_DEMO=ON` for the SDL3
+widget gallery, `cyui_demo_sdl3`. SDL3 is used only by these examples; an installed
+SDL3 >= 3.4 is preferred, otherwise a pinned archive is fetched and verified.
+Use Discord-style local chat: Enter sends, Shift+Enter inserts a line, small
+hover/context actions edit/copy/reply/delete, and real images/files can be
+pasted or dropped as attachments. The document defaults to direct rich editing,
+with Source/Side by side/Reading modes and plain `.md` + local media saves.
+Live typing preserves the caret; Shift+Enter inserts a line without opening the
+formatting toolbar. Native input counts trailing empty lines; soft breaks keep their block style and
+remain in the document after focus changes and save/reload.
+Chat rows are virtualized, with a bounded parsed cache and
+a paged source API for large histories (`--scenario million-chat` tests one million messages).
+See the [playground guide](examples/markdown/README.md) for controls,
+CMake and visual checks.
+
 ### Build the Windows demo
 
 <details>
@@ -429,6 +455,8 @@ Engine binaries, and does not redistribute operating-system fonts.
 | Library · source | License · terms | Use / scope |
 | --- | --- | --- |
 | [Dear ImGui](https://github.com/ocornut/imgui) | [MIT](third_party/imgui/LICENSE.txt) | Native UI; bundled for the demo or replaced by the host's ImGui target. |
+| [SDL3](https://github.com/libsdl-org/SDL) | [zlib](examples/markdown/SDL-LICENSE.txt) | Optional native SDL3 examples only; installed or fetched at a pinned revision. |
+| [stb_image / stb_image_write](https://github.com/nothings/stb) | [MIT or public domain](third_party/stb/LICENSE) | Portable image codecs in the optional Markdown example only. |
 | [stb_truetype, stb_rect_pack, stb_textedit](https://github.com/nothings/stb) | MIT or public domain, at your choice; [bundled notices](third_party/imgui) | Dear ImGui's bundled `imstb_*.h` components. |
 | [ImGuiColorTextEdit](https://github.com/goossens/ImGuiColorTextEdit) | [MIT](third_party/texteditor/LICENSE) | Bundled C++ CodeEditor backend only. |
 | [Lexilla](https://github.com/ScintillaOrg/lexilla) | [HPND-style permissive license](third_party/lexilla/License.txt) | Selected lexical engines for Code and its dependent modules. |

@@ -27,7 +27,8 @@ set(CYUI_BUILD_GALLERY OFF)
 # Audio and Gallery are selected through CYUI_MODULES like the other modules.
 set(CYUI_MODULES "${CYUI_SELECTED_MODULE}")
 add_subdirectory("${CYUI_ROOT}" cyui)
-if(TARGET cyui_imgui OR TARGET cyui_demo)
+if(TARGET cyui_imgui OR TARGET cyui_demo OR TARGET cyui_example_host OR
+   TARGET cyui_markdown_test OR TARGET cyui_demo_sdl3 OR TARGET SDL3::SDL3)
     message(FATAL_ERROR "Selective consumer unexpectedly built a renderer or duplicate ImGui")
 endif()
 get_property(selected GLOBAL PROPERTY CYUI_ENABLED_MODULES)

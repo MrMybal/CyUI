@@ -116,6 +116,7 @@ struct CodeViewState {
     std::string searchedQuery;
     float textScale = 1.f; // 0.5..3, independent of DPI/interface size
     bool wheelZoom = true;
+    bool searchBar = true, lineNumbers = true;
 };
 struct CodeViewResult {
     int clickedLine = -1;

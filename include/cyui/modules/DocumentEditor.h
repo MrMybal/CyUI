@@ -74,6 +74,8 @@ class CYUI_API DocumentEditor {
     // Source UTF-8 byte offsets, shared by all modes. Selection must be on codepoint boundaries.
     bool select(std::size_t first, std::size_t last);
     std::pair<std::size_t, std::size_t> selection() const;
+    // Request native keyboard focus at the current source selection, including in Live.
+    void focus();
     bool insert(const std::string &markdown);
     bool command(DocumentCommand, const std::string &argument = {});
     bool canUndo() const;

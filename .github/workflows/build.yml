@@ -14,10 +14,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Linux native window dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev libwayland-dev wayland-protocols libxkbcommon-dev libegl1-mesa-dev libgl1-mesa-dev libdbus-1-dev
       # On Windows the same configure also builds the Win32 + DX11 demo through CMake.
-      - run: cmake -S . -B build/check -DCYUI_BUILD_DEMO=${{ runner.os == 'Windows' && 'ON' || 'OFF' }} -DCYUI_MODULES=All -DCYUI_BUILD_TESTS=ON
+      - run: cmake -S . -B build/check -DCYUI_BUILD_DEMO=${{ runner.os == 'Windows' && 'ON' || 'OFF' }} -DCYUI_MODULES=All -DCYUI_BUILD_TESTS=ON -DCYUI_BUILD_MARKDOWN_DEMO=ON -DCYUI_BUILD_PORTABLE_DEMO=ON
       - run: cmake --build build/check --config Release --parallel 4
-      - run: ctest --test-dir build/check -C Release --output-on-failure
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a ctest --test-dir build/check -C Release --output-on-failure
+      - if: runner.os != 'Linux'
+        run: ctest --test-dir build/check -C Release --output-on-failure
       # Every module alone, configured the way a host does it (plain set() before
       # add_subdirectory): exact dependency closure, host ImGui only, then its checks run.
       # The ImGui library built above stands in for the host's, so ImGui compiles once.

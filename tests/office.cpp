@@ -304,7 +304,8 @@ int main(int argc, char **argv) {
         tableOptions.modeSelector = false;
         auto drawTable = [&] { markdownTable.draw("markdown-table", {850, 500}, tableOptions); };
         frame(drawTable);
-        io.AddMousePosEvent(100, 85);
+        // Document cells start immediately: Live hides spreadsheet letters and its toolbar.
+        io.AddMousePosEvent(100, 45);
         io.AddMouseButtonEvent(0, true);
         frame(drawTable);
         io.AddMouseButtonEvent(0, false);

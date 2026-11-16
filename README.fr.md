@@ -42,8 +42,9 @@ moteurs de traitement, ses opérations sur les fichiers, ses services de langage
 et son historique d’annulation. CyUI fournit les composants d’interface.
 
 CyUI vise **Windows, Linux et macOS** à travers les backends ImGui de
-l’application hôte. La démo portable disponible est pour Windows x64 ; les
-cibles Linux/macOS de la bibliothèque sont fournies sous forme de sources.
+l’application hôte. Le binaire de démo publié est pour Windows x64. La galerie
+SDL3 et le laboratoire Markdown partagent les mêmes sources natives sur les
+trois systèmes (`CYUI_BUILD_PORTABLE_DEMO` / `CYUI_BUILD_MARKDOWN_DEMO`).
 La navigation CEF et l’intégration dans Unreal Editor sont optionnelles et
 utilisent des runtimes fournis séparément.
 
@@ -387,6 +388,34 @@ Consultez la [galerie Python](examples/python_modules.py) et le
 
 ### Compiler la démo Windows
 
+### Tester Markdown dans une application dédiée
+
+L’application SDL3 partage les mêmes sources sous Windows, Linux et macOS :
+
+```sh
+cmake -S . -B build/markdown -DCYUI_BUILD_DEMO=OFF -DCYUI_BUILD_AUDIO=OFF -DCYUI_BUILD_GALLERY=OFF -DCYUI_BUILD_MARKDOWN_DEMO=ON
+cmake --build build/markdown --config Release --parallel
+```
+
+Lancez `build/markdown/cyui_markdown_test --locale fr` (sous Windows avec Visual
+Studio : `build/markdown/Release/cyui_markdown_test.exe`). Le raccourci Windows
+reste `build_markdown_demo.bat`, puis `build\cyui_markdown_test.exe --locale fr`.
+Activez `CYUI_BUILD_PORTABLE_DEMO=ON` pour la galerie SDL3 `cyui_demo_sdl3`.
+SDL3 reste une dépendance des exemples ; la version installée >= 3.4 est utilisée,
+sinon une archive épinglée et vérifiée est téléchargée. Basculez entre un tchat local et un
+document Markdown. Le tchat utilise Entrée pour envoyer, Maj+Entrée pour une
+ligne, de petites actions au survol/clic droit pour modifier, copier, répondre
+ou supprimer, et des images/fichiers réellement collés ou déposés. Le document
+s’édite directement en texte formaté, avec Source, Côte à côte et Lecture,
+puis s’enregistre en `.md` avec ses médias locaux. Aucun navigateur requis.
+La frappe Direct conserve le curseur ; Maj+Entrée ajoute une ligne sans ouvrir la
+barre de formatage. Les dernières lignes vides sont comptées et les retours restent
+dans leur bloc après changement de focus et sauvegarde/réouverture.
+Le tchat virtualise les messages, borne son cache de documents
+et propose une source paginée (`--scenario million-chat` teste un million de messages).
+Consultez le [guide de l’application](examples/markdown/README.md)
+pour les commandes, CMake et les captures de vérification.
+
 <details>
 <summary>Compiler, empaqueter et capturer la galerie</summary>
 
@@ -451,6 +480,8 @@ les polices du système d’exploitation.
 | Bibliothèque · sources | Licence · texte | Utilisation / périmètre |
 | --- | --- | --- |
 | [Dear ImGui](https://github.com/ocornut/imgui) | [MIT](third_party/imgui/LICENSE.txt) | Interface native ; fourni pour la démo ou remplacé par la cible ImGui de l’hôte. |
+| [SDL3](https://github.com/libsdl-org/SDL) | [zlib](examples/markdown/SDL-LICENSE.txt) | Exemples SDL3 natifs optionnels ; version installée ou téléchargement épinglé. |
+| [stb_image / stb_image_write](https://github.com/nothings/stb) | [MIT ou domaine public](third_party/stb/LICENSE) | Codecs portables de l’exemple Markdown optionnel. |
 | [stb_truetype, stb_rect_pack, stb_textedit](https://github.com/nothings/stb) | MIT ou domaine public, au choix ; [notices fournies](third_party/imgui) | Composants `imstb_*.h` embarqués avec Dear ImGui. |
 | [ImGuiColorTextEdit](https://github.com/goossens/ImGuiColorTextEdit) | [MIT](third_party/texteditor/LICENSE) | Backend fourni uniquement pour CodeEditor C++. |
 | [Lexilla](https://github.com/ScintillaOrg/lexilla) | [Licence permissive de type HPND](third_party/lexilla/License.txt) | Moteurs lexicaux sélectionnés pour Code et ses modules dépendants. |

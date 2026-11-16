@@ -875,11 +875,17 @@ void loadFonts(const FontConfig& config)
     const auto size = config.size > 0.0f ? config.size : state.metrics.fontSize;
     const auto* folder = config.fallbackFolder;
     state.fonts[0] = addFont({ windowsFont("segoeui.ttf"), inFolder(folder, "Inter-Regular.ttf"),
-                               inFolder(folder, "Roboto-Regular.ttf"), inFolder(folder, "Roboto-Medium.ttf") },
+                               inFolder(folder, "Roboto-Regular.ttf"), inFolder(folder, "Roboto-Medium.ttf"),
+                               "/System/Library/Fonts/Supplemental/Arial.ttf",
+                               "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                               "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf" },
                              size);
     mergeIcons(state, size, config.icons);
     state.fonts[1] = addFont({ windowsFont("seguisb.ttf"), inFolder(folder, "Inter-SemiBold.ttf"),
-                               inFolder(folder, "Roboto-Bold.ttf"), inFolder(folder, "Roboto-Medium.ttf") },
+                               inFolder(folder, "Roboto-Bold.ttf"), inFolder(folder, "Roboto-Medium.ttf"),
+                               "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+                               "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                               "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" },
                              size);
     mergeIcons(state, size, config.icons);
     ImFontConfig codeFont;

@@ -1775,11 +1775,58 @@ void documentsPage(const GalleryResources &resources) {
     if (result.taskOffset != std::string::npos)
         source[result.taskOffset] = result.taskChecked ? 'x' : ' ';
     static TranscriptState chat;
-    std::vector<TranscriptMessage> messages{
+    static std::vector<TranscriptMessage> messages{
         {1, tr("User"), tr("Show the result."), "10:00"},
         {2, tr("Assistant"),
          "**Markdown** · <u>Native</u> · ||Spoiler||\n```json\n{\"status\": \"ready\"}\n```", "10:01"}};
-    transcript("##chat", chat, messages, dp(0, 180), options);
+    static MessageComposerState draft, edit;
+    static ItemId next = 3, editing = 0;
+    if (messages.size() > 1 && messages[1].attachments.empty() && resources.texture) {
+        messages[1].own = false;
+        messages[1].attachments.push_back({1, "landscape.png", "gallery/landscape.png", 1024, true});
+    }
+    TranscriptOptions conversation;
+    conversation.document = options;
+    conversation.editing = editing;
+    conversation.editor = [&](const TranscriptMessage &message, float width) {
+        MessageComposerOptions input;
+        input.attachments = false;
+        input.editing = true;
+        auto action = messageComposer("##edit", edit, {width, 0}, input);
+        if (action.submitted) {
+            for (auto &row : messages) if (row.id == message.id) { row.content = edit.text; row.edited = true; }
+            editing = 0;
+        }
+        if (action.cancelled) editing = 0;
+    };
+    const auto action = transcript("##chat", chat, messages, dp(0, 240), conversation);
+    if (action.edit) for (const auto &message : messages) if (message.id == action.edit) {
+        editing = message.id; edit.text = message.content; edit.focus = true;
+    }
+    if (action.erase) messages.erase(std::remove_if(messages.begin(), messages.end(), [&](const auto &message) { return message.id == action.erase; }), messages.end());
+    MessageComposerOptions input;
+    input.attachments = false; // Gallery resources are supplied by its host; no OS file operations here.
+    const auto composed = messageComposer("##composer", draft, {}, input);
+    if (composed.submitted) {
+        messages.push_back({next++, tr("User"), draft.text, "10:02"});
+        draft.text.clear(); draft.focus = true; chat.jumpToBottom = true;
+    }
+    static bool largeHistory = false;
+    ImGui::Checkbox(trLabel("Virtual history (1,000,000 messages)").c_str(), &largeHistory);
+    if (largeHistory) {
+        static TranscriptState historyState;
+        static TranscriptMessage row;
+        TranscriptSource history;
+        history.id = 1;
+        history.count = 1'000'000;
+        history.message = [](std::size_t index) -> const TranscriptMessage * {
+            row = {ItemId(index + 1), tr("User"), "**Markdown** #" + std::to_string(index + 1), "10:00"};
+            row.own = false;
+            return &row;
+        };
+        history.indexOf = [](ItemId id) { return id ? std::size_t(id - 1) : std::string::npos; };
+        transcript("##million", historyState, history, dp(0, 300));
+    }
 }
 #endif
 #if defined(CYUI_HAS_DOCUMENTEDITOR)

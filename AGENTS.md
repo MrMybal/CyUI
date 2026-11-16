@@ -14,3 +14,8 @@ This repository is **CyUI**, a themed widget library on top of Dear ImGui
   - Check the look in every theme:
     `build\cyui_demo.exe --capture out.bmp --theme <key> --tab <n>`.
   - Do not edit `third_party/imgui`.
+  - Keep Core and module sources portable across Windows, Linux and macOS.
+    OS SDKs, window/render backends, native dialogs and clipboard adapters belong
+    in host examples or optional adapters, never in the widget modules.
+  - Keep the SDL3 gallery/Markdown apps and their Windows/Linux/macOS CI checks
+    working when changing shared host or document behavior.

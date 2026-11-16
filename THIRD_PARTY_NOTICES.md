@@ -8,6 +8,9 @@ own copyright and licenses. Selecting a module does not relicense its dependenci
 | --- | --- | --- | --- |
 | JetBrains Mono Regular 2.304 | SIL OFL 1.1 | Embedded unmodified in Core; bundled with the Python package | [OFL notice](third_party/jetbrains-mono/OFL.txt) |
 | Dear ImGui | MIT | Bundled: built and linked by CMake when `CYUI_IMGUI_TARGET` is empty, and by the demo; hosts normally supply their own target | [third_party/imgui/LICENSE.txt](third_party/imgui/LICENSE.txt) |
+| Dear ImGui SDL3 backends | MIT | Unmodified backends matching the bundled core, only for optional native SDL3 examples | [License and pinned source](third_party/imgui-sdl3/README.md) |
+| SDL3 3.4.16 | zlib | Optional example host only; installed SDL3 >= 3.4 or a SHA-256-verified pinned fetch; never linked into CyUI modules | [License](examples/markdown/SDL-LICENSE.txt), [fetch revision](examples/markdown/CMakeLists.txt) |
+| stb_image and stb_image_write | MIT or public domain, at the user's choice | Optional native Markdown example codecs only | [License and pinned source](third_party/stb/README.md) |
 | stb_truetype, stb_rect_pack, stb_textedit (Sean Barrett), as `imstb_*.h` | MIT or public domain (Unlicense), at the user's choice | Bundled inside the Dear ImGui copy and compiled with it | License text at the end of each [third_party/imgui/imstb_*.h](third_party/imgui) file |
 | ImGuiColorTextEdit, Johan A. Goossens | MIT | Bundled only for the optional C++ CodeEditor target | [third_party/texteditor/LICENSE](third_party/texteditor/LICENSE) |
 | Lexilla, selected lexical engines | HPND-style permissive license (Neil Hodgson and contributors) | Bundled and compiled only with Code or its dependents; no Scintilla editor is linked | [Lexilla license](third_party/lexilla/License.txt) |

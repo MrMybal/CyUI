@@ -508,6 +508,18 @@ draw->AddRect(selMin, selMax, p.accent, 0, 0, cyui::dp(1.5f));
 
 ## 7. Build and check
 
+- `build_markdown_demo.bat` builds `build/cyui_markdown_test.exe`, a standalone
+  Markdown playground with a local chat and Live/Split/Source/Reading document
+  modes on Windows/Linux/macOS. CMake: `CYUI_BUILD_MARKDOWN_DEMO=ON`. It links
+  DocumentEditor, DocumentIO and their dependencies, plus an example-only SDL3 host.
+  `CYUI_BUILD_PORTABLE_DEMO=ON` builds the same host with the full widget gallery
+  (`cyui_demo_sdl3`). Installed SDL3 >= 3.4 is preferred; otherwise a SHA-256-verified
+  pinned release is fetched. `CYUI_FETCH_DEMO_DEPENDENCIES=OFF` requires installed SDL3.
+  System file dialogs are asynchronous; callbacks reach app state on the main thread.
+  The CI matrix builds/runs the native apps on all three OSes (Xvfb on Linux).
+  Local Windows verification does not establish Linux/macOS runtime validation.
+  See [its guide](../examples/markdown/README.md); use
+  `python tests/capture_markdown_demo.py` for native smoke/visual checks.
 - `build_demo.bat` builds `build/cyui_demo.exe` with MSVC 2022 (no CMake
   needed).
 - `cyui_demo.exe --capture out.bmp --theme navy --tab 2 [--comfortable]`
@@ -921,8 +933,33 @@ Link CyUI::ImGuizmo only when a compatible host target is supplied.
   returns link/media/task/resize requests and selectable visible text. Assign
   nonblocking `DocumentServices` for cached native images and link previews.
 - `transcript` uses the same renderer and stable message IDs for streamed content.
+  `TranscriptMessage::attachments` contains host-owned image/file references;
+  image services return native textures. Hover/right-click actions return
+  `edit`, `erase`, `reply`, attachment index and download requests. The host
+  owns mutations and file operations. `own=false` suppresses edit/delete.
+  `TranscriptOptions::editing/editor` inserts a host editor in the message row.
+  `messageComposer` provides growing native text input, Enter submit,
+  Shift+Enter newline, Escape cancel, formatting and host clipboard import.
+  Clear `MessageComposerState::text` after a successful send; set `focus=true`
+  to return keyboard focus. Use stable nonzero IDs, including attachment IDs.
+  Native example: `examples/markdown/` uses SDL3 on Windows/Linux/macOS, portable
+  image codecs and isolated clipboard adapters for images/HTML/files, drag/drop,
+  attachments and plain `.md` media. No OS or SDL headers enter CyUI modules.
 - Optional `DocumentEditor` provides Live/Source/Split/Reading modes, native block
   rich input, shared C++ Undo, toolbars, search, clipboard/drop hooks and spelling.
+  Live supports document-wide Ctrl+A, cross-paragraph dragging, Enter paragraphs,
+  Shift+Enter line breaks, Backspace joins, caret navigation and typed Markdown recognition.
+  Inline `<br>` serialization preserves breaks and block styles after blur/reload;
+  native layout includes trailing empty lines and floating formatting requires a selection. `focus()`
+  requests keyboard focus at the current source caret. Web/CEF is optional;
+  native images, file attachments and rich clipboard import need no web runtime.
+- `transcript` virtualizes variable-height message rows with sparse height indexing,
+  a bounded parsed cache and 64-bit logical scrolling. `TranscriptSource` supplies
+  `count`, a cached `message(index)` (nullptr when unloaded), nonblocking page
+  `request(first,count)` and optional indexed `indexOf(id)`. Increment its revision
+  on prepend/reorder/removal. Arrays share this renderer; only explicit ID jumps
+  may scan the array. `scrollToIndex` jumps without a scan. See the native guide's
+  `virtualization` section and the gallery's million-message source.
 - Optional `DocumentIO` reads/writes `.md`/`.cymd` buffers (UTF-8/UTF-16/BOM,
   stored/DEFLATE ZIP, resource budgets) and converts clipboard HTML.
 - Optional `mediaPlayer` draws native controls around an existing `MediaBackend`.
