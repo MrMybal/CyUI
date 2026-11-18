@@ -82,6 +82,14 @@ std::string entity(const std::string &s) {
 struct Parser {
     const std::string &source;
     std::vector<DocumentBlock> blocks;
+    std::vector<DocumentDestination> destinations;
+    void destination(const MD_ATTRIBUTE &raw, const std::string &uri, bool isImage) {
+        if (raw.raw_size) {
+            // MD4C points explicit destinations (including definitions) into its input.
+            const auto begin = std::size_t(raw.raw_text - source.data());
+            destinations.push_back({begin, begin + raw.raw_size, uri, isImage});
+        }
+    }
     struct List {
         unsigned number;
         bool first = true, task = false, checked = false;
@@ -250,15 +258,20 @@ struct Parser {
             p.style |= documentSpoiler;
             p.spoiler = p.nextSpoiler++;
             break;
-        case MD_SPAN_A:
-            p.target = attribute(static_cast<MD_SPAN_A_DETAIL *>(detail)->href);
+        case MD_SPAN_A: {
+            auto &d = *static_cast<MD_SPAN_A_DETAIL *>(detail);
+            p.target = attribute(d.href);
+            if (!d.is_autolink)
+                p.destination(d.href, p.target, false);
             break;
+        }
         case MD_SPAN_IMG:
             if (!p.image) {
                 p.imageRun = {};
                 p.imageRun.kind = DocumentInlineKind::image;
                 auto &d = *static_cast<MD_SPAN_IMG_DETAIL *>(detail);
                 p.imageRun.target = attribute(d.src);
+                p.destination(d.src, p.imageRun.target, true);
                 p.imageRun.title = attribute(d.title);
                 p.image = true;
             }
@@ -392,6 +405,7 @@ bool Document::setMarkdown(const std::string &text) {
         throw std::runtime_error("Markdown parse failed or document nesting limit exceeded");
     text_ = text;
     blocks_ = std::move(p.blocks);
+    destinations_ = std::move(p.destinations);
     ++revision_;
     return true;
 }

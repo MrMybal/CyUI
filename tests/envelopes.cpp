@@ -167,6 +167,86 @@ int main() {
     check(result.valid && result.bounds.min.y == 26, "custom envelopes support gaps, absent phases/markers and compact layout");
     frame([&] { result = envelope("tiny", data, {4, 4}); });
     check(!result.valid, "tiny envelope cannot generate inverted bounds");
+
+    options = {};
+    options.phaseLabels = false;
+    options.margins = {4, 6, 4, 4};
+    options.frameRounding = 4;
+    options.borderWidth = 0;
+    options.fillAlpha = 0;
+    options.curveColor = palette().success;
+    options.levelLineColor = palette().warning;
+    options.levelDotColor = palette().error;
+    std::vector<Point> ramp;
+    for (int n = 0; n < 40000; ++n) ramp.push_back({n / 39999., n / 39999.});
+    data = {ramp, {}, NAN, .4};
+    frame([&] {
+        auto *list = ImGui::GetWindowDrawList();
+        const auto first = unsigned(list->IdxBuffer.Size);
+        result = envelope("large", data, {500, 230}, options);
+        float lastX = 0;
+        bool levelLine = false, levelDot = false;
+        for (const auto &cmd : list->CmdBuffer) {
+            for (auto i = std::max(first, cmd.IdxOffset); i < cmd.IdxOffset + cmd.ElemCount; ++i) {
+                const auto &v = list->VtxBuffer[cmd.VtxOffset + list->IdxBuffer[i]];
+                if (v.col == *options.curveColor) lastX = std::max(lastX, v.pos.x);
+                levelLine |= v.col == *options.levelLineColor;
+                levelDot |= v.col == *options.levelDotColor;
+            }
+        }
+        check(result.valid && result.bounds.min.x == 24 && result.bounds.min.y == 26 &&
+              result.bounds.max.x == 516 && result.bounds.max.y == 246, "instrument margins in dp");
+        check(lastX >= result.bounds.max.x - 1 && lastX <= result.bounds.max.x + 2,
+              "large envelope outline references the last sample across 16-bit draw commands");
+        check(levelLine && levelDot, "level line and dot use the exact supplied colors");
+    });
+
+    const Point knots[]{{0, 0}, {.2, .5}, {1, 1}};
+    const Point shortRamp[]{{0, 1}, {.2, .5}, {1, 0}};
+    data = {{shortRamp, 3}, {}, NAN, NAN, {knots, 3}};
+    EnvelopeEditState gesture;
+    EnvelopeHandle handle{42, {.2, .5}, EnvelopeAxes::both};
+    auto drawHandles = [&] { result = envelope("handles", gesture, data, {&handle, 1}, {500, 230}, options); };
+    const ImVec2 decay{270, 136}, moved{393, 81};
+    frame(drawHandles, decay);
+    frame(drawHandles, decay, 0, true);
+    check(result.hoveredHandle == 42 && result.edit.phase == EditPhase::begin &&
+          std::abs(result.mouse.x - .2) < 1e-6, "custom phase position and stable handle begin");
+    frame(drawHandles, moved);
+    check(result.edit.phase == EditPhase::update && std::abs(result.edit.value.position.x - .6) < 1e-5 &&
+          std::abs(result.edit.value.position.y - .75) < 1e-5, "two-axis decay and sustain proposal uses inverse phase mapping");
+    const Point longer[]{{0, 0}, {.6, .65}, {1.4, 1}};
+    data.timeKnots = {longer, 3}; options.time.max = 1.4;
+    frame(drawHandles, moved);
+    check(result.edit.phase == EditPhase::none, "host preview can change phase widths without moving the parameter again");
+    frame(drawHandles, moved, 0, false);
+    check(result.edit.committed() && result.edit.value.id == 42 && handle.position.x == .2 &&
+          handle.position.y == .5 && std::abs(result.edit.value.position.x - .6) < 1e-5,
+          "release uses the original drag mapping and leaves caller-owned parameters untouched");
+    data.timeKnots = {knots, 3}; options.time.max = 1;
+    frame(drawHandles, moved);
+    check(result.edit.phase == EditPhase::none, "gesture committed only once");
+    handle.axes = EnvelopeAxes::time;
+    frame(drawHandles, decay); frame(drawHandles, decay, 0, true); frame(drawHandles, moved);
+    check(result.edit.phase == EditPhase::update && result.edit.value.position.y == .5, "time-only handle locks level");
+    ++options.revision;
+    frame(drawHandles, moved);
+    check(result.edit.phase == EditPhase::cancel && result.edit.value.position.x == .2,
+          "a new host revision cancels the transaction");
+    frame(drawHandles, moved, 0, false);
+    handle.axes = EnvelopeAxes::level;
+    frame(drawHandles, decay); frame(drawHandles, decay, 0, true); frame(drawHandles, moved);
+    check(result.edit.phase == EditPhase::update && result.edit.value.position.x == .2, "level-only handle locks time");
+    io.AddKeyEvent(ImGuiKey_Escape, true); frame(drawHandles, moved);
+    check(result.edit.phase == EditPhase::cancel && result.edit.value.position.y == .5, "Escape restores original");
+    io.AddKeyEvent(ImGuiKey_Escape, false); frame(drawHandles, moved, 0, false);
+    options.readOnly = true;
+    frame(drawHandles, decay); frame(drawHandles, decay, 0, true);
+    check(result.valid && result.edit.phase == EditPhase::none, "read-only handles produce no proposals");
+    frame(drawHandles, decay, 0, false);
+    const Point reversed[]{{0, 0}, {.2, .6}, {.3, .4}, {1, 1}};
+    data.timeKnots = {reversed, 4}; frame(drawHandles);
+    check(!result.valid, "ambiguous inverse time mapping rejected");
     ImGui::DestroyContext();
     std::printf("Envelope rendering: %d failure(s)\n", failures);
     return failures ? 1 : 0;

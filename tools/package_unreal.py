@@ -142,11 +142,15 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
         shutil.copytree(ROOT/'third_party/texteditor', library/'third_party/texteditor')
         sources.append('third_party/texteditor/TextEditor.cpp')
     private = output/'Source/CyUI/Private'
+    # UBT promotes these MSVC diagnostics to errors. Keep allowances local to
+    # the bridge that includes the corresponding vendor or generated code.
+    source_warnings = {
+        'third_party/md4c/md4c.cpp': '4668 4800 4702',  # Unreachable fallback after MD_UNREACHABLE().
+        'src/modules/code/LanguageData.cpp': '4883',  # Large generated initializer.
+    }
     for index, source in enumerate(sources):
         vendor = source.startswith('third_party/') or source == 'src/modules/CodeEditor.cpp'
-        # MSVC may skip optimization of the generated language catalogue's large
-        # initializer. UBT treats C4883 as an error; scope it to this generated unit.
-        warnings = '4668 4800' if vendor else '4883' if source == 'src/modules/code/LanguageData.cpp' else ''
+        warnings = source_warnings.get(source, '4668 4800' if vendor else '')
         (private/f'CyUILibrary_{index:02}_{Path(source).stem}.cpp').write_text(
             '// Generated source bridge; the implementation remains in ThirdParty/CyUI.\n'
             '#include "CoreTypes.h"\n'

@@ -344,6 +344,19 @@ int main(int argc, char **argv) {
     check(rich.replace(3, 5, "y") && rich.text() == "héyo" && rich.markdown() == "**héyo**",
           "rich replacement preserves styles and UTF-8");
     DocumentEditor editor;
+    for (auto mode : {DocumentMode::source, DocumentMode::split}) {
+        editor.setMarkdown("x\r\nélève🎹!");
+        editor.setMode(mode);
+        const auto revision = editor.document().revision();
+        for (std::size_t at : {5u, 14u}) {
+            check(editor.select(at, at), "source/split accepts a complete UTF-8 character");
+            frame([&] { editor.draw("unicode-selection", {950, 700}, {options}); });
+            check(editor.selection() == std::make_pair(at, at) && editor.document().revision() == revision,
+                  "idle frame preserves UTF-8 byte boundary and parsed revision");
+        }
+        check(editor.insert("X") && editor.markdown() == "x\r\nélève🎹X!" &&
+                  editor.document().revision() != revision, "source/split inserts after a four-byte character");
+    }
     editor.setMarkdown("Hello world\n");
     check(editor.select(6, 11) && editor.command(DocumentCommand::bold),
           "format command accepts source selection");

@@ -69,6 +69,8 @@ class CYUI_API DocumentEditor {
     DocumentEditor &operator=(const DocumentEditor &) = delete;
     void setMarkdown(const std::string &);
     std::string markdown() const;
+    // Current parsed document and its revision. The editor owns the snapshot.
+    const Document &document() const;
     void setMode(DocumentMode);
     DocumentMode mode() const;
     // Source UTF-8 byte offsets, shared by all modes. Selection must be on codepoint boundaries.

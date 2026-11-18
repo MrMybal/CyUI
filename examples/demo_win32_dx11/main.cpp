@@ -250,11 +250,10 @@ bool captureBackBuffer(const wchar_t* path)
     FILE* out {};
     if (_wfopen_s(&out, path, L"wb") != 0 || out == nullptr)
         return false;
-    std::fwrite(&file, sizeof(file), 1, out);
-    std::fwrite(&info, sizeof(info), 1, out);
-    std::fwrite(pixels.data(), 1, pixels.size(), out);
-    std::fclose(out);
-    return true;
+    const bool written = std::fwrite(&file, sizeof(file), 1, out) == 1 &&
+                         std::fwrite(&info, sizeof(info), 1, out) == 1 &&
+                         std::fwrite(pixels.data(), 1, pixels.size(), out) == pixels.size();
+    return std::fclose(out) == 0 && written;
 }
 
 LRESULT WINAPI windowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -615,6 +614,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     app.resources.previewCommands = !capturePath.empty() && tab == 16;
     cyui::notify(tr("Welcome to the CyUI demo").c_str(), cyui::Tone::accent);
     auto done = false;
+    bool captured = false;
     auto frames = 0;
     const auto captureStart=GetTickCount64();
     while (!done) {
@@ -675,7 +675,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         const bool browserCaptureReady=true;(void)captureStart;
 #endif
         if (!capturePath.empty() && ++frames >= 40 && browserCaptureReady) {
-            captureBackBuffer(capturePath.c_str());
+            captured = captureBackBuffer(capturePath.c_str());
             done = true;
         }
         const auto presented = gSwapChain->Present(1, 0);
@@ -696,5 +696,5 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     releaseDevice();
     ::DestroyWindow(hwnd);
     ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
-    return 0;
+    return capturePath.empty() || captured ? 0 : 1;
 }

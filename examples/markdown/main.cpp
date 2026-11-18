@@ -101,7 +101,9 @@ struct App {
     int page = 0;
     bool quit = false, readOnly = false;
     fs::path path;
-    std::string savedMarkdown, preparedMarkdown;
+    std::string savedMarkdown;
+    std::uint64_t dirtyRevision = ~std::uint64_t(0), preparedRevision = ~std::uint64_t(0);
+    bool modified = false;
     native_assets::Store assets;
     DocumentServices services;
     std::string sampleImage;
@@ -143,8 +145,38 @@ struct App {
         text.replace(text.find("sample://palette"), std::string("sample://palette").size(), sampleImage);
         return text;
     }
-    bool dirty() const {
-        return document.markdown() != savedMarkdown;
+    bool dirty() {
+        const auto &snapshot = document.document();
+        if (dirtyRevision != snapshot.revision()) {
+            modified = snapshot.markdown() != savedMarkdown;
+            dirtyRevision = snapshot.revision();
+        }
+        return modified;
+    }
+    void setDocument(const std::string &text, fs::path file, bool saved) {
+        document.setMarkdown(text);
+        std::unordered_set<ItemId> keep;
+        for (const auto &message : messages) {
+            assets.retainReferences(message.content, keep);
+            for (const auto &attached : message.attachments)
+                keep.insert(attached.id);
+        }
+        for (const auto &attached : pending)
+            keep.insert(attached.id);
+        for (const auto *source : {&sampleImage, &composer.text, &editingDraft.text})
+            assets.retainReferences(*source, keep);
+        assets.retainReferences(text, keep);
+        assets.resetDocument(keep);
+        path = std::move(file);
+        savedMarkdown = saved ? text : "";
+        dirtyRevision = preparedRevision = ~std::uint64_t(0);
+    }
+    void prepareDocument() {
+        const auto &snapshot = document.document();
+        if (preparedRevision != snapshot.revision()) {
+            assets.prepare(snapshot, path.empty() ? fs::current_path() : path.parent_path());
+            preparedRevision = snapshot.revision();
+        }
     }
     void addMessage(int speaker, const std::string &content,
                     std::vector<TranscriptAttachment> attachments = {}, ItemId reply = 0) {
@@ -251,19 +283,14 @@ struct App {
         const auto bytes = native_assets::read(file);
         if (bytes.size() > 16 * 1024 * 1024)
             throw std::runtime_error("File is too large (16 MiB maximum)");
-        document.setMarkdown(decodeMarkdown({bytes.data(), bytes.size()}).markdown);
-        savedMarkdown = document.markdown();
-        path = fs::absolute(file);
-        assets.resetLocal();
-        preparedMarkdown.clear();
+        setDocument(decodeMarkdown({bytes.data(), bytes.size()}).markdown, fs::absolute(file), true);
         page = 1;
     }
     bool saveTo(const fs::path &file) {
-        const auto directory = fs::absolute(file).parent_path();
         std::string text;
         try {
-            assets.prepare(document.markdown(), path.empty() ? fs::current_path() : path.parent_path());
-            text = assets.exportMarkdown(document.markdown(), fs::absolute(file));
+            prepareDocument();
+            text = assets.exportMarkdown(document.document(), fs::absolute(file));
         } catch (...) {
             return false;
         }
@@ -271,6 +298,7 @@ struct App {
             return false;
         path = fs::absolute(file);
         savedMarkdown = document.markdown();
+        dirtyRevision = ~std::uint64_t(0);
         return true;
     }
     void save(bool as = false, std::function<void()> after = {}) {
@@ -334,15 +362,12 @@ struct App {
     }
     void toDocument(const std::string &text) {
         replace([this, text] {
-            document.setMarkdown(text);
-            path.clear();
-            savedMarkdown.clear();
-            preparedMarkdown.clear();
+            setDocument(text, {}, false);
             page = 1;
         });
     }
     void saveAttachment(const native_assets::Asset &asset) {
-        const auto *source = &asset;
+        const auto source = assets.retain(asset.uri);
         dialogs.choose(host.window, true, false, false, asset.name, [source](const auto &files) {
             if (files.empty())
                 return;
@@ -547,9 +572,7 @@ struct App {
     void documentView() {
         if (iconButton(icon::document, tr("New document").c_str()))
             replace([this] {
-                document.setMarkdown("");
-                path.clear();
-                savedMarkdown.clear();
+                setDocument("", {}, true);
                 document.focus();
             });
         ImGui::SameLine();
@@ -569,16 +592,15 @@ struct App {
             ImGui::SetClipboardText(document.markdown().c_str());
         ImGui::SameLine();
         if (iconButton(icon::send, tr("Send document to chat").c_str())) {
-            addMessage(0, document.markdown());
+            prepareDocument();
+            addMessage(0, assets.chatMarkdown(document.document()));
             page = 0;
             conversation.jumpToBottom = true;
         }
         ImGui::SameLine();
         if (iconButton(icon::refresh, tr("Load sample document").c_str()))
             replace([this] {
-                document.setMarkdown(sampleMarkdown());
-                path.clear();
-                savedMarkdown = document.markdown();
+                setDocument(sampleMarkdown(), {}, true);
             });
         ImGui::SameLine();
         if (iconButton(icon::lock, tr("Read only").c_str(), readOnly))
@@ -586,11 +608,7 @@ struct App {
         const auto name = path.empty() ? tr("Unsaved document") : platform::utf8(path.filename());
         ImGui::SameLine();
         textDim("%s%s", name.c_str(), dirty() ? " *" : "");
-        const auto current = document.markdown();
-        if (current != preparedMarkdown) {
-            assets.prepare(current, path.empty() ? fs::current_path() : path.parent_path());
-            preparedMarkdown = current;
-        }
+        prepareDocument();
         DocumentEditorOptions edit;
         edit.readOnly = readOnly;
         edit.lineNumbers = false;
@@ -722,7 +740,7 @@ bool selfTest(App &app) {
         !platform::writeFile(directory, "bad", 3) && native_assets::read(file) == written;
     try {
         app.load(file);
-        app.assets.prepare(app.document.markdown(), directory);
+        app.prepareDocument();
     } catch (...) {
         return false;
     }
@@ -744,9 +762,68 @@ bool selfTest(App &app) {
                    app.document.markdown().find("asset://") == std::string::npos,
                "plain Markdown round trip preserves real image attachments"))
         return false;
-    app.document.setMarkdown(app.sampleMarkdown());
-    app.savedMarkdown = app.document.markdown();
-    app.path.clear();
+    // Inline destinations, shared definitions and literal text can use the exact same spelling.
+    const auto sourceDir = directory / "source", targetDir = directory / "target";
+    fs::create_directories(sourceDir);
+    fs::create_directories(targetDir);
+    const auto original = sourceDir / "source.md", exported = targetDir / "copy.md";
+    const std::string prefix = "Inline code `(logo.png)` and a fence:\n\n```\n(logo.png)\n```\n\n";
+    const auto withTarget = [&](const std::string &target) {
+        return prefix + "![Logo](<" + target + "> \"Cover\")\n\n![first][ref] and ![second][ref]\n\n[ref]: " +
+               target + " \"Title\"\n";
+    };
+    const auto fixture = withTarget("logo.png");
+    if (!platform::writeFile(sourceDir / "logo.png", picture->bytes.data(), picture->bytes.size()) ||
+        !platform::writeFile(original, fixture.data(), fixture.size()))
+        return false;
+    app.load(original);
+    app.prepareDocument();
+    Document chatCopy;
+    chatCopy.setMarkdown(app.assets.chatMarkdown(app.document.document()));
+    if (!check(chatCopy.destinations().size() == 3, "inline and reference images are parsed"))
+        return false;
+    auto oldUri = chatCopy.destinations().front().target;
+    app.document.select(0, fixture.size());
+    app.document.insert("");
+    app.prepareDocument();
+    app.document.command(DocumentCommand::undo);
+    app.prepareDocument();
+    if (!check(app.document.markdown() == fixture && app.assets.find(oldUri) &&
+                   app.assets.image("logo.png").texture, "undo retains the original attachment and texture"))
+        return false;
+    app.load(original);
+    if (!check(!app.assets.find(oldUri) && !app.document.canRedo(),
+               "loading starts a new history and releases unreferenced bytes and textures"))
+        return false;
+    app.prepareDocument();
+    chatCopy.setMarkdown(app.assets.chatMarkdown(app.document.document()));
+    oldUri = chatCopy.destinations().front().target;
+    app.addMessage(0, chatCopy.markdown());
+    if (!app.saveTo(exported))
+        return false;
+    const auto copy = native_assets::read(exported);
+    Document exportedDoc;
+    exportedDoc.setMarkdown({copy.begin(), copy.end()});
+    if (exportedDoc.destinations().empty())
+        return false;
+    const auto target = exportedDoc.destinations().front().target;
+    if (!check(target.rfind("assets/", 0) == 0 && exportedDoc.markdown() == withTarget(target) &&
+                   native_assets::read(targetDir / platform::path(target)) == picture->bytes,
+               "Save As relocates image destinations while preserving code, titles and shared references"))
+        return false;
+    app.load(exported);
+    if (!check(app.assets.find(oldUri) && app.assets.find(app.sampleImage),
+               "document switching retains assets referenced by chat and sample"))
+        return false;
+    fs::remove(targetDir / platform::path(target));
+    fs::remove(targetDir / "assets");
+    fs::remove(exported);
+    fs::remove(targetDir);
+    fs::remove(original);
+    fs::remove(sourceDir / "logo.png");
+    fs::remove(sourceDir);
+    fs::remove(directory);
+    app.setDocument(app.sampleMarkdown(), {}, true);
     app.seedChat();
     app.composer.text.clear();
     return true;

@@ -4,36 +4,44 @@
 #include <stdexcept>
 #include <limits>
 #include <cctype>
+#include <variant>
 
 namespace cyui {
 namespace {
 struct Snapshot {
     std::size_t rows = 0, columns = 0;
     std::vector<GridCell> cells;
+    std::size_t textBytes = 0;
 };
-std::size_t cost(const Snapshot &s) {
-    std::size_t n = s.cells.size() * sizeof(GridCell);
-    for (const auto &c : s.cells)
-        n += c.text.size();
-    return n;
-}
+struct CellEdit {
+    std::size_t index;
+    GridCell cell;
+};
+struct Change {
+    std::variant<Snapshot, std::vector<CellEdit>> saved;
+    std::size_t bytes = 0;
+};
+constexpr std::size_t byteLimit = 32 * 1024 * 1024;
 void dimensions(std::size_t r, std::size_t c) {
     if (!r || !c || r > 100000 || c > 256 || r > 1000000 / c)
         throw std::length_error("Grid dimensions exceed limits");
 }
-void validate(const Snapshot &s) {
+void validateCell(const GridCell &c) {
+    if (c.decimals < -1 || c.decimals > 15 || (c.style & ~15u) ||
+        static_cast<unsigned>(c.alignment) > static_cast<unsigned>(GridAlignment::right))
+        throw std::invalid_argument("Invalid grid cell format");
+    if (c.text.size() > 1024 * 1024)
+        throw std::length_error("Grid cell exceeds limit");
+}
+void validate(Snapshot &s) {
     dimensions(s.rows, s.columns);
     if (s.cells.size() != s.rows * s.columns)
         throw std::invalid_argument("Grid snapshot dimensions mismatch");
-    std::size_t bytes = 0;
+    s.textBytes = 0;
     for (const auto &c : s.cells) {
-        if (c.decimals < -1 || c.decimals > 15 || (c.style & ~15u) ||
-            static_cast<unsigned>(c.alignment) > static_cast<unsigned>(GridAlignment::right))
-            throw std::invalid_argument("Invalid grid cell format");
-        if (c.text.size() > 1024 * 1024)
-            throw std::length_error("Grid cell exceeds limit");
-        bytes += c.text.size();
-        if (bytes > 32 * 1024 * 1024)
+        validateCell(c);
+        s.textBytes += c.text.size();
+        if (s.textBytes > byteLimit)
             throw std::length_error("Grid text exceeds limit");
     }
 }
@@ -60,25 +68,70 @@ std::string quoteCell(const std::string &s, char separator) {
 } // namespace
 struct GridModel::Impl {
     Snapshot value;
-    std::deque<Snapshot> undo, redo;
+    std::deque<Change> undo, redo;
+    std::size_t historyBytes = 0;
     std::uint64_t revision = 1;
+    // The entry holds the next values on arrival and the inverse change after swapping.
+    void apply(std::deque<Change> &destination) {
+        auto &change = destination.back();
+        change.bytes = sizeof(Change);
+        if (auto *snapshot = std::get_if<Snapshot>(&change.saved)) {
+            std::swap(*snapshot, value);
+            change.bytes += snapshot->cells.size() * sizeof(GridCell) + snapshot->textBytes;
+        } else {
+            auto &edits = std::get<std::vector<CellEdit>>(change.saved);
+            change.bytes += edits.capacity() * sizeof(CellEdit);
+            for (auto &edit : edits) {
+                auto &cell = value.cells[edit.index];
+                value.textBytes = value.textBytes - cell.text.size() + edit.cell.text.size();
+                std::swap(cell, edit.cell);
+                change.bytes += edit.cell.text.size();
+            }
+        }
+        historyBytes += change.bytes;
+        while (undo.size() + redo.size() > 64 || historyBytes > byteLimit) {
+            historyBytes -= destination.front().bytes;
+            destination.pop_front();
+        }
+        ++revision;
+    }
+    bool perform(Change next) {
+        undo.push_back(std::move(next));
+        for (const auto &change : redo)
+            historyBytes -= change.bytes;
+        redo.clear();
+        apply(undo);
+        return true;
+    }
+    bool restore(std::deque<Change> &from, std::deque<Change> &to) {
+        if (from.empty())
+            return false;
+        to.push_back(std::move(from.back()));
+        from.pop_back();
+        historyBytes -= to.back().bytes;
+        apply(to);
+        return true;
+    }
     bool commit(Snapshot next) {
         validate(next);
-        if (value.rows == next.rows && value.columns == next.columns &&
-            std::equal(value.cells.begin(), value.cells.end(), next.cells.begin(), equalCell))
+        if (value.rows != next.rows || value.columns != next.columns)
+            return perform({std::move(next)});
+        std::vector<CellEdit> edits;
+        for (std::size_t i = 0; i < next.cells.size(); ++i)
+            if (!equalCell(value.cells[i], next.cells[i]))
+                edits.push_back({i, std::move(next.cells[i])});
+        return !edits.empty() && perform({std::move(edits)});
+    }
+    bool edit(std::size_t index, GridCell next) {
+        validateCell(next);
+        const auto &current = value.cells[index];
+        if (equalCell(current, next))
             return false;
-        undo.push_back(value);
-        redo.clear();
-        std::size_t bytes = 0;
-        for (const auto &s : undo)
-            bytes += cost(s);
-        while (!undo.empty() && (undo.size() > 64 || bytes > 32 * 1024 * 1024)) {
-            bytes -= cost(undo.front());
-            undo.pop_front();
-        }
-        value = std::move(next);
-        ++revision;
-        return true;
+        if (value.textBytes - current.text.size() + next.text.size() > byteLimit)
+            throw std::length_error("Grid text exceeds limit");
+        std::vector<CellEdit> edits;
+        edits.push_back({index, std::move(next)});
+        return perform({std::move(edits)});
     }
 };
 GridRange GridRange::normalized() const {
@@ -102,11 +155,8 @@ GridModel::GridModel(const GridModel &o) : impl_(new Impl) {
     impl_->revision = o.impl_->revision;
 }
 GridModel &GridModel::operator=(const GridModel &o) {
-    if (this != &o) {
-        impl_.reset(new Impl);
-        impl_->value = o.impl_->value;
-        impl_->revision = o.impl_->revision;
-    }
+    if (this != &o)
+        *this = GridModel(o);
     return *this;
 }
 std::size_t GridModel::rows() const {
@@ -131,15 +181,13 @@ bool GridModel::assign(std::size_t r, std::size_t c, const std::vector<GridCell>
 }
 bool GridModel::setCell(std::size_t r, std::size_t c, const GridCell &v) {
     cell(r, c);
-    auto s = impl_->value;
-    s.cells[r * columns() + c] = v;
-    return impl_->commit(std::move(s));
+    return impl_->edit(r * columns() + c, v);
 }
 bool GridModel::setText(std::size_t r, std::size_t c, const std::string &t) {
     auto v = cell(r, c);
     v.text = t;
     v.literal = false;
-    return setCell(r, c, v);
+    return impl_->edit(r * columns() + c, std::move(v));
 }
 bool GridModel::resize(std::size_t r, std::size_t c) {
     dimensions(r, c);
@@ -292,22 +340,10 @@ bool GridModel::paste(GridAddress at, const std::string &text, char sep) {
     return impl_->commit(std::move(s));
 }
 bool GridModel::undo() {
-    if (impl_->undo.empty())
-        return false;
-    impl_->redo.push_back(std::move(impl_->value));
-    impl_->value = std::move(impl_->undo.back());
-    impl_->undo.pop_back();
-    ++impl_->revision;
-    return true;
+    return impl_->restore(impl_->undo, impl_->redo);
 }
 bool GridModel::redo() {
-    if (impl_->redo.empty())
-        return false;
-    impl_->undo.push_back(std::move(impl_->value));
-    impl_->value = std::move(impl_->redo.back());
-    impl_->redo.pop_back();
-    ++impl_->revision;
-    return true;
+    return impl_->restore(impl_->redo, impl_->undo);
 }
 bool GridModel::canUndo() const {
     return !impl_->undo.empty();
@@ -318,6 +354,7 @@ bool GridModel::canRedo() const {
 void GridModel::clearHistory() {
     impl_->undo.clear();
     impl_->redo.clear();
+    impl_->historyBytes = 0;
 }
 std::string gridColumnName(std::size_t c) {
     std::string out;

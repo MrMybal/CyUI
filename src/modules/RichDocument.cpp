@@ -192,7 +192,7 @@ RichDocumentData richDocumentFromMarkdown(const std::string &md) {
         block.runs = b.inlines;
         block.paragraph.heading = b.kind == DocumentBlockKind::heading ? b.level : 0;
         if (block.paragraph.heading)
-            block.paragraph.points = block.paragraph.heading == 1 ? 24 : 18;
+            block.paragraph.points = block.paragraph.heading == 1 ? 24.f : 18.f;
         if (b.kind == DocumentBlockKind::table) {
             block.kind = RichBlockKind::table;
             std::size_t cols = 1;

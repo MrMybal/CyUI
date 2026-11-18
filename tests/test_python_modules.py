@@ -617,6 +617,28 @@ class Frames(unittest.TestCase):
         """Mouse down then up at position; the results of both frames."""
         return self.frame(draw, position, (0, True)), self.frame(draw, position, (0, False))
 
+    def test_closed_combo_reads_only_its_selected_item(self):
+        class Choices:
+            def __init__(self):
+                self.read = []
+            def __len__(self):
+                return 10000
+            def __getitem__(self, index):
+                self.read.append(index)
+                return f'Choice {index}'
+
+        choices = Choices()
+        show = lambda: c.combo('Large combo', 123, choices)
+        self.assertEqual(self.frame(show), (False, 123))
+        self.assertEqual(choices.read, [123])
+        self.frame(show, (100, 29))
+        self.click(show, (100, 29))
+        choices.read.clear()
+        self.assertEqual(self.frame(show), (False, 123))
+        self.assertGreater(len(choices.read), 1)
+        self.assertLess(len(choices.read), 100)
+        self.key_frame(show, i.Key.escape)
+
     def test_modal_buttons_close_the_host_flag(self):
         host = {'open': True}
         def draw(answer=False):
@@ -734,19 +756,24 @@ class Frames(unittest.TestCase):
         flags = {'outer': True, 'inner': True}
         def draw():
             shown, flags['outer'] = c.begin_modal('Outer', flags['outer'])
-            inner_result = 0
+            inner_result = outer_result = 0
             if shown:
                 inner, flags['inner'] = c.begin_modal('Inner', flags['inner'])
                 if inner:
                     inner_result = c.modal_buttons('OK')
                     c.end_modal()
+                outer_result = c.modal_buttons('OK')
                 c.end_modal()
-            return shown, inner_result
+            return shown, inner_result, outer_result
         self.frame(draw); self.frame(draw)
-        self.assertEqual(self.key_frame(draw, i.Key.escape), (True, 2))
-        self.assertEqual(self.frame(draw), (True, 0))
+        self.assertEqual(self.key_frame(draw, i.Key.escape), (True, 2, 0))
+        self.assertEqual(self.frame(draw), (True, 0, 0))
         self.assertEqual(flags, {'outer': True, 'inner': False})
-        self.assertEqual(self.frame(draw), (True, 0))
+        flags['inner'] = True
+        self.frame(draw); self.frame(draw)
+        self.assertEqual(self.key_frame(draw, i.Key.enter), (True, 1, 0))
+        self.assertEqual(self.frame(draw), (True, 0, 0))
+        self.assertEqual(flags, {'outer': True, 'inner': False})
 
     def test_audio_fader_slow_drag_and_meter_hold(self):
         from cyui_modules import audio

@@ -89,6 +89,46 @@ int main(int argc, char **argv) {
         check(grid.columns() == 2, "structural grid undo");
         grid.redo();
         check(grid.columns() == 3, "structural grid redo");
+        grid.redo();
+        check(grid.cell(0, 1).text == "Inserted", "cell delta survives structural undo and redo");
+        {
+            GridModel large(10000, 100);
+            GridCell label;
+            label.text = "=A1";
+            label.literal = true;
+            label.decimals = 3;
+            large.setCell(9999, 99, label);
+            large.setText(9999, 99, "42");
+            check(large.undo() && large.cell(9999, 99).literal && large.cell(9999, 99).text == "=A1" &&
+                      large.cell(9999, 99).decimals == 3,
+                  "single-cell undo on a million-cell grid restores the entire previous cell");
+            const auto revision = large.revision();
+            check(!large.setCell(9999, 99, label) && revision == large.revision() && large.canRedo(),
+                  "no-op preserves revision and redo");
+            check(large.redo() && !large.cell(9999, 99).literal && large.cell(9999, 99).text == "42",
+                  "large grid cell redo");
+            large.undo();
+            large.setText(0, 0, "New branch");
+            check(!large.canRedo() && large.undo() && large.undo() && large.cell(9999, 99).text.empty(),
+                  "new edits discard redo and preserve older cell deltas");
+        }
+        {
+            GridModel bounded(33, 1);
+            const std::string megabyte(1024 * 1024, 'x');
+            for (std::size_t r = 0; r < 32; ++r)
+                bounded.setText(r, 0, megabyte);
+            const auto revision = bounded.revision();
+            bool rejected = false;
+            try {
+                bounded.setText(32, 0, "x");
+            } catch (const std::length_error &) {
+                rejected = true;
+            }
+            check(rejected && bounded.revision() == revision && bounded.cell(32, 0).text.empty(),
+                  "cell delta enforces aggregate text limit atomically");
+            check(bounded.undo() && bounded.setText(32, 0, megabyte) && !bounded.canRedo(),
+                  "undo releases the previous cell's text quota");
+        }
         Workbook book;
         book.sheets[0].name = "Budget";
         auto &m = book.sheets[0].grid;
@@ -128,6 +168,39 @@ int main(int argc, char **argv) {
         spreadsheetStructure(structural, 0, -1, 2);
         check(structural.sheets[0].grid.cell(3, 3).text.find("#REF!") != std::string::npos,
               "deleted formula references report REF");
+        {
+            Workbook ranges;
+            ranges.sheets[0].name = "Taux d'été";
+            ranges.sheets.emplace_back();
+            ranges.sheets[0].grid.setText(0, 0, "10");
+            ranges.sheets[0].grid.setText(1, 0, "20");
+            ranges.sheets[1].grid.setText(0, 0, "=SUM('Taux d''été'!$A$1 : $A$2)+A2");
+            GridCell label;
+            label.text = "='Taux d''été'!A1";
+            label.literal = true;
+            ranges.sheets[1].grid.setCell(0, 1, label);
+            ranges.sheets[1].grid.setText(0, 2, "='Taux d''été'!A1&\"[A1]\"");
+            check(spreadsheetStructure(ranges, 0, 1, 0) &&
+                      ranges.sheets[1].grid.cell(0, 0).text == "=SUM('Taux d''été'!$A$2 : $A$3)+A2" &&
+                      evaluateWorkbook(ranges)[1][0].number == 30,
+                  "second endpoint inherits the sheet, absolute anchors move, independent reference stays local");
+            check(spreadsheetStructure(ranges, 0, 2, 0) &&
+                      ranges.sheets[1].grid.cell(0, 0).text == "=SUM('Taux d''été'!$B$2 : $B$3)+A2" &&
+                      evaluateWorkbook(ranges)[1][0].number == 30,
+                  "cross-sheet range follows column insertion");
+            check(spreadsheetRenameSheet(ranges, 0, "L'année") &&
+                      ranges.sheets[1].grid.cell(0, 0).text == "=SUM('L''année'!$B$2 : $B$3)+A2" &&
+                      evaluateWorkbook(ranges)[1][0].number == 30,
+                  "sheet rename preserves quoted names and inherited range endpoint");
+            check(ranges.sheets[1].grid.cell(0, 1).text == label.text &&
+                      ranges.sheets[1].grid.cell(0, 1).literal,
+                  "literal cells survive structural edits and sheet renaming byte for byte");
+            check(ranges.sheets[1].grid.cell(0, 2).text == "='L''année'!B2&\"[A1]\"",
+                  "brackets in formula text literals leave ordinary references eligible for updates");
+            check(!spreadsheetRenameSheet(ranges, 0, ranges.sheets[1].name) &&
+                      ranges.sheets[0].name == "L'année",
+                  "duplicate sheet rename leaves workbook intact");
+        }
         check(spreadsheetFormulaFromODF("of:=SUM([.B2:.C3]);\"a;b\"") == "=SUM(B2:C3),\"a;b\"",
               "OpenFormula separators respect strings");
         check(spreadsheetFormulaFromODF(spreadsheetFormulaToODF("=SUM(B2:C3)+'Résumé'!A1")) ==

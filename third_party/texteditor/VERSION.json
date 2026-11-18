@@ -11,11 +11,12 @@
     "TextEditor.h: serialize newlines only between document lines, preserving an absent final newline.",
     "TextEditor.h/.cpp: host-supplied shared syntax roles and validated glyph spans, independent of lexical/completion state.",
     "TextEditor.h: expose a monotonic text revision; reset advances the revision to invalidate cached syntax.",
-    "TextEditor.h/.cpp: display-only font scale and Ctrl+wheel zoom shared with Code/Diff; brace-only multiline scope guides."
+    "TextEditor.h/.cpp: display-only font scale and Ctrl+wheel zoom shared with Code/Diff; brace-only multiline scope guides.",
+    "TextEditor.h/.cpp: retain supplementary UTF-8 glyph bytes for source edits, clipboard and undo when ImGui uses 16-bit glyphs."
   ],
   "files": {
     "LICENSE": "214dc907ae8db1e78574aca034360192a5bf6d7385bd62b85bd0d404e2d86b68",
-    "TextEditor.cpp": "5f82670cc797fe406b1edb6e3b1a3cc5913769ea62906886078a7eb1d8cec24b",
-    "TextEditor.h": "f63e945ed379e9265d054c8d1d9c43c066a2cf932d8336ea2f9c2006046d95e1"
+    "TextEditor.cpp": "dbe736c4da0bbb08414179fe53a08f93f6276bed08be75852e6124100bf2677d",
+    "TextEditor.h": "85336bea2dc5c938835f759722d017c9724338f34fc00d479ef5b503af72c22c"
   }
 }

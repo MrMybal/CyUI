@@ -1,6 +1,7 @@
 #pragma once
 #include "cyui/modules/Plots.h"
 #include <limits>
+#include <optional>
 
 namespace cyui {
 struct Peak {
@@ -33,6 +34,29 @@ struct EnvelopeData {
     ArrayView<EnvelopeStage> stages; // ordered, non-overlapping; optional
     double playhead = std::numeric_limits<double>::quiet_NaN();
     double level = std::numeric_limits<double>::quiet_NaN(); // live value; independent of preview points
+    // Optional (host time, displayed X fraction) knots, including (time.min,0) and (time.max,1).
+    // Both coordinates strictly increase. Shared phase boundaries only need one knot.
+    // With knots, all drawing and picking use piecewise linear interpolation instead of timePower.
+    ArrayView<Point> timeKnots{};
+};
+struct EnvelopeMargins {
+    float left = 6, top = 6, right = 6, bottom = 6; // logical dp before reserving label space
+};
+enum class EnvelopeAxes { time, level, both };
+struct EnvelopeHandle {
+    ItemId id = 0; // unique, nonzero, stable across frames
+    Point position; // absolute host time and level
+    EnvelopeAxes axes = EnvelopeAxes::both;
+};
+struct EnvelopeEditState {
+    EnvelopeHandle original{}, preview{};
+    // Freeze the input mapping during a gesture: live edits can resize phases and the time domain.
+    ImVec2 pointerStart{}, plotSize{};
+    Range time, levels;
+    double timePower = 1, startFraction = 0;
+    std::vector<Point> timeKnots;
+    std::uint64_t revision = 0;
+    int lastFrame = -1;
 };
 struct EnvelopeOptions {
     Range time{0, 1}, levels{0, 1};
@@ -42,17 +66,29 @@ struct EnvelopeOptions {
     float fillAlpha = .18f;
     bool gradient = false, grid = false, phaseLines = true, phaseLabels = true;
     std::size_t maxPoints = 65536, maxStages = 64; // hard caps: 262144 points, 1024 stages
+    EnvelopeMargins margins;
+    // Supply host palette colors (including alpha), or leave unset to use the CyUI theme.
+    std::optional<ImU32> curveColor, levelLineColor, levelDotColor, backgroundColor, borderColor;
+    float frameRounding = 0, borderWidth = 1, curveWidth = 2, levelDotRadius = 3, levelDotInset = 3; // dp
+    bool readOnly = false; // interactive overload only
+    std::uint64_t revision = 0; // change on external parameter/preset replacement to cancel a drag
 };
 struct EnvelopeResult {
     bool valid = false, hovered = false, clicked = false;
     Point mouse; // inverse display mapping, in host time/level units
     std::size_t stage = std::size_t(-1); // hovered stage; zero-duration stages have no hit area
     Rect bounds; // data area, excluding padding and phase labels
+    ItemId hoveredHandle = 0;
+    Edit<EnvelopeHandle> edit; // begin/update/commit/cancel; cancel carries the original value
 };
 // Read-only display, including phase labels and optional playhead/live-level markers.
 // Invalid ranges/order or exceeded budgets return valid=false, without partial geometry.
 // Input arrays remain caller-owned and unchanged. Wheel scrolling stays with the parent.
 CYUI_API EnvelopeResult envelope(const char *id, const EnvelopeData &, ImVec2 size, const EnvelopeOptions & = {});
+// Keep one state per widget. The host applies proposals and records one undo step on commit.
+// Escape, loss of focus, readOnly, a missing handle or a changed revision cancel the gesture.
+CYUI_API EnvelopeResult envelope(const char *id, EnvelopeEditState &, const EnvelopeData &,
+                                 ArrayView<EnvelopeHandle>, ImVec2 size, const EnvelopeOptions & = {});
 // Logarithmic X; an invalid or non-positive X range resets to 20..20000.
 CYUI_API PlotResult spectrum(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
 CYUI_API PlotResult spectrum(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size, const PlotOptions &);

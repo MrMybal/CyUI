@@ -14,6 +14,8 @@ class CYUI_API CodeEditor {
     CodeEditor(const CodeEditor &) = delete;
     CodeEditor &operator=(const CodeEditor &) = delete;
     void setText(const std::string &);
+    // Loading another document also clears undo/redo when its contents happen to match.
+    void setText(const std::string &, bool resetHistory);
     std::string text() const;
     void setLanguage(CodeLanguage);
     CodeLanguage language() const;

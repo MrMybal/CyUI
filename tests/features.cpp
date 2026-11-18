@@ -668,20 +668,51 @@ int main() {
             check(right > 20 && right <= 82, "clipped text stays within its width");
         });
 
+        bool checked = false, focused = false;
+        const auto config = io.ConfigFlags;
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        auto keyboardSwitch = [&] {
+            toggleSwitch("Keyboard switch", &checked);
+            focused = ImGui::IsItemFocused();
+            check(!(GImGui->LastItemData.ItemFlags & ImGuiItemFlags_NoNav), "switch is a navigation target");
+        };
+        frame(keyboardSwitch);
+        frame(keyboardSwitch, -100, -100, -1, false, false, 0, ImGuiKey_Tab);
+        frame(keyboardSwitch);
+        frame(keyboardSwitch, -100, -100, -1, false, false, 0, ImGuiKey_Space);
+        check(focused && checked, "a focused switch activates with Space");
+        frame(keyboardSwitch);
+
         bool outer = true, inner = true;
+        int outerResult = 0, innerResult = 0;
         auto modals = [&] {
             if (beginModal("Outer", &outer)) {
-                if (beginModal("Inner", &inner))
+                if (beginModal("Inner", &inner)) {
+                    innerResult = modalButtons("Confirm inner", "Cancel inner");
                     endModal();
-                modalButtons("OK", nullptr);
+                }
+                outerResult = modalButtons("Confirm outer", "Cancel outer");
                 endModal();
             }
         };
         frame(modals);
         frame(modals);
         frame(modals, -100, -100, -1, false, false, 0, ImGuiKey_Enter);
-        check(!outer && inner, "a nested modal leaves its parent's open flag to the parent");
+        check(outer && !inner && innerResult == 1 && outerResult == 0,
+              "Enter confirms only the innermost modal");
         frame(modals);
+        inner = true;
+        frame(modals);
+        frame(modals);
+        frame(modals, -100, -100, -1, false, true);
+        check(outer && !inner && innerResult == 2 && outerResult == 0,
+              "Escape cancels only the innermost modal");
+        frame(modals);
+        frame(modals);
+        frame(modals, -100, -100, -1, false, false, 0, ImGuiKey_Enter);
+        check(!outer && outerResult == 1, "a later Enter can confirm the parent");
+        frame(modals);
+        io.ConfigFlags = config;
     }
 #if defined(CYUI_HAS_GALLERY)
     {
@@ -767,6 +798,47 @@ int main() {
         ImGui::SetCurrentContext(first);
         ImGui::DestroyContext(first);
         ImGui::DestroyContext(second);
+        ImGui::SetCurrentContext(mainContext);
+    }
+    {
+        // An extension may first use CyUI from inside a hook, then remove
+        // another hook during this same dispatch.
+        ImGuiContext* mainContext = ImGui::GetCurrentContext();
+        auto* panel = ImGui::CreateContext();
+        ImGui::SetCurrentContext(panel);
+        struct Calls { int called = 0, shutdown = 0; ImGuiID remove = 0; } calls;
+        ImGuiContextHook hook;
+        hook.Type = ImGuiContextHookType_Shutdown;
+        hook.UserData = &calls;
+        hook.Callback = [](ImGuiContext* ctx, ImGuiContextHook* self) {
+            const int before = ctx->Hooks.Size;
+            (void)cyui::palette();
+            (void)cyui::valueEntryOpen();
+            check(ctx->Hooks.Size == before, "shutdown callbacks never register new context state");
+            ++static_cast<Calls*>(self->UserData)->shutdown;
+        };
+        const auto shutdown = hook;
+        ImGui::AddContextHook(panel, &shutdown);
+        hook.Type = ImGuiContextHookType_NewFramePost;
+        hook.Callback = [](ImGuiContext* ctx, ImGuiContextHook* self) {
+            auto& calls = *static_cast<Calls*>(self->UserData);
+            (void)cyui::palette();
+            (void)cyui::valueEntryOpen();
+            ImGui::RemoveContextHook(ctx, calls.remove);
+        };
+        ImGui::AddContextHook(panel, &hook);
+        hook.Callback = [](ImGuiContext*, ImGuiContextHook* self) {
+            ++static_cast<Calls*>(self->UserData)->called;
+        };
+        while (panel->Hooks.Size < panel->Hooks.Capacity)
+            calls.remove = ImGui::AddContextHook(panel, &hook);
+        const int count = panel->Hooks.Size;
+        ImGui::CallContextHooks(panel, ImGuiContextHookType_NewFramePost);
+        check(calls.called == count - 3 && panel->Hooks.Size == count + 2,
+              "both registries install their cleanup without interrupting a full hook list");
+        ImGui::AddContextHook(panel, &shutdown);
+        ImGui::DestroyContext(panel);
+        check(calls.shutdown == 2, "host shutdown hooks still run before and after CyUI cleanup");
         ImGui::SetCurrentContext(mainContext);
     }
     {

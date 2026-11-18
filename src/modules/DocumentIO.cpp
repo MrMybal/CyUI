@@ -1,5 +1,12 @@
 #include "cyui/modules/DocumentIO.h"
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4668) // miniz tests optional configuration macros with #if.
+#endif
 #include "../../third_party/miniz/miniz_tinfl.h"
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 #include <cctype>
 #include <cstring>
 #include <regex>

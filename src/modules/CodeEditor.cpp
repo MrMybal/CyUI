@@ -18,7 +18,10 @@ CodeEditor::CodeEditor() : impl_(std::make_unique<Impl>()) {
 }
 CodeEditor::~CodeEditor() = default;
 void CodeEditor::setText(const std::string &value) {
-    if (text() != value)
+    setText(value, false);
+}
+void CodeEditor::setText(const std::string &value, bool resetHistory) {
+    if (resetHistory || text() != value)
         impl_->editor.SetText(value);
     impl_->original = value;
     impl_->baseline = impl_->editor.GetText();

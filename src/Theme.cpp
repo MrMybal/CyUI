@@ -6,6 +6,7 @@
 #include "cyui/Locale.h"
 
 #include <imgui_internal.h>
+#include "cyui/detail/ContextHook.h"
 #include "fonts/JetBrainsMonoRegular.inc"
 
 #include <algorithm>
@@ -96,7 +97,7 @@ struct ThemeState {
     bool styled = false;
     float styledDpi = 0.0f;
     Density styledDensity = Density::compact;
-    bool hooked = false;  // released with its context
+    ImVector<ImGuiContextHook> retiredHooks;
 };
 void applyLocale(ThemeState& state);
 
@@ -125,27 +126,10 @@ void releaseTheme(ImGuiContext* closing, ImGuiContextHook*)
     ++gThemes.generation;
 }
 
-// Adds a shutdown hook, unless ImGui may be walking the hook list right now
-// (CyUI first used from another hook) and adding would reallocate it: then
-// the caller tries again later.
-bool hookShutdown(ImGuiContext* context, const ImGuiContextHookCallback callback)
-{
-    auto& hooks = context->Hooks;
-    if (hooks.Size == 0)
-        hooks.reserve(8);
-    else if (hooks.Size == hooks.Capacity)
-        return false;
-    ImGuiContextHook hook;
-    hook.Type = ImGuiContextHookType_Shutdown;
-    hook.Callback = callback;
-    ImGui::AddContextHook(context, &hook);
-    return true;
-}
-
 ThemeState& themeState()
 {
     auto* context = ImGui::GetCurrentContext();
-    if (context == nullptr)
+    if (!detail::hasContextAtlas(context))
         return gDefaults;
     if (context == tCachedContext && tCachedGeneration == gThemes.generation.load())
         return *tCached;
@@ -160,11 +144,9 @@ ThemeState& themeState()
         state.metrics = gDefaults.metrics;
         state.squareWindows = gDefaults.squareWindows;
         state.dpi = gDefaults.dpi;
+        detail::addShutdownHook(context, releaseTheme, state.retiredHooks);
     }
-    if (!state.hooked)
-        state.hooked = hookShutdown(context, releaseTheme);
-    // Not hooked yet: no caching, so the next call tries again.
-    tCachedContext = state.hooked ? context : nullptr;
+    tCachedContext = context;
     tCached = &state;
     tCachedGeneration = gThemes.generation.load();
     if (inserted)
@@ -178,8 +160,9 @@ ThemeState& themeState()
 template <class F>
 void change(F&& apply)
 {
-    if (ImGui::GetCurrentContext() != nullptr) {
-        apply(themeState());
+    if (auto* context = ImGui::GetCurrentContext()) {
+        if (detail::hasContextAtlas(context))
+            apply(themeState());
         return;
     }
     std::vector<ImGuiContext*> contexts;
@@ -457,7 +440,7 @@ struct FontSet {
 // sharing the atlas. Empty when unknown or the atlas was cleared since.
 FontSet fontSet()
 {
-    if (ImGui::GetCurrentContext() == nullptr)
+    if (!detail::hasContextAtlas(ImGui::GetCurrentContext()))
         return {};
     auto* atlas = ImGui::GetIO().Fonts;
     const auto owns = [atlas](const ThemeState& state) {

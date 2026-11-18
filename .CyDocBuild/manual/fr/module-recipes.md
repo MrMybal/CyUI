@@ -90,8 +90,8 @@ recouvrement des bandes. PlotStyle::area partage ce moteur de dessin.
 
 En C++, `envelope(id, EnvelopeData, size, EnvelopeOptions)` appartient à
 **AudioViews**, sans nouvelle dépendance. Ce composant affiche les enveloppes
-ADSR, AHDSR et personnalisées depuis les points temps/niveau de l’hôte. L’hôte
-garde l’interpolation, le DSP, l’édition et Undo ; cette vue est en lecture seule.
+ADSR, AHDSR et personnalisées depuis les points temps/niveau de l’hôte. La
+surcharge avec un `EnvelopeEditState` propose aussi les modifications des poignées.
 L’onglet **38, Enveloppes** de la galerie montre son utilisation.
 
 ```cpp
@@ -105,6 +105,40 @@ options.time = {0, 1}; options.levels = {0, 1}; options.timePower = .6;
 const auto hit = cyui::envelope("##env", data, cyui::dp(0, 180), options);
 // hit.mouse renvoie temps/niveau, même avec une échelle temporelle non linéaire.
 ```
+
+Pour un instrument, renseignez `curveColor`, `levelLineColor` et `levelDotColor`
+depuis sa palette. Le cadre accepte `backgroundColor`, `borderColor`, `borderWidth`
+(zéro masque la bordure) et `frameRounding`. Pour Prisme, utilisez
+`margins = {4, 6, 4, 4}` (gauche, haut, droite, bas en dp), `timePower = .6`,
+`frameRounding = 4`, `borderWidth = 0`, `levelDotRadius = 3.5f` et `levelDotInset = 1`.
+Désactivez les libellés et les lignes de phase pour la vue compacte.
+
+Pour personnaliser la largeur de chaque phase, fournissez dans `data.timeKnots`
+les couples temps de l’hôte et position X normalisée. Incluez les bornes
+`{time.min, 0}` et `{time.max, 1}`. Les deux coordonnées doivent être strictement
+croissantes. Omettez les bornes répétées des phases de durée nulle. Ces repères
+définissent la correspondance entre échantillons, indicateurs et souris.
+
+```cpp
+// L’état du geste appartient à l’interface de l’instrument.
+const cyui::Point positions[]{{0, 0}, {.02, .20}, {.3, .50}, {.7, .75}, {1, 1}};
+data.timeKnots = {positions, 5};
+cyui::EnvelopeEditState& geste = instrumentUi.decayGesture;
+const cyui::EnvelopeHandle declin{1, {.3, .4}, cyui::EnvelopeAxes::both};
+const auto resultat = cyui::envelope("##env", geste, data, {&declin, 1}, cyui::dp(0, 100), options);
+if (resultat.edit.committed()) {
+    const auto p = resultat.edit.value.position;
+    instrument.setDecayAndSustain(p.x - finAttaque, p.y); // une opération annulable
+}
+```
+
+Une poignée peut modifier le temps, le niveau ou les deux. Utilisez
+`EditPhase::update` pour la préécoute et `EditPhase::cancel` pour retrouver les
+valeurs d’origine. Incrémentez `options.revision` lors d’une modification externe
+ou d’un changement de preset. Gardez la même révision pendant le geste. La
+poignée conserve l’échelle initiale de saisie pour que la préécoute puisse
+redimensionner les phases sans déplacer le paramètre sous une souris immobile.
+L’interpolation, l’audio et l’historique d’annulation appartiennent à l’hôte.
 
 Les phases doivent être finies, ordonnées et sans recouvrement. Une phase de durée
 nulle est acceptée, sans zone de survol ni libellé. L’hôte traduit les libellés,

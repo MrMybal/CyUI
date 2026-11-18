@@ -82,22 +82,6 @@ TextEditor::DocPos position(const std::string &s, std::size_t offset) {
     }
     return p;
 }
-std::size_t offset(const std::string &s, TextEditor::DocPos p) {
-    std::size_t at = 0, line = 0, index = 0;
-    while (at < s.size()) {
-        if (line == p.line && index == p.index)
-            break;
-        const auto c = static_cast<unsigned char>(s[at++]);
-        if (c == '\n') {
-            if (line == p.line)
-                break;
-            ++line;
-            index = 0;
-        } else if (c != '\r' && (c & 0xc0) != 0x80)
-            ++index;
-    }
-    return at;
-}
 std::pair<std::size_t, std::size_t> blockRange(const DocumentBlock &b, const std::string &source) {
     const auto begin =
         b.sourceBegin ? source.rfind('\n', std::min(b.sourceBegin - 1, source.size())) : std::string::npos;
@@ -439,6 +423,10 @@ bool RichText::replace(std::size_t first, std::size_t last, const std::string &v
 struct DocumentEditor::Impl {
     CodeEditor source;
     Document doc;
+    std::size_t parsedRevision = ~std::size_t(0);
+    std::vector<std::size_t> lineStarts{0};
+    TextEditor::DocSelection sourceSelection;
+    std::size_t selectionRevision = ~std::size_t(0), sourceFirst = 0, sourceLast = 0;
     DocumentState view;
     DocumentMode mode = DocumentMode::live;
     std::unordered_map<std::size_t, LiveField> fields;
@@ -480,7 +468,31 @@ struct DocumentEditor::Impl {
         return true;
     }
     void refresh() {
-        doc.setMarkdown(source.text());
+        const auto revision = source.native().GetTextRevision();
+        if (revision == parsedRevision)
+            return;
+        if (doc.setMarkdown(source.text())) {
+            lineStarts.assign(1, 0);
+            const auto &text = doc.markdown();
+            for (std::size_t newline = text.find('\n'); newline != std::string::npos;
+                 newline = text.find('\n', newline + 1))
+                lineStarts.push_back(newline + 1);
+        }
+        parsedRevision = revision;
+    }
+    std::size_t offset(TextEditor::DocPos p) const {
+        const auto &text = doc.markdown();
+        if (p.line >= lineStarts.size())
+            return text.size();
+        auto at = lineStarts[p.line];
+        for (std::size_t glyph = 0; glyph < p.index && at < text.size() && text[at] != '\n';) {
+            if (text[at++] == '\r')
+                continue;
+            while (at < text.size() && (static_cast<unsigned char>(text[at]) & 0xc0) == 0x80)
+                ++at;
+            ++glyph;
+        }
+        return at;
     }
     void reload() {
         if (activeInput) {
@@ -516,7 +528,7 @@ struct DocumentEditor::Impl {
             ImGui::GetIO().InputQueueCharacters.clear();
             refresh();
         }
-        const auto current = source.text();
+        const auto &current = doc.markdown();
         DocumentRenderer renderer{view, doc, options};
         const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
         auto &io = ImGui::GetIO();
@@ -1100,7 +1112,8 @@ void DocumentEditor::setMarkdown(const std::string &value) {
     if (value.size() > 32 * 1024 * 1024)
         throw std::length_error("Document exceeds 32 MiB");
     impl_->preserveCRLF = value.find("\r\n") != std::string::npos;
-    impl_->source.setText(value);
+    impl_->source.setText(value, true);
+    impl_->parsedRevision = ~std::size_t(0);
     impl_->first = impl_->last = 0;
     impl_->fields.clear();
     impl_->focusAt = impl_->emptyAt = impl_->activationAt = std::string::npos;
@@ -1110,12 +1123,16 @@ void DocumentEditor::setMarkdown(const std::string &value) {
     impl_->reload();
 }
 std::string DocumentEditor::markdown() const {
-    return impl_->source.text();
+    return document().markdown();
+}
+const Document &DocumentEditor::document() const {
+    impl_->refresh();
+    return impl_->doc;
 }
 void DocumentEditor::setMode(DocumentMode mode) {
     auto &s = *impl_;
     if (s.mode != mode && (mode == DocumentMode::source || mode == DocumentMode::split)) {
-        const auto text = s.source.text();
+        const auto &text = document().markdown();
         s.source.native().SelectRegion(position(text, s.first), position(text, s.last));
         s.source.native().ScrollToLine(position(text, s.first).line);
     }
@@ -1125,7 +1142,7 @@ DocumentMode DocumentEditor::mode() const {
     return impl_->mode;
 }
 bool DocumentEditor::select(std::size_t first, std::size_t last) {
-    const auto value = markdown();
+    const auto &value = document().markdown();
     if (!boundary(value, first) || !boundary(value, last))
         return false;
     impl_->first = first;
@@ -1137,7 +1154,7 @@ std::pair<std::size_t, std::size_t> DocumentEditor::selection() const {
     return {impl_->first, impl_->last};
 }
 void DocumentEditor::focus() {
-    impl_->focusAt = std::min(impl_->last, markdown().size());
+    impl_->focusAt = std::min(impl_->last, document().markdown().size());
     impl_->documentSelection = false;
     if (impl_->mode == DocumentMode::source || impl_->mode == DocumentMode::split)
         impl_->source.native().SetFocus();
@@ -1343,10 +1360,10 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
     if (options.spelling &&
         (s.spellingDocument != s.doc.revision() || s.spellingRevision != options.spellingRevision ||
          s.spellingLanguage != options.spellingLanguage)) {
-        s.issues = options.spelling(s.source.text(), options.spellingLanguage);
+        s.issues = options.spelling(s.doc.markdown(), options.spellingLanguage);
         if (s.issues.size() > 4096)
             s.issues.resize(4096);
-        const auto raw = s.source.text();
+        const auto &raw = s.doc.markdown();
         s.issues.erase(std::remove_if(s.issues.begin(), s.issues.end(),
                                       [&](const auto &issue) {
                                           return issue.begin >= issue.end || !boundary(raw, issue.begin) ||
@@ -1526,19 +1543,25 @@ DocumentEditorResult DocumentEditor::draw(const char *id, ImVec2 size, const Doc
     else {
         s.source.native().SetShowLineNumbersEnabled(options.lineNumbers);
         const bool split = s.mode == DocumentMode::split;
-        const auto before = s.source.text();
+        const auto before = s.source.native().GetTextRevision();
         s.source.draw("##source", {split ? room.x * .5f : room.x, room.y});
         const auto selection = s.source.native().GetMainCursorSelection();
-        s.first = offset(s.source.text(), selection.start);
-        s.last = offset(s.source.text(), selection.end);
-        if (before != s.source.text())
+        s.refresh();
+        if (s.selectionRevision != s.parsedRevision || s.sourceSelection.start != selection.start ||
+            s.sourceSelection.end != selection.end) {
+            s.sourceFirst = s.offset(selection.start);
+            s.sourceLast = selection.start == selection.end ? s.sourceFirst : s.offset(selection.end);
+            s.sourceSelection = selection;
+            s.selectionRevision = s.parsedRevision;
+        }
+        s.first = s.sourceFirst;
+        s.last = s.sourceLast;
+        if (before != s.parsedRevision)
             s.changed = true;
         if (split) {
             ImGui::SameLine();
-            s.refresh();
             docOptions.scrollToSource =
-                offset(s.source.text(),
-                       s.source.native().VisPos2DocPos({s.source.native().GetFirstVisibleRow(), 0}));
+                s.offset(s.source.native().VisPos2DocPos({s.source.native().GetFirstVisibleRow(), 0}));
             result.document = documentView(
                 "##preview", s.view, s.doc,
                 {std::max(dp(1), room.x * .5f - ImGui::GetStyle().ItemSpacing.x), room.y}, docOptions);

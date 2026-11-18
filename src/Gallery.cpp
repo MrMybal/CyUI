@@ -1362,7 +1362,11 @@ void envelopesPage()
     }
     ImGui::Checkbox(trLabel("Expand short phases").c_str(), &expand); ImGui::SameLine();
     ImGui::Checkbox(trLabel("Gradient fill").c_str(), &gradient);
-    const double a = attack, h = hold, d = decay, held = .35, r = release;
+    static EnvelopeEditState decayEdit;
+    const double a = attack, h = hold, held = .35, r = release;
+    const auto preview = decayEdit.preview.position;
+    const double d = decayEdit.original.id ? std::clamp(preview.x - a - h, 0., 2.) : decay;
+    const double previewLevel = decayEdit.original.id ? preview.y : sustain;
     // Gallery-owned interpolation illustrates the host contract. CyUI receives the samples.
     auto prepare = [&](double level) {
         std::vector<Point> points;
@@ -1383,17 +1387,33 @@ void envelopesPage()
         {{a + h + d + held, a + h + d + held + r}, releaseLabel.c_str()}};
     EnvelopeOptions options; options.time = {0, a + h + d + held + r};
     options.timePower = expand ? .6 : 1; options.gradient = gradient; options.grid = true;
-    auto points = prepare(sustain);
+    auto points = prepare(previewLevel);
     EnvelopeData data{points, {stages, 5}};
     data.playhead = a + h + d * .45;
-    data.level = sustain + (1 - sustain) * std::pow(.55, std::max(.1f, bend));
+    data.level = previewLevel + (1 - previewLevel) * std::pow(.55, std::max(.1f, bend));
     sectionTitle("AHDSR");
     const float height = std::clamp(ImGui::GetContentRegionAvail().y - dp(190), dp(100), dp(220));
-    envelope("##ahdsr", data, {ImGui::GetContentRegionAvail().x, height}, options);
+    const EnvelopeHandle handle{1, {a + h + d, previewLevel}, EnvelopeAxes::both};
+    const auto edit = envelope("##ahdsr", decayEdit, data, {&handle, 1},
+                               {ImGui::GetContentRegionAvail().x, height}, options);
+    if (edit.edit.committed()) {
+        decay = float(std::clamp(edit.edit.value.position.x - a - h, 0., 2.));
+        sustain = float(edit.edit.value.position.y);
+    }
+    if (edit.hoveredHandle)
+        ImGui::SetTooltip("%s", tr("Drag to edit decay and sustain").c_str());
     if (ImGui::BeginTable("##envelopeExamples", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextColumn(); sectionTitle(tr("Zero sustain").c_str());
         auto zero = prepare(0); EnvelopeData zeroData{zero, {stages, 5}};
-        envelope("##zeroSustain", zeroData, dp(0, 150), options);
+        auto instrument = options;
+        instrument.curveColor = palette().success;
+        instrument.levelLineColor = alpha(palette().info, .55f);
+        instrument.levelDotColor = palette().info;
+        instrument.margins = {4, 6, 4, 4};
+        instrument.frameRounding = 4;
+        instrument.borderWidth = 0;
+        zeroData.level = .35;
+        envelope("##zeroSustain", zeroData, dp(0, 150), instrument);
         ImGui::TableNextColumn(); sectionTitle(tr("Custom canvas: bipolar fill").c_str());
         {
             CanvasState canvas; CanvasOptions canvasOptions; canvasOptions.grid = canvasOptions.navigation = false;

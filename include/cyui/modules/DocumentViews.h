@@ -48,6 +48,13 @@ struct DocumentBlock {
     std::string anchor;
     std::vector<int> alignments; // 0 default, 1 left, 2 center, 3 right
 };
+// An explicit link/image destination in the original Markdown. Reference links
+// point at their definition, so several uses can share the same byte range.
+struct DocumentDestination {
+    std::size_t begin, end;
+    std::string target;
+    bool image;
+};
 class CYUI_API Document {
   public:
     bool setMarkdown(const std::string &);
@@ -61,10 +68,12 @@ class CYUI_API Document {
     const std::vector<DocumentBlock> &blocks() const {
         return blocks_;
     }
+    const std::vector<DocumentDestination> &destinations() const { return destinations_; }
 
   private:
     std::string text_;
     std::vector<DocumentBlock> blocks_;
+    std::vector<DocumentDestination> destinations_;
     std::uint64_t revision_ = 0;
 };
 enum class DocumentMediaKind { image, video, audio, attachment, web };

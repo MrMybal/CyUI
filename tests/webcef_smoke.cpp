@@ -61,8 +61,10 @@ int main(int argc, char **argv) {
 #if !defined(OS_WIN)
         keyCode = true; // Native scan codes are synthesized on Windows only.
 #endif
+        bool hoveredInput = false;
         float inputX = 100, inputY = 100;
         const auto start = std::chrono::steady_clock::now();
+        auto nextHover = start;
         while (std::chrono::steady_clock::now() - start < std::chrono::seconds(25) &&
                (!reply || !frames || !typed || !doubleClick || !keyCode)) {
 #if defined(OS_WIN)
@@ -95,6 +97,7 @@ int main(int argc, char **argv) {
                     }
                 }
                 reply = reply || event.data.find("test.reply") != std::string::npos;
+                hoveredInput = hoveredInput || event.data.find("test.input.hover") != std::string::npos;
                 focused = focused || event.data.find("test.focus") != std::string::npos;
                 pointer = pointer || event.data.find("test.pointer.any") != std::string::npos;
                 doubleClick = doubleClick || event.data.find("test.dblclick") != std::string::npos;
@@ -108,7 +111,10 @@ int main(int argc, char **argv) {
             if (page && web->postJson("{\"protocol\":\"cyui.web\",\"version\":1,\"type\":\"host.reply\","
                                       "\"payload\":{\"ok\":true}}"))
                 page = false;
-            if (reply && !sentInput && std::chrono::steady_clock::now() - start > std::chrono::seconds(2)) {
+            const auto now = std::chrono::steady_clock::now();
+            if (reply && frames && !hoveredInput && now >= nextHover) {
+                // The renderer can answer messages before its compositor can hit-test the page.
+                nextHover = now + std::chrono::milliseconds(100);
                 cyui::WebInput input;
                 input.kind = cyui::WebInputKind::focus;
                 input.down = true;
@@ -117,6 +123,11 @@ int main(int argc, char **argv) {
                 input.y = inputY;
                 input.kind = cyui::WebInputKind::move;
                 web->input(input);
+            }
+            if (hoveredInput && !sentInput) {
+                cyui::WebInput input;
+                input.x = inputX;
+                input.y = inputY;
                 input.kind = cyui::WebInputKind::button;
                 input.down = true;
                 input.modifiers = 16;
@@ -135,8 +146,7 @@ int main(int argc, char **argv) {
                 web->input(input);
                 sentInput = true;
             }
-            if (focused && sentInput && !sentTyping &&
-                std::chrono::steady_clock::now() - start > std::chrono::seconds(3)) {
+            if (focused && sentInput && !sentTyping) {
                 cyui::WebInput input;
                 input.kind = cyui::WebInputKind::key;
                 input.key = 65;

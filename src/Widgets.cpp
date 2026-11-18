@@ -5,6 +5,7 @@
 #include "cyui/Icons.h"
 
 #include <imgui_internal.h>
+#include "cyui/detail/ContextHook.h"
 
 #include <algorithm>
 #include <cmath>
@@ -324,7 +325,7 @@ bool iconButton(const char* icon, const char* tip, const bool active, const ImU3
     const auto origin = ImGui::GetCursorScreenPos();
     ImGui::PushID(icon);
     ImGui::PushID(tip != nullptr ? tip : "");
-    const auto clicked = ImGui::InvisibleButton("##icon", size);
+    const auto clicked = ImGui::InvisibleButton("##icon", size, ImGuiButtonFlags_EnableNav);
     const auto hovered = ImGui::IsItemHovered();
     const auto held = ImGui::IsItemActive();
     ImGui::PopID();
@@ -366,7 +367,7 @@ bool toggleButton(const char* label, bool* value, ImU32 onColour, ImVec2 size, c
     if (size.y <= 0.0f)
         size.y = ImGui::GetFrameHeight();
     const auto origin = ImGui::GetCursorScreenPos();
-    const auto clicked = ImGui::InvisibleButton(label, size);
+    const auto clicked = ImGui::InvisibleButton(label, size, ImGuiButtonFlags_EnableNav);
     if (clicked) {
         *value = !*value;
         markEdited(ImGui::GetItemID());
@@ -395,7 +396,7 @@ bool toggleSwitch(const char* label, bool* value)
     const auto textSize = ImGui::CalcTextSize(label, end);
     const auto origin = ImGui::GetCursorScreenPos();
     const ImVec2 size(trackWidth + (hasText ? style.ItemInnerSpacing.x + textSize.x : 0.0f), height);
-    const auto clicked = ImGui::InvisibleButton(label, size);
+    const auto clicked = ImGui::InvisibleButton(label, size, ImGuiButtonFlags_EnableNav);
     if (clicked) {
         *value = !*value;
         markEdited(ImGui::GetItemID());
@@ -462,7 +463,7 @@ bool segmented(const char* id, const char* const labels[], const int count, int*
         ImGui::SetCursorScreenPos(ImVec2(x, origin.y + inset));
         ImGui::PushID(i);
         const ImVec2 size(w, height - inset * 2.0f);
-        if (ImGui::InvisibleButton("##segment", size) && *current != i) {
+        if (ImGui::InvisibleButton("##segment", size, ImGuiButtonFlags_EnableNav) && *current != i) {
             *current = i;
             changed = true;
             markEdited(ImGui::GetItemID());
@@ -521,6 +522,7 @@ struct WidgetContextState {
     std::vector<Toast> toasts;
     std::vector<PendingToast> posted;  // notify(), any thread: taken by renderNotifications
     bool hooked = false;               // released with its context
+    ImVector<ImGuiContextHook> retiredHooks;
 };
 // One per ImGui context, released with it. Contexts may live on different
 // threads: the map is locked, each thread caches its last lookup.
@@ -547,35 +549,20 @@ void releaseWidgets(ImGuiContext* closing, ImGuiContextHook*)
     ++gWidgets.generation;
 }
 
-// Adds a shutdown hook, unless ImGui may be walking the hook list right now
-// (CyUI first used from another hook) and adding would reallocate it: then
-// the caller tries again later.
-bool hookShutdown(ImGuiContext* context, const ImGuiContextHookCallback callback)
-{
-    auto& hooks = context->Hooks;
-    if (hooks.Size == 0)
-        hooks.reserve(8);
-    else if (hooks.Size == hooks.Capacity)
-        return false;
-    ImGuiContextHook hook;
-    hook.Type = ImGuiContextHookType_Shutdown;
-    hook.Callback = callback;
-    ImGui::AddContextHook(context, &hook);
-    return true;
-}
-
 WidgetContextState& widgetState()
 {
     auto* context = ImGui::GetCurrentContext();
-    if (context == nullptr)
+    if (!detail::hasContextAtlas(context))
         return gNoContext;
     if (context == tWidgetContext && tWidgetGeneration == gWidgets.generation.load())
         return *tWidgetState;
     std::lock_guard<std::mutex> lock(gWidgets.mutex);
     auto& state = gWidgets.states[context];
-    if (!state.hooked)
-        state.hooked = hookShutdown(context, releaseWidgets);
-    tWidgetContext = state.hooked ? context : nullptr;
+    if (!state.hooked) {
+        detail::addShutdownHook(context, releaseWidgets, state.retiredHooks);
+        state.hooked = true;
+    }
+    tWidgetContext = context;
     tWidgetState = &state;
     tWidgetGeneration = gWidgets.generation.load();
     return state;
@@ -812,7 +799,7 @@ bool searchField(const char* id, char* buffer, const int bufferSize, const char*
     if (buffer[0] != 0) {
         const auto clearSize = height;
         ImGui::SetCursorScreenPos(ImVec2(origin.x + std::max(dp(40.0f), fieldWidth) - clearSize, origin.y));
-        if (ImGui::InvisibleButton("##clear", ImVec2(clearSize, clearSize))) {
+        if (ImGui::InvisibleButton("##clear", ImVec2(clearSize, clearSize), ImGuiButtonFlags_EnableNav)) {
             buffer[0] = 0;
             changed = true;
         }
@@ -836,15 +823,18 @@ bool textField(const char* id, char* buffer, const int bufferSize, const char* h
 
 bool combo(const char* id, int* current, const char* const items[], const int count, const float width)
 {
-    std::vector<std::string> translated;
-    std::vector<const char*> translatedItems;
-    translated.reserve(std::size_t(std::max(0, count)));
-    translatedItems.reserve(std::size_t(std::max(0, count)));
-    for (int i = 0; i < count; ++i) translated.push_back(tr(items[i]));
-    for (const auto& item : translated) translatedItems.push_back(item.c_str());
+    struct Choices {
+        const char* const* items;
+        std::string translated;
+    } source{items, {}};
+    auto label = [](void* data, int index) -> const char* {
+        auto& choices = *static_cast<Choices*>(data);
+        choices.translated = tr(choices.items[index]);
+        return choices.translated.c_str();
+    };
     if (width != 0.0f)
         ImGui::SetNextItemWidth(width);
-    return ImGui::Combo(id, current, translatedItems.data(), count);
+    return ImGui::Combo(id, current, label, &source, count);
 }
 
 // ---- Containers ----------------------------------------------------------------
@@ -1082,7 +1072,7 @@ void callout(const Tone tone, const char* text)
 bool colourChip(const char* id, const ImU32 colour, const ImVec2 size)
 {
     const auto origin = ImGui::GetCursorScreenPos();
-    const auto clicked = ImGui::InvisibleButton(id, size);
+    const auto clicked = ImGui::InvisibleButton(id, size, ImGuiButtonFlags_EnableNav);
     auto* list = ImGui::GetWindowDrawList();
     const ImVec2 max(origin.x + size.x, origin.y + size.y);
     list->AddRectFilled(origin, max, faded(colour), dp(2.0f));

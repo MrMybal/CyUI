@@ -616,8 +616,8 @@ fringes or overlapping strips are generated. PlotStyle::area shares this rendere
 
 C++ `envelope(id, EnvelopeData, size, EnvelopeOptions)` belongs to **AudioViews**,
 with no new dependency. It displays ADSR, AHDSR and custom envelopes from the
-host's sampled time/level points. The host owns interpolation, DSP, editing and
-Undo; this component is a read-only display. See gallery tab **38, Envelopes**.
+host's sampled time/level points. The overload taking an `EnvelopeEditState`
+also proposes handle edits. See gallery tab **38, Envelopes**.
 
 ```cpp
 std::vector<cyui::Point> samples{{0, 0}, {.02, 1}, {.3, .4}, {.7, .4}, {1, 0}};
@@ -630,6 +630,38 @@ options.time = {0, 1}; options.levels = {0, 1}; options.timePower = .6;
 const auto hit = cyui::envelope("##env", data, cyui::dp(0, 180), options);
 // hit.mouse is time/level, even with a nonlinear time display.
 ```
+
+For an instrument panel, set `curveColor`, `levelLineColor` and `levelDotColor` from
+the instrument palette. The frame accepts `backgroundColor`, `borderColor`,
+`borderWidth` (zero hides it) and `frameRounding`. For a Prisme-style display
+use `margins = {4, 6, 4, 4}` (left, top, right, bottom in dp), `timePower = .6`,
+`frameRounding = 4`, `borderWidth = 0`, `levelDotRadius = 3.5f` and `levelDotInset = 1`.
+Disable phase labels and lines for the compact instrument view.
+
+For custom phase widths, supply `data.timeKnots` as pairs of host time and normalized
+display X. Include both endpoints from `{time.min, 0}` to `{time.max, 1}`, with
+both coordinates strictly increasing. Omit repeated boundaries of zero-length
+phases. Knots take precedence over the power curve for samples, markers and picking.
+
+```cpp
+// Keep this state with the instrument UI. Samples and handle positions come from the host.
+const cyui::Point phaseWidths[]{{0, 0}, {.02, .20}, {.3, .50}, {.7, .75}, {1, 1}};
+data.timeKnots = {phaseWidths, 5};
+cyui::EnvelopeEditState& gesture = instrumentUi.decayGesture;
+const cyui::EnvelopeHandle decay{1, {.3, .4}, cyui::EnvelopeAxes::both};
+const auto result = cyui::envelope("##env", gesture, data, {&decay, 1}, cyui::dp(0, 100), options);
+if (result.edit.committed()) {
+    const auto p = result.edit.value.position;
+    instrument.setDecayAndSustain(p.x - attackEndTime, p.y); // one host undo transaction
+}
+```
+
+A handle can move in time, level, or both. Use `EditPhase::update` for live
+previews and `EditPhase::cancel` to restore the original parameters. Advance
+`options.revision` on an external edit or preset switch. Keep it stable during
+the current drag. A gesture retains its initial input scale so a live preview can
+resize the phases without moving the parameter under a stationary pointer.
+The caller owns interpolation, audio and undo.
 
 Stage intervals must be finite, ordered and non-overlapping; zero-duration stages
 are allowed and have no hit/label area. Labels are caller-localized and appear

@@ -2,7 +2,9 @@
 #include <cyui/modules/DocumentIO.h>
 #include "Platform.h"
 #include "Raster.h"
+#include <charconv>
 #include <fstream>
+#include <map>
 #include <unordered_map>
 #include <stdexcept>
 
@@ -30,6 +32,7 @@ inline std::string escaped(const std::string &text) {
 struct Asset {
     cyui::ItemId id = 0;
     std::string name, uri;
+    fs::path sourcePath;
     std::vector<unsigned char> bytes;
     std::unique_ptr<SDL_Texture, decltype(&SDL_DestroyTexture)> texture{nullptr, SDL_DestroyTexture};
     cyui::ImageData image;
@@ -40,7 +43,7 @@ struct Asset {
 class Store {
     SDL_Renderer *renderer;
     cyui::ItemId next = 1;
-    std::unordered_map<std::string, std::unique_ptr<Asset>> items;
+    std::unordered_map<std::string, std::shared_ptr<Asset>> items;
     std::unordered_map<std::string, std::string> local;
     void decode(Asset &asset) {
         const auto decoded = raster::decode(asset.bytes.data(), asset.bytes.size());
@@ -64,12 +67,13 @@ class Store {
   public:
     explicit Store(SDL_Renderer *target) : renderer(target) {}
     Asset &add(std::string name, std::vector<unsigned char> bytes) {
-        auto asset = std::make_unique<Asset>();
+        auto asset = std::make_shared<Asset>();
         asset->id = next++;
         asset->name = std::move(name);
         asset->bytes = std::move(bytes);
         auto extension = platform::utf8(platform::path(asset->name).extension());
-        if (extension.size() > 12)
+        if (extension.size() > 12 ||
+            extension.find_first_not_of(".abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != std::string::npos)
             extension.clear();
         asset->uri = "asset://" + std::to_string(asset->id) + extension;
         decode(*asset);
@@ -78,12 +82,15 @@ class Store {
         return *result;
     }
     Asset &import(const fs::path &path) {
-        return add(platform::utf8(path.filename()), read(path));
+        auto &asset = add(platform::utf8(path.filename()), read(path));
+        asset.sourcePath = path;
+        return asset;
     }
     const Asset *find(const std::string &uri) const {
         auto it = items.find(uri);
         return it == items.end() ? nullptr : it->second.get();
     }
+    std::shared_ptr<const Asset> retain(const std::string &uri) const { return items.at(uri); }
     cyui::ImageData image(const std::string &uri) const {
         if (const auto *asset = find(uri))
             return asset->image;
@@ -93,71 +100,100 @@ class Store {
                 return asset->image;
         return {};
     }
-    void prepare(const std::string &markdown, const fs::path &base) {
-        cyui::Document document;
-        document.setMarkdown(markdown);
-        for (const auto &block : document.blocks())
-            for (const auto &run : block.inlines) {
-                if (run.kind != cyui::DocumentInlineKind::image || find(run.target) ||
-                    local.count(run.target) || run.target.find("://") != std::string::npos ||
-                    run.target.empty())
-                    continue;
-                try {
-                    auto path = platform::path(run.target);
-                    if (path.is_relative())
-                        path = base / path;
-                    local[run.target] = import(path).uri;
-                } catch (...) {
-                    local[run.target] = "";
-                }
+    void prepare(const cyui::Document &document, const fs::path &base) {
+        for (const auto &link : document.destinations()) {
+            if (!link.image || find(link.target) || local.count(link.target) ||
+                link.target.find("://") != std::string::npos)
+                continue;
+            try {
+                local[link.target] = import(base / platform::path(link.target)).uri;
+            } catch (...) {
+                local[link.target] = "";
             }
+        }
     }
-    void resetLocal() {
+    // Imported URIs can also occur in a chat message or an unfinished draft.
+    static void retainReferences(const std::string &text, std::unordered_set<cyui::ItemId> &keep) {
+        std::size_t at = 0;
+        while ((at = text.find("asset://", at)) != std::string::npos) {
+            at += 8;
+            cyui::ItemId id{};
+            if (std::from_chars(text.data() + at, text.data() + text.size(), id).ec == std::errc{})
+                keep.insert(id);
+        }
+    }
+    void resetDocument(const std::unordered_set<cyui::ItemId> &keep) {
         local.clear();
+        for (auto it = items.begin(); it != items.end();) {
+            if (!keep.count(it->second->id))
+                it = items.erase(it);
+            else
+                ++it;
+        }
     }
     std::string markup(const Asset &asset) const {
         return std::string(asset.image.texture ? "![" : "[") + escaped(asset.name) + "](" + asset.uri + ")";
     }
-    // Writes referenced assets next to a plain .md file; no CyMD package/container involved.
-    std::string exportMarkdown(std::string text, const fs::path &destination) const {
-        for (const auto &[source, uri] : local) {
-            if (uri.empty())
+    template <class Target> std::string rewrite(const cyui::Document &doc, Target target) const {
+        // Several links can resolve to the same reference definition.
+        std::map<std::size_t, std::pair<std::size_t, std::string>> edits;
+        for (const auto &link : doc.destinations()) {
+            if (edits.count(link.begin))
                 continue;
-            for (const auto &wrapped : {"(" + source + ")", "(<" + source + ">)"}) {
-                const auto replacement = "(" + uri + ")";
-                for (std::size_t at = 0; (at = text.find(wrapped, at)) != std::string::npos;
-                     at += replacement.size())
-                    text.replace(at, wrapped.size(), replacement);
+            const auto known = local.find(link.target);
+            if (const auto *asset = find(known == local.end() ? link.target : known->second)) {
+                auto replacement = target(link.target, *asset);
+                if (replacement != link.target)
+                    edits.emplace(link.begin, std::make_pair(link.end, std::move(replacement)));
             }
         }
-        for (const auto &[uri, asset] : items) {
-            if (text.find(uri) == std::string::npos)
-                continue;
-            const auto name =
-                "cyui-" + std::to_string(asset->id) + platform::utf8(platform::path(asset->name).extension());
-            const auto target = destination.parent_path() / "assets" / platform::path(name);
-            fs::create_directories(target.parent_path());
-            // Existing different content gets another name, so imported media never clobbers a user's file.
-            auto safe = target;
+        std::string out;
+        const auto &source = doc.markdown();
+        std::size_t at = 0;
+        for (const auto &[begin, edit] : edits) {
+            out.append(source, at, begin - at);
+            out += edit.second;
+            at = edit.first;
+        }
+        out.append(source, at, std::string::npos);
+        return out;
+    }
+    // Keep relative source images available to chat after switching documents.
+    std::string chatMarkdown(const cyui::Document &doc) const {
+        return rewrite(doc, [](const std::string &, const Asset &asset) { return asset.uri; });
+    }
+    std::string exportMarkdown(const cyui::Document &doc, const fs::path &destination) const {
+        std::unordered_map<cyui::ItemId, std::string> written;
+        return rewrite(doc, [&](const std::string &original, const Asset &asset) {
+            std::error_code error;
+            if (local.count(original)) {
+                const auto relative = platform::path(original).lexically_normal();
+                if (relative.is_relative() && !relative.empty() && *relative.begin() != ".." &&
+                    fs::equivalent(destination.parent_path() / relative, asset.sourcePath, error))
+                    return original;
+            }
+            auto cached = written.find(asset.id);
+            if (cached != written.end())
+                return cached->second;
+            const auto name = "cyui-" + asset.uri.substr(8);
+            const auto path = destination.parent_path() / "assets" / platform::path(name);
+            fs::create_directories(path.parent_path());
+            auto safe = path;
             int suffix = 0;
-            while (fs::exists(safe) && read(safe) != asset->bytes) {
-                safe = target.parent_path() /
-                       platform::path(platform::utf8(target.stem()) + "-" + std::to_string(++suffix) +
-                                      platform::utf8(target.extension()));
+            while (fs::exists(safe) && read(safe) != asset.bytes) {
+                safe = path.parent_path() / platform::path(platform::utf8(path.stem()) + "-" +
+                           std::to_string(++suffix) + platform::utf8(path.extension()));
             }
             if (!fs::exists(safe)) {
                 std::ofstream output(safe, std::ios::binary);
-                output.write(reinterpret_cast<const char *>(asset->bytes.data()),
-                             std::streamsize(asset->bytes.size()));
+                output.write(reinterpret_cast<const char *>(asset.bytes.data()),
+                             std::streamsize(asset.bytes.size()));
                 output.close();
                 if (!output)
                     throw std::runtime_error("Unable to save attachment");
             }
-            const auto replacement = std::string("assets/") + platform::utf8(safe.filename());
-            for (std::size_t at = 0; (at = text.find(uri, at)) != std::string::npos; at += replacement.size())
-                text.replace(at, uri.size(), replacement);
-        }
-        return text;
+            return written[asset.id] = std::string("assets/") + platform::utf8(safe.filename());
+        });
     }
     Asset &sample() {
         const auto &p = cyui::palette();

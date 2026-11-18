@@ -132,7 +132,7 @@ struct Evaluator {
             if (count > 1000000)
                 throw std::length_error("Workbook cell limit");
             values.emplace_back(s.grid.rows() * s.grid.columns());
-            states.emplace_back(values.back().size(), 0);
+            states.emplace_back(values.back().size(), static_cast<unsigned char>(0));
         }
     }
     SpreadsheetValue cell(std::size_t sheet, GridAddress address) {
@@ -421,11 +421,14 @@ Values Formula::expression(int level) {
 }
 const std::regex
     reference(R"((?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}))");
+std::string qualifier(const std::cmatch &match) {
+    return match[1].matched ? "'" + match[1].str() + "'" : match[2].str();
+}
 template <class Fn> std::string references(const std::string &source, Fn replace) {
-    if (source.find_first_of("[]") != std::string::npos)
-        return source;
     std::string out;
     std::size_t at = 0;
+    std::size_t rangeEnd = std::string::npos;
+    std::string scope;
     bool string = false;
     while (at < source.size()) {
         if (source[at] == '\"') {
@@ -437,6 +440,8 @@ template <class Fn> std::string references(const std::string &source, Fn replace
             string = !string;
             continue;
         }
+        if (!string && (source[at] == '[' || source[at] == ']'))
+            return source; // External workbook and structured references are preserved.
         std::cmatch match;
         if (!string &&
             (at == 0 ||
@@ -446,7 +451,14 @@ template <class Fn> std::string references(const std::string &source, Fn replace
             std::size_t end = at + match.length();
             if (end == source.size() || (!std::isalnum(static_cast<unsigned char>(source[end])) &&
                                          source[end] != '_' && source[end] != '(')) {
-                out += replace(match);
+                // An unqualified second endpoint belongs to the first endpoint's sheet.
+                if (at != rangeEnd || match[1].matched || match[2].matched)
+                    scope = qualifier(match);
+                out += replace(match, scope);
+                auto colon = source.find_first_not_of(" \t\r\n", end);
+                rangeEnd = colon != std::string::npos && source[colon] == ':'
+                               ? source.find_first_not_of(" \t\r\n", colon + 1)
+                               : std::string::npos;
                 at = end;
                 continue;
             }
@@ -455,33 +467,47 @@ template <class Fn> std::string references(const std::string &source, Fn replace
     }
     return out;
 }
-void shiftReferences(Workbook &book, std::size_t target, int op, std::size_t at, std::size_t count) {
+template <class Fn> void rewriteFormulas(Workbook &book, Fn replace) {
     for (std::size_t sheet = 0; sheet < book.sheets.size(); ++sheet) {
         auto &m = book.sheets[sheet].grid;
         auto cells = m.cells();
+        bool changed = false;
         for (auto &cell : cells)
-            if (!cell.text.empty() && cell.text[0] == '=')
-                cell.text = references(cell.text, [&](const std::cmatch &match) {
-                    const auto explicitSheet = match[1].matched ? match[1].str() : match[2].str();
-                    const auto refSheet = explicitSheet.empty() ? sheet : sheetIndex(book, explicitSheet);
-                    if (refSheet != target)
-                        return match.str();
-                    auto ref = match[3].str();
-                    GridAddress addr;
-                    if (!gridParseAddress(ref, addr))
-                        return match.str();
-                    auto &index = std::abs(op) == 1 ? addr.row : addr.column;
-                    if (op < 0 && index >= at && index < at + count)
-                        return std::string("#REF!");
-                    if (index >= at)
-                        index = op > 0 ? index + count : index >= at + count ? index - count : index;
-                    const bool ac = ref.front() == '$', ar = ref.find('$', 1) != std::string::npos;
-                    auto changed = (ac ? "$" : "") + gridColumnName(addr.column) + (ar ? "$" : "") +
-                                   std::to_string(addr.row + 1);
-                    return match.str().substr(0, match.length() - ref.size()) + changed;
+            if (!cell.literal && !cell.text.empty() && cell.text[0] == '=') {
+                auto formula = references(cell.text, [&](const std::cmatch &match, const std::string &scope) {
+                    return replace(sheet, match, scope);
                 });
-        m.assign(m.rows(), m.columns(), cells);
+                if (formula != cell.text) {
+                    cell.text = std::move(formula);
+                    changed = true;
+                }
+            }
+        if (changed)
+            m.assign(m.rows(), m.columns(), cells);
     }
+}
+void shiftReferences(Workbook &book, std::size_t target, int op, std::size_t at, std::size_t count) {
+    rewriteFormulas(book, [&](std::size_t sheet, const std::cmatch &match, const std::string &scope) {
+        const auto refSheet = scope.empty() ? sheet : sheetIndex(book, scope);
+        if (refSheet != target)
+            return match.str();
+        auto ref = match[3].str();
+        GridAddress addr;
+        if (!gridParseAddress(ref, addr))
+            return match.str();
+        auto &index = std::abs(op) == 1 ? addr.row : addr.column;
+        if (index < at)
+            return match.str();
+        if (op < 0 && index - at < count)
+            return std::string("#REF!");
+        index = op > 0 ? index + count : index - count;
+        if (addr.row >= 1048576 || addr.column >= 16384)
+            return std::string("#REF!");
+        const bool ac = ref.front() == '$', ar = ref.find('$', 1) != std::string::npos;
+        auto changed = (ac ? "$" : "") + gridColumnName(addr.column) + (ar ? "$" : "") +
+                       std::to_string(addr.row + 1);
+        return match.str().substr(0, match.length() - ref.size()) + changed;
+    });
 }
 void remember(SpreadsheetState &s, Workbook before) {
     s.undo.push_back(std::move(before));
@@ -522,7 +548,7 @@ std::vector<std::vector<SpreadsheetValue>> evaluateWorkbook(const Workbook &b) {
     return eval.values;
 }
 bool spreadsheetStructure(Workbook &b, std::size_t sheet, int op, std::size_t at, std::size_t count) {
-    if (sheet >= b.sheets.size() || !count || std::abs(op) > 2 || op == 0)
+    if (sheet >= b.sheets.size() || !count || op < -2 || op > 2 || op == 0)
         return false;
     auto next = b;
     auto &m = next.sheets[sheet].grid;
@@ -534,6 +560,32 @@ bool spreadsheetStructure(Workbook &b, std::size_t sheet, int op, std::size_t at
         return false;
     shiftReferences(next, sheet, op, at, count);
     b = std::move(next);
+    return true;
+}
+bool spreadsheetRenameSheet(Workbook &book, std::size_t sheet, const std::string &name) {
+    if (sheet >= book.sheets.size() || name.empty() || name.size() > 31 ||
+        name.find_first_of("[]:*?/\\") != std::string::npos || name.front() == '\'' || name.back() == '\'' ||
+        name == book.sheets[sheet].name)
+        return false;
+    const auto existing = sheetIndex(book, name);
+    if (existing < book.sheets.size() && existing != sheet)
+        return false;
+    auto next = book;
+    const auto old = upper(next.sheets[sheet].name);
+    std::string escaped = "'";
+    for (char c : name) {
+        escaped += c;
+        if (c == '\'')
+            escaped += c;
+    }
+    escaped += "'!";
+    rewriteFormulas(next, [&](std::size_t, const std::cmatch &m, const std::string &scope) {
+        if ((m[1].matched || m[2].matched) && upper(unquote(scope)) == old)
+            return escaped + m[3].str();
+        return m.str();
+    });
+    next.sheets[sheet].name = name;
+    book = std::move(next);
     return true;
 }
 std::string spreadsheetFormulaFromODF(const std::string &s) {
@@ -578,8 +630,8 @@ std::string spreadsheetFormulaFromODF(const std::string &s) {
 std::string spreadsheetFormulaToODF(const std::string &s) {
     if (s.empty() || s[0] != '=')
         return s;
-    auto converted = references(s.substr(1), [](const std::cmatch &m) {
-        auto name = m[1].matched ? "'" + m[1].str() + "'" : m[2].str();
+    auto converted = references(s.substr(1), [](const std::cmatch &m, const std::string &) {
+        auto name = qualifier(m);
         return "[" + (name.empty() ? "." : name + ".") + m[3].str() + "]";
     });
     std::size_t at = 0;
@@ -597,7 +649,7 @@ std::string spreadsheetFormulaToODF(const std::string &s) {
 std::string spreadsheetTranslateFormula(const std::string &formula, std::int64_t rows, std::int64_t columns) {
     if (formula.empty() || formula[0] != '=')
         return formula;
-    return references(formula, [&](const std::cmatch &match) {
+    return references(formula, [&](const std::cmatch &match, const std::string &) {
         auto ref = match[3].str();
         GridAddress a;
         if (!gridParseAddress(ref, a))
@@ -614,7 +666,7 @@ std::string spreadsheetTranslateFormula(const std::string &formula, std::int64_t
 bool spreadsheetUndo(Workbook &b, SpreadsheetState &s) {
     if (s.undo.empty())
         return false;
-    s.redo.push_back(b);
+    s.redo.push_back(std::move(b));
     b = std::move(s.undo.back());
     s.undo.pop_back();
     s.grid.editing = false;
@@ -625,7 +677,7 @@ bool spreadsheetUndo(Workbook &b, SpreadsheetState &s) {
 bool spreadsheetRedo(Workbook &b, SpreadsheetState &s) {
     if (s.redo.empty())
         return false;
-    s.undo.push_back(b);
+    s.undo.push_back(std::move(b));
     b = std::move(s.redo.back());
     s.redo.pop_back();
     s.grid.editing = false;
@@ -649,6 +701,14 @@ bool spreadsheet(const char *id, SpreadsheetState &s, Workbook &book, ImVec2 siz
     auto backup = [&] {
         if (!before)
             before.reset(new Workbook(book));
+    };
+    auto rollback = [&](const char *message) {
+        book = std::move(*before);
+        s.sheet = std::min(s.sheet, book.sheets.size() - 1);
+        s.grid = {};
+        s.grid.error = message;
+        s.revisions.clear();
+        s.formulaSheet = ~std::size_t(0);
     };
     auto action = [&](auto fn) {
         backup();
@@ -703,35 +763,16 @@ bool spreadsheet(const char *id, SpreadsheetState &s, Workbook &book, ImVec2 siz
             if (ImGui::BeginPopupContextItem("##sheetName")) {
                 if (!o.readOnly) {
                     detail::inputText(trLabel("Sheet name").c_str(), s.sheetName);
-                    if (primaryButton(trLabel("Rename").c_str()) && !s.sheetName.empty() &&
-                        s.sheetName.size() <= 31 &&
-                        s.sheetName.find_first_of("[]:*?/\\") == std::string::npos &&
-                        s.sheetName.front() != '\'' && s.sheetName.back() != '\'' &&
-                        (sheetIndex(book, s.sheetName) == ~std::size_t(0) ||
-                         book.sheets[n].name == s.sheetName)) {
-                        action([&] {
-                            auto old = book.sheets[n].name;
-                            book.sheets[n].name = s.sheetName;
-                            for (auto &sh : book.sheets) {
-                                auto cells = sh.grid.cells();
-                                for (auto &c : cells)
-                                    if (!c.text.empty() && c.text[0] == '=')
-                                        c.text = references(c.text, [&](const std::cmatch &m) {
-                                            auto name = m[1].matched ? m[1].str() : m[2].str();
-                                            if (upper(name) != upper(old))
-                                                return m.str();
-                                            std::string escaped;
-                                            for (char c : s.sheetName) {
-                                                escaped += c;
-                                                if (c == '\'')
-                                                    escaped += c;
-                                            }
-                                            return "'" + escaped + "'!" + m[3].str();
-                                        });
-                                sh.grid.assign(sh.grid.rows(), sh.grid.columns(), cells);
+                    if (primaryButton(trLabel("Rename").c_str())) {
+                        backup();
+                        try {
+                            if (spreadsheetRenameSheet(book, n, s.sheetName)) {
+                                changed = true;
+                                ImGui::CloseCurrentPopup();
                             }
-                        });
-                        ImGui::CloseCurrentPopup();
+                        } catch (const std::exception &error) {
+                            s.grid.error = error.what();
+                        }
                     }
                 }
                 ImGui::EndPopup();
@@ -841,8 +882,15 @@ bool spreadsheet(const char *id, SpreadsheetState &s, Workbook &book, ImVec2 siz
     const auto edit = dataGrid("##data", s.grid, model, ImGui::GetContentRegionAvail(), gridOptions);
     if (edit.changed) {
         changed = true;
-        if (edit.structure)
-            shiftReferences(book, s.sheet, edit.structure, edit.at, edit.count);
+        if (edit.structure) {
+            try {
+                shiftReferences(book, s.sheet, edit.structure, edit.at, edit.count);
+            } catch (const std::exception &error) {
+                rollback(error.what());
+                ImGui::EndChild();
+                return false;
+            }
+        }
         s.formulaSheet = ~std::size_t(0);
     }
     if (!o.readOnly && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !s.grid.editing) {
@@ -859,12 +907,7 @@ bool spreadsheet(const char *id, SpreadsheetState &s, Workbook &book, ImVec2 siz
         for (const auto &sheet : book.sheets)
             cells += sheet.grid.rows() * sheet.grid.columns();
         if (cells > 1000000 || book.sheets.size() > 64) {
-            book = std::move(*before);
-            s.sheet = std::min(s.sheet, book.sheets.size() - 1);
-            s.grid = {};
-            s.grid.error = "Workbook cell/sheet limit";
-            s.revisions.clear();
-            s.formulaSheet = ~std::size_t(0);
+            rollback("Workbook cell/sheet limit");
             ImGui::EndChild();
             return false;
         }

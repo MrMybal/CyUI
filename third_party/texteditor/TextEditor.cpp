@@ -3646,8 +3646,8 @@ TextEditor::DocPos TextEditor::Document::insertText(const Config& config, DocPos
 
 	// process all codepoints
 	while (i < endOfText) {
-		ImWchar character;
-		i = CodePoint::read(i, endOfText, &character);
+		const auto glyph = Glyph::readUtf8(i, endOfText);
+		const auto character = glyph.codepoint;
 
 		if (character == '\n') {
 			// split line
@@ -3672,7 +3672,7 @@ TextEditor::DocPos TextEditor::Document::insertText(const Config& config, DocPos
 
 		} else if (character != '\r') {
 			// insert next glyph
-			line->insert(line->begin() + (index++), Glyph(character, Color::text));
+			line->insert(line->begin() + (index++), glyph);
 		}
 	}
 
@@ -3749,7 +3749,7 @@ std::string TextEditor::Document::getSectionText(DocPos start, DocPos end) const
 		const auto& line = at(lineNo);
 
 		if (index < line.size()) {
-			section.append(std::string_view(utf8, CodePoint::write(utf8, line[index].codepoint)));
+			section.append(std::string_view(utf8, line[index].writeUtf8(utf8)));
 			index++;
 
 		} else {

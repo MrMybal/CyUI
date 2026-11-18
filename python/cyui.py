@@ -23,6 +23,7 @@ import contextlib
 import math
 import os
 import time
+from collections.abc import Mapping
 from types import SimpleNamespace
 
 from imgui_bundle import imgui
@@ -703,7 +704,7 @@ def icon_button(glyph, tip='', active=False, active_colour=0, size=(0.0, 0.0)):
     origin = imgui.get_cursor_screen_pos()
     imgui.push_id(glyph)
     imgui.push_id(tip or '')
-    clicked = imgui.invisible_button('##icon', ImVec2(width, height))
+    clicked = imgui.invisible_button('##icon', ImVec2(width, height), imgui.ButtonFlags_.enable_nav)
     hovered = imgui.is_item_hovered()
     held = imgui.is_item_active()
     imgui.pop_id()
@@ -733,7 +734,7 @@ def toggle_switch(label, value):
     text_size = imgui.calc_text_size(text)
     origin = imgui.get_cursor_screen_pos()
     width = track_width + ((style.item_inner_spacing.x + text_size.x) if text else 0.0)
-    clicked = imgui.invisible_button(label, ImVec2(width, height))
+    clicked = imgui.invisible_button(label, ImVec2(width, height), imgui.ButtonFlags_.enable_nav)
     if clicked:
         value = not value
         _mark_edited()
@@ -785,7 +786,7 @@ def segmented(identifier, labels, current, width=0.0):
         imgui.set_cursor_screen_pos(ImVec2(x, origin.y + inset))
         imgui.push_id(index)
         size = ImVec2(w, height - inset * 2.0)
-        if imgui.invisible_button('##segment', size) and current != index:
+        if imgui.invisible_button('##segment', size, imgui.ButtonFlags_.enable_nav) and current != index:
             current, changed = index, True
             _mark_edited()
         hovered = imgui.is_item_hovered()
@@ -910,7 +911,7 @@ def search_field(identifier, text, hint='Search', width=0.0):
                     height * 0.48, p.accent if focused else p.textFaint)
     if text:
         imgui.set_cursor_screen_pos(ImVec2(origin.x + field_width - height, origin.y))
-        if imgui.invisible_button('##clear', ImVec2(height, height)):
+        if imgui.invisible_button('##clear', ImVec2(height, height), imgui.ButtonFlags_.enable_nav):
             text, changed = '', True
         _draw_cross(draw, ImVec2(origin.x + field_width - height * 0.5, origin.y + height * 0.5),
                     height * 0.26, p.text if imgui.is_item_hovered() else p.textFaint)
@@ -929,7 +930,30 @@ def text_field(identifier, text, hint='', width=0.0):
 def combo(identifier, current, items, width=0.0):
     if width != 0.0:
         imgui.set_next_item_width(width)
-    return imgui.combo(identifier, current, [tr(item) for item in items])
+    if isinstance(items, Mapping) or not hasattr(items, '__getitem__') or not hasattr(items, '__len__'):
+        items = tuple(items)
+    count = len(items)
+    preview = tr(items[current]) if 0 <= current < count else ''
+    if not imgui.begin_combo(identifier, preview):
+        return False, current
+    changed = False
+    clipper = imgui.ListClipper()
+    clipper.begin(count)
+    if 0 <= current < count:
+        clipper.include_item_by_index(current)
+    while clipper.step():
+        for index in range(clipper.display_start, clipper.display_end):
+            imgui.push_id(index)
+            selected = current == index
+            if imgui.selectable(tr(items[index]), selected)[0] and not selected:
+                changed, current = True, index
+            if selected:
+                imgui.set_item_default_focus()
+            imgui.pop_id()
+    imgui.end_combo()
+    if changed:
+        _mark_edited()
+    return changed, current
 
 
 # ---- Containers ------------------------------------------------------------------------------
@@ -1155,7 +1179,7 @@ def callout(tone, text):
 
 def colour_chip(identifier, colour, size):
     origin = imgui.get_cursor_screen_pos()
-    clicked = imgui.invisible_button(identifier, ImVec2(*size))
+    clicked = imgui.invisible_button(identifier, ImVec2(*size), imgui.ButtonFlags_.enable_nav)
     draw = imgui.get_window_draw_list()
     maximum = ImVec2(origin.x + size[0], origin.y + size[1])
     draw.add_rect_filled(origin, maximum, colour, dp(2.0))
@@ -1333,7 +1357,7 @@ def sidebar_item(glyph, label, active, badge_text=''):
     height = imgui.get_frame_height() + dp(8.0)
     origin = imgui.get_cursor_screen_pos()
     imgui.push_id(label)
-    clicked = imgui.invisible_button('##item', ImVec2(width, height))
+    clicked = imgui.invisible_button('##item', ImVec2(width, height), imgui.ButtonFlags_.enable_nav)
     hovered = imgui.is_item_hovered()
     imgui.pop_id()
     draw = imgui.get_window_draw_list()
@@ -1474,12 +1498,16 @@ def modal_buttons(confirm, cancel='Cancel', danger=False):
     confirm_width = max(dp(84.0), button_width(confirm))
     cancel_width = max(dp(84.0), button_width(cancel)) if cancel else 0.0
     align_right(confirm_width + ((cancel_width + style.item_spacing.x) if cancel else 0.0))
+    top = imgui.internal.get_top_most_popup_modal()
+    top_modal = top is not None and top.id_ == imgui.internal.get_current_window().root_window.id_
+    cancel_key = cancel and top_modal and imgui.shortcut(imgui.Key.escape)
+    confirm_key = top_modal and not imgui.is_any_item_active() and imgui.shortcut(imgui.Key.enter)
     result = 0
     if cancel:
-        if button(cancel, 'secondary', (cancel_width, 0.0)) or imgui.is_key_pressed(imgui.Key.escape, False):
+        if button(cancel, 'secondary', (cancel_width, 0.0)) or cancel_key:
             result = 2
         imgui.same_line()
-    if button(confirm, 'danger' if danger else 'primary', (confirm_width, 0.0))             or (imgui.is_key_pressed(imgui.Key.enter, False) and not imgui.is_any_item_active()):
+    if button(confirm, 'danger' if danger else 'primary', (confirm_width, 0.0)) or confirm_key:
         result = 1
     if result:
         imgui.close_current_popup()

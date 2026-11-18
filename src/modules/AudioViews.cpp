@@ -105,33 +105,81 @@ WaveformResult waveform(const char *id, WaveformState &s, const WaveformData &da
     d->AddLine({x(playhead), f.bounds.min.y}, {x(playhead), f.bounds.max.y}, palette().accent, dp(2));
     return result;
 }
-EnvelopeResult envelope(const char *id, const EnvelopeData &data, ImVec2 size, const EnvelopeOptions &o) {
+namespace {
+bool validEnvelopeKnots(ArrayView<Point> knots, Range time) {
+    if (!knots.count) return true;
+    if (knots.count < 2 || knots.count > 1026 || knots[0].x != time.min || knots[0].y != 0 ||
+        knots[knots.count - 1].x != time.max || knots[knots.count - 1].y != 1) return false;
+    for (std::size_t i = 1; i < knots.count; ++i)
+        if (!(knots[i - 1].x < knots[i].x && knots[i - 1].y < knots[i].y)) return false;
+    return true;
+}
+
+double mapEnvelopeTime(double value, ArrayView<Point> knots, double Point::*from, double Point::*to) {
+    const auto end = knots.data + knots.count;
+    auto next = std::upper_bound(knots.data + 1, end - 1, value,
+                                 [from](double v, const Point &p) { return v < p.*from; });
+    const auto &a = next[-1], &b = *next;
+    return a.*to + (value - a.*from) / (b.*from - a.*from) * (b.*to - a.*to);
+}
+
+double signedPower(double v, double exponent) {
+    return std::copysign(std::pow(std::abs(v), exponent), v);
+}
+double envelopeTimeAt(double fraction, Range time, double power, ArrayView<Point> knots) {
+    return knots.count ? mapEnvelopeTime(fraction, knots, &Point::y, &Point::x)
+                       : time.min + signedPower(fraction, 1 / power) * time.span();
+}
+
+void cancelEnvelopeEdit(EnvelopeEditState *state, EnvelopeResult &result) {
+    if (state && state->original.id) {
+        result.edit = {EditPhase::cancel, state->original};
+        *state = {};
+    }
+}
+
+EnvelopeResult drawEnvelope(const char *id, EnvelopeEditState *state, const EnvelopeData &data,
+                            ArrayView<EnvelopeHandle> handles, ImVec2 size, const EnvelopeOptions &o) {
     CanvasState canvas;
     CanvasOptions options;
-    options.grid = options.navigation = false;
+    options.grid = options.navigation = options.drawBackground = false;
     CanvasScope scope(id, canvas, size, options);
     const auto frame = scope.frame();
     auto *d = ImGui::GetWindowDrawList();
     EnvelopeResult result;
+    auto invalid = [&] { cancelEnvelopeEdit(state, result); return result; };
     if (!o.time.valid() || !o.levels.valid() || !std::isfinite(o.time.span()) ||
         !std::isfinite(o.levels.span()) || !std::isfinite(o.baseline) ||
         !std::isfinite(o.timePower) || o.timePower <= 0 || data.points.count < 2 ||
         data.points.count > std::min<std::size_t>(o.maxPoints, 262144) ||
-        data.stages.count > std::min<std::size_t>(o.maxStages, 1024)) return result;
+        data.stages.count > std::min<std::size_t>(o.maxStages, 1024) || handles.count > 1024 ||
+        !validEnvelopeKnots(data.timeKnots, o.time)) return invalid();
+    for (float metric : {o.margins.left, o.margins.top, o.margins.right, o.margins.bottom, o.frameRounding,
+                         o.borderWidth, o.curveWidth, o.levelDotRadius, o.levelDotInset})
+        if (!std::isfinite(metric) || metric < 0) return invalid();
+    std::unordered_set<ItemId> ids;
+    for (std::size_t i = 0; i < handles.count; ++i) {
+        const auto &h = handles[i];
+        if (!h.id || !std::isfinite(h.position.x) || !std::isfinite(h.position.y) ||
+            !ids.insert(h.id).second) return invalid();
+    }
     double previousEnd = -HUGE_VAL;
     for (std::size_t i = 0; i < data.stages.count; ++i) {
         const auto &time = data.stages[i].time;
         if (!std::isfinite(time.min) || !std::isfinite(time.max) || time.max < time.min ||
-            time.min < previousEnd) return result;
+            time.min < previousEnd) return invalid();
         previousEnd = time.max;
     }
     const bool labels = o.phaseLabels && data.stages.count;
-    const Rect r{{frame.bounds.min.x + dp(6), frame.bounds.min.y + dp(6) + (labels ? ImGui::GetFontSize() + dp(6) : 0)},
-                 {frame.bounds.max.x - dp(6), frame.bounds.max.y - dp(6)}};
+    const Rect r{{frame.bounds.min.x + dp(o.margins.left), frame.bounds.min.y + dp(o.margins.top) + (labels ? ImGui::GetFontSize() + dp(6) : 0)},
+                 {frame.bounds.max.x - dp(o.margins.right), frame.bounds.max.y - dp(o.margins.bottom)}};
     const auto room = r.size();
-    if (room.x <= 0 || room.y <= 0) return result;
-    auto power = [](double v, double exponent) { return std::copysign(std::pow(std::abs(v), exponent), v); };
-    auto x = [&](double t) { return r.min.x + float(power((t - o.time.min) / o.time.span(), o.timePower)) * room.x; };
+    if (room.x <= 0 || room.y <= 0) return invalid();
+    auto fractionAt = [&](double t) {
+        return data.timeKnots.count ? mapEnvelopeTime(t, data.timeKnots, &Point::x, &Point::y)
+                                    : signedPower((t - o.time.min) / o.time.span(), o.timePower);
+    };
+    auto x = [&](double t) { return r.min.x + float(fractionAt(t)) * room.x; };
     auto y = [&](double level) { return r.max.y - float((level - o.levels.min) / o.levels.span()) * room.y; };
     std::vector<ImVec2> points;
     points.reserve(data.points.count);
@@ -141,9 +189,9 @@ EnvelopeResult envelope(const char *id, const EnvelopeData &data, ImVec2 size, c
         if (!std::isfinite(p.x) || !std::isfinite(p.y)) {
             points.push_back({NAN, NAN}); previousTime = -HUGE_VAL; continue;
         }
-        if (p.x < previousTime) return result;
+        if (p.x < previousTime) return invalid();
         const ImVec2 at{x(p.x), y(p.y)};
-        if (!std::isfinite(at.x) || !std::isfinite(at.y)) return result;
+        if (!std::isfinite(at.x) || !std::isfinite(at.y)) return invalid();
         points.push_back(at); previousTime = p.x;
     }
     result.valid = true;
@@ -151,16 +199,18 @@ EnvelopeResult envelope(const char *id, const EnvelopeData &data, ImVec2 size, c
     const auto mouse = ImGui::GetIO().MousePos;
     result.hovered = frame.hovered && r.contains(mouse);
     result.clicked = result.hovered && ImGui::IsMouseClicked(0);
-    result.mouse = {o.time.min + power((mouse.x - r.min.x) / room.x, 1 / o.timePower) * o.time.span(),
+    result.mouse = {envelopeTimeAt((mouse.x - r.min.x) / room.x, o.time, o.timePower, data.timeKnots),
                     o.levels.min + (r.max.y - mouse.y) / room.y * o.levels.span()};
-    const auto color = categorical(o.colorIndex);
+    const auto color = o.curveColor.value_or(categorical(o.colorIndex));
+    d->AddRectFilled(frame.bounds.min, frame.bounds.max, o.backgroundColor.value_or(palette().bg0), dp(o.frameRounding));
     d->PushClipRect(r.min, r.max, true);
     if (o.grid)
         for (int i = 1; i < 4; ++i) {
             const float yy = r.min.y + room.y * i / 4;
             d->AddLine({r.min.x, yy}, {r.max.x, yy}, palette().grid, dp(1));
         }
-    drawCurveFill(points, y(std::clamp(o.baseline, o.levels.min, o.levels.max)), {color, o.fillAlpha, o.gradient});
+    if (color & IM_COL32_A_MASK)
+        drawCurveFill(points, y(std::clamp(o.baseline, o.levels.min, o.levels.max)), {color, o.fillAlpha, o.gradient});
     double previousBoundary = -HUGE_VAL;
     if (o.phaseLines)
         for (std::size_t i = 0; i < data.stages.count; ++i) {
@@ -171,22 +221,31 @@ EnvelopeResult envelope(const char *id, const EnvelopeData &data, ImVec2 size, c
                 previousBoundary = boundary;
             }
         }
-    // One outline per finite run; no per-strip AA fringes inside the filled area.
+    // Thick antialiased polylines can emit four vertices per point. PrimReserve can
+    // start a new draw command between batches, never in the middle of AddPolyline.
     for (std::size_t begin = 0; begin < points.size();) {
         if (!std::isfinite(points[begin].x)) { ++begin; continue; }
         auto end = begin + 1;
         while (end < points.size() && std::isfinite(points[end].x)) ++end;
-        if (end - begin > 1) d->AddPolyline(points.data() + begin, int(end - begin), color, 0, dp(2));
+        if (o.curveWidth > 0) {
+            for (auto start = begin; start + 1 < end;) {
+                const auto count = std::min<std::size_t>(end - start, 16383);
+                d->AddPolyline(points.data() + start, int(count), color, 0, dp(o.curveWidth));
+                start += count - 1;
+            }
+        }
         begin = end;
     }
     const bool playhead = std::isfinite(data.playhead) && o.time.contains(data.playhead);
     const bool level = std::isfinite(data.level) && o.levels.contains(data.level);
     if (playhead) d->AddLine({x(data.playhead), r.min.y}, {x(data.playhead), r.max.y}, palette().accent, dp(1));
     if (level) {
-        d->AddLine({r.min.x, y(data.level)}, {r.max.x, y(data.level)}, alpha(palette().textDim, .5f), dp(1));
-        d->AddCircleFilled({playhead ? x(data.playhead) : r.max.x - dp(3), y(data.level)}, dp(3), palette().accent);
+        d->AddLine({r.min.x, y(data.level)}, {r.max.x, y(data.level)}, o.levelLineColor.value_or(alpha(palette().textDim, .5f)), dp(1));
     }
     d->PopClipRect();
+    if (level && o.levelDotRadius > 0)
+        d->AddCircleFilled({playhead ? x(data.playhead) : std::max(r.min.x, r.max.x - dp(o.levelDotInset)), y(data.level)},
+                           dp(o.levelDotRadius), o.levelDotColor.value_or(palette().accent));
     for (std::size_t i = 0; i < data.stages.count; ++i) {
         const auto &stage = data.stages[i];
         if (stage.time.max <= stage.time.min) continue;
@@ -197,11 +256,80 @@ EnvelopeResult envelope(const char *id, const EnvelopeData &data, ImVec2 size, c
         if (labels && last > first && stage.label && stage.label[0]) {
             const float left = x(first), right = x(last), width = ImGui::CalcTextSize(stage.label).x;
             if (width + dp(4) <= right - left)
-                d->AddText({(left + right - width) * .5f, frame.bounds.min.y + dp(6)}, palette().textDim, stage.label);
+                d->AddText({(left + right - width) * .5f, frame.bounds.min.y + dp(o.margins.top)}, palette().textDim, stage.label);
         }
     }
-    d->AddRect(frame.bounds.min, frame.bounds.max, palette().line, 0, 0, dp(1));
+    if (o.borderWidth > 0)
+        d->AddRect(frame.bounds.min, frame.bounds.max, o.borderColor.value_or(palette().line), dp(o.frameRounding), 0, dp(o.borderWidth));
+    if (!state) return result;
+
+    const bool editable = !o.readOnly && !(GImGui->LastItemData.ItemFlags & ImGuiItemFlags_Disabled);
+    const EnvelopeHandle *nearest = nullptr, *active = nullptr;
+    float closest = dp(14);
+    for (std::size_t i = 0; i < handles.count; ++i) {
+        const auto &h = handles[i];
+        if (h.id == state->original.id) active = &h;
+        if (!frame.hovered || !o.time.contains(h.position.x) || !o.levels.contains(h.position.y)) continue;
+        const float distance = std::hypot(mouse.x - x(h.position.x), mouse.y - y(h.position.y));
+        if (distance < closest) { closest = distance; nearest = &h; }
+    }
+    const int frameNumber = ImGui::GetFrameCount();
+    if (nearest) result.hoveredHandle = nearest->id;
+    if (state->original.id) {
+        if (!editable || !active || active->axes != state->original.axes || state->revision != o.revision ||
+            state->lastFrame != frameNumber - 1 || !frame.focused || ImGui::IsKeyPressed(ImGuiKey_Escape) ||
+            (!ImGui::IsItemActive() && !ImGui::IsMouseReleased(0))) {
+            cancelEnvelopeEdit(state, result);
+        } else {
+            auto proposal = state->original;
+            const double dx = (mouse.x - state->pointerStart.x) / state->plotSize.x;
+            const double dy = (state->pointerStart.y - mouse.y) / state->plotSize.y;
+            if (proposal.axes != EnvelopeAxes::level && dx != 0)
+                proposal.position.x = envelopeTimeAt(std::clamp(state->startFraction + dx, 0., 1.),
+                                                     state->time, state->timePower, state->timeKnots);
+            if (proposal.axes != EnvelopeAxes::time && dy != 0)
+                proposal.position.y = std::clamp(proposal.position.y + dy * state->levels.span(),
+                                                 state->levels.min, state->levels.max);
+            const bool release = ImGui::IsMouseReleased(0);
+            if (release || proposal.position.x != state->preview.position.x || proposal.position.y != state->preview.position.y)
+                result.edit = {release ? EditPhase::commit : EditPhase::update, proposal};
+            state->preview = proposal;
+            state->lastFrame = frameNumber;
+            if (release) *state = {};
+        }
+    } else if (editable && nearest && ImGui::IsItemActive() && ImGui::IsMouseClicked(0)) {
+        state->original = state->preview = *nearest;
+        state->pointerStart = mouse;
+        state->plotSize = room;
+        state->time = o.time;
+        state->levels = o.levels;
+        state->startFraction = fractionAt(nearest->position.x);
+        state->timePower = o.timePower;
+        if (data.timeKnots.count)
+            state->timeKnots.assign(data.timeKnots.data, data.timeKnots.data + data.timeKnots.count);
+        state->revision = o.revision;
+        state->lastFrame = frameNumber;
+        result.edit = {EditPhase::begin, *nearest};
+    }
+    const auto &displayed = result.edit.committed() ? result.edit.value : state->preview;
+    for (std::size_t i = 0; i < handles.count; ++i) {
+        const auto &h = handles[i].id == displayed.id ? displayed : handles[i];
+        if (!o.time.contains(h.position.x) || !o.levels.contains(h.position.y)) continue;
+        const bool lit = editable && (h.id == state->original.id || h.id == result.hoveredHandle);
+        const ImVec2 at{x(h.position.x), y(h.position.y)};
+        d->AddCircleFilled(at, dp(lit ? 5.5f : 4.f), lit ? color : palette().bg2);
+        d->AddCircle(at, dp(lit ? 5.5f : 4.f), color, 0, dp(1.5f));
+    }
     return result;
+}
+} // namespace
+
+EnvelopeResult envelope(const char *id, const EnvelopeData &data, ImVec2 size, const EnvelopeOptions &o) {
+    return drawEnvelope(id, nullptr, data, {}, size, o);
+}
+EnvelopeResult envelope(const char *id, EnvelopeEditState &state, const EnvelopeData &data,
+                        ArrayView<EnvelopeHandle> handles, ImVec2 size, const EnvelopeOptions &o) {
+    return drawEnvelope(id, &state, data, handles, size, o);
 }
 PlotResult spectrum(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size,
                     const PlotOptions &o) {

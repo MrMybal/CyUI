@@ -289,6 +289,10 @@ typedef struct MD_ATTRIBUTE {
     MD_SIZE size;
     const MD_TEXTTYPE* substr_types;
     const MD_OFFSET* substr_offsets;
+    /* CyUI: original spelling before backslash/entity processing. This lets
+     * the host relocate parsed link targets while preserving surrounding text. */
+    const MD_CHAR* raw_text;
+    MD_SIZE raw_size;
 } MD_ATTRIBUTE;
 
 

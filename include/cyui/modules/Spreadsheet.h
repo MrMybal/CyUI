@@ -43,6 +43,8 @@ CYUI_API std::vector<std::vector<SpreadsheetValue>> evaluateWorkbook(const Workb
 // Removed referenced cells become #REF!. Returns false for an invalid operation.
 CYUI_API bool spreadsheetStructure(Workbook &, std::size_t sheet, int operation, std::size_t at,
                                    std::size_t count = 1);
+// Rename a sheet and update its formula references as one transaction.
+CYUI_API bool spreadsheetRenameSheet(Workbook &, std::size_t sheet, const std::string &name);
 CYUI_API std::string spreadsheetFormulaFromODF(const std::string &);
 CYUI_API std::string spreadsheetFormulaToODF(const std::string &);
 CYUI_API std::string spreadsheetTranslateFormula(const std::string &, std::int64_t rows,
