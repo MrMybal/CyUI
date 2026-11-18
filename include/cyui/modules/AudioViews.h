@@ -22,6 +22,37 @@ struct WaveformResult {
 };
 CYUI_API WaveformResult waveform(const char *id, WaveformState &, const WaveformData &, double playhead, ImVec2 size);
 CYUI_API std::vector<Peak> makePeaks(ArrayView<float> samples, std::size_t columns);
+// Host-prepared ADSR/AHDSR or custom envelope. Times/levels are in host units;
+// CyUI neither evaluates the synth's interpolation nor generates audio.
+struct EnvelopeStage {
+    Range time;
+    const char *label = ""; // caller-localized; zero-duration stages are allowed
+};
+struct EnvelopeData {
+    ArrayView<Point> points; // time-ordered within each finite run; NaN/Inf break runs
+    ArrayView<EnvelopeStage> stages; // ordered, non-overlapping; optional
+    double playhead = std::numeric_limits<double>::quiet_NaN();
+    double level = std::numeric_limits<double>::quiet_NaN(); // live value; independent of preview points
+};
+struct EnvelopeOptions {
+    Range time{0, 1}, levels{0, 1};
+    double timePower = 1; // >0; display uses pow(normalized time, timePower); .6 expands short phases
+    double baseline = 0; // clamped to levels for filling
+    int colorIndex = 0;
+    float fillAlpha = .18f;
+    bool gradient = false, grid = false, phaseLines = true, phaseLabels = true;
+    std::size_t maxPoints = 65536, maxStages = 64; // hard caps: 262144 points, 1024 stages
+};
+struct EnvelopeResult {
+    bool valid = false, hovered = false, clicked = false;
+    Point mouse; // inverse display mapping, in host time/level units
+    std::size_t stage = std::size_t(-1); // hovered stage; zero-duration stages have no hit area
+    Rect bounds; // data area, excluding padding and phase labels
+};
+// Read-only display, including phase labels and optional playhead/live-level markers.
+// Invalid ranges/order or exceeded budgets return valid=false, without partial geometry.
+// Input arrays remain caller-owned and unchanged. Wheel scrolling stays with the parent.
+CYUI_API EnvelopeResult envelope(const char *id, const EnvelopeData &, ImVec2 size, const EnvelopeOptions & = {});
 // Logarithmic X; an invalid or non-positive X range resets to 20..20000.
 CYUI_API PlotResult spectrum(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size);
 CYUI_API PlotResult spectrum(const char *id, PlotState &, ArrayView<PlotSeries>, ImVec2 size, const PlotOptions &);

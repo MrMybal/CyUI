@@ -160,6 +160,10 @@ int main() {
     const auto bins = histogram(values, {0, 1}, 2);
     check(bins.size() == 2 && bins[0] == 1 && bins[1] == 2,
           "histogram endpoints, missing and out-of-range values");
+    frame([] {
+        const ImVec2 curve[]{{30, 60}, {80, 30}, {160, 60}};
+        drawCurveFill({curve, 3}, 60);
+    }); // also links the public fill API when Plots is the only selected module
 #endif
 #if defined(CYUI_HAS_CURVES)
     std::vector<CurvePoint> keys{{1, 0, 0}, {2, 1, 1}};
@@ -249,6 +253,11 @@ int main() {
     auto peaks = makePeaks(audio, 2);
     check(peaks.size() == 2 && peaks[0].maximum == 1 && peaks[1].minimum == -1,
           "waveform envelope preserves extrema");
+    frame([] {
+        const Point curve[]{{0, 0}, {.1, 1}, {1, 0}};
+        const auto preview = envelope("Envelope", {{curve, 3}}, {400, 160});
+        check(preview.valid, "envelope links with the standalone AudioViews dependency closure");
+    });
 #endif
 #if defined(CYUI_HAS_IMAGES)
     std::vector<GradientStop> stops{{1, 0, {0, 0, 0, 1}}, {2, 1, {1, 1, 1, 1}}};

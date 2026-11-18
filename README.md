@@ -59,6 +59,11 @@ audio decoding, FFTs and DSP remain in the application.
 
 AudioViews also includes a spectrogram, LUFS/LRA and true-peak displays, correlation history, editable EQ handles with gain/phase overlays, and dynamics transfer with gain reduction. These additions are available in the current sources and the gallery’s Audio analysis tab.
 
+The **Envelopes** gallery tab (38) demonstrates host-prepared ADSR/AHDSR curves,
+phase labels and live markers. `cyui::envelope`, in AudioViews, uses the shared Plots fill
+renderer, also available as `cyui::drawCurveFill` for custom canvases. Zero sustain,
+repeated points and baseline crossings are supported. See the [C++ recipe](docs/AI_GUIDE.md#envelopes-and-reusable-curve-fills).
+
 ![Audio analysis: spectrogram, LUFS, EQ and phase, dynamics, true peak and correlation](docs/screenshots/audio-analysis.png)
 
 The Spectral displays tab adds filled/gradient spectra, frequency-band bars with a dB floor, scrolling spectrograms with color legends, a spatial stereo view and persistent vectorscopes.
@@ -192,11 +197,11 @@ adding a code editor, audio engine or browser.
 | `CyUI::Core` | Themes, localization, quick filters, fonts, icons, buttons, fields, cards, tables, layout and notifications |
 | `CyUI::Audio` | Knobs, faders and peak/RMS meters |
 | `CyUI::Canvas` | Grid, clipping, double-precision coordinates, pan and zoom |
-| `CyUI::Plots` | Linear/log plots, lines, points, steps, bars, histograms and heatmaps |
+| `CyUI::Plots` | Linear/log plots, reusable curve fills, lines, points, steps, bars, histograms and heatmaps |
 | `CyUI::Curves` | Keyframes, Bezier handles, snapping, selection and edit transactions |
 | `CyUI::Nodes` | Connected cards and pins, graph navigation and layout |
 | `CyUI::Timeline` | Clip lanes, trimming, markers, playhead and range selection |
-| `CyUI::AudioViews` | Waveforms, spectrum, spectrogram, LUFS/true peak, correlation, EQ/phase and dynamics |
+| `CyUI::AudioViews` | ADSR/AHDSR envelope displays, waveforms, spectrum, spectrogram, LUFS/true peak, correlation, EQ/phase and dynamics |
 | `CyUI::Code` | Source views, syntax colors, annotations and search |
 | `CyUI::CodeEditor` | Editable source using the bundled MIT TextEditor backend |
 | `CyUI::Diff` | Unified/split comparisons, inline changes and hunk navigation |

@@ -18,6 +18,16 @@ struct ColorRamp {
 CYUI_API ImU32 sampleRamp(const ColorRamp &, double fraction);
 // Draw inside an existing clipped canvas. Vertical: low at bottom; horizontal: low at left.
 CYUI_API void drawColorScale(const Rect &, const ColorRamp &, Range, const char *unit = "", bool vertical = true, bool logarithmic = false);
+struct CurveFillOptions {
+    ImU32 color = 0; // 0 selects palette().info; otherwise supply a palette-derived color
+    float opacity = .18f;
+    bool gradient = false; // fade to transparent at the baseline
+};
+// Screen-space fill in the current window/clip; reserves no item and draws no outline.
+// X must increase within each run. Duplicate X/zero tails are harmless; non-finite
+// points break runs and backwards segments are skipped. Baseline crossings are split.
+// Strips have no internal AA fringes/overdraw. Draw the outline separately, once.
+CYUI_API void drawCurveFill(ArrayView<ImVec2> points, float baseline, const CurveFillOptions & = {});
 enum class PlotStyle { line, step, points, bars, area };
 struct PlotSeries {
     ItemId id = 0;

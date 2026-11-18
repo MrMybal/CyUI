@@ -4,7 +4,7 @@ title: Module API and recipes
 description: Module API and recipes for CyUI integrators.
 section: API
 order: 21
-revision: 4
+revision: 5
 ---
 
 All headers below use the `cyui/` prefix. Link the corresponding target described
@@ -121,6 +121,50 @@ The separate AudioViews target offers:
 Waveform emits seek/range-selection state, supports wheel zoom, Shift-wheel pan
 and middle drag. Decode audio, query envelope caches and compute FFT/DSP on the
 host side. Keep raw float audio ownership and thread synchronization out of draw.
+
+### Envelopes and reusable curve fills {#envelopes-and-reusable-curve-fills}
+
+C++ `drawCurveFill(points, baseline, CurveFillOptions)` belongs to **Plots**. It
+fills caller-prepared **screen coordinates** in the current window and clip,
+without reserving an item or drawing an outline. Use `CanvasScope` or your own
+clipped canvas, then draw the outline once. `color=0` selects `palette().info`;
+otherwise supply a palette-derived color. `opacity` is clamped to 0..1 (non-finite
+means no fill); `gradient` fades to transparent at the baseline. Finite X must
+increase within a run. Repeated X and zero tails add no area; NaN/Inf break runs,
+backwards edges are skipped and baseline crossings are split. No internal AA
+fringes or overlapping strips are generated. PlotStyle::area shares this renderer.
+
+C++ `envelope(id, EnvelopeData, size, EnvelopeOptions)` belongs to **AudioViews**,
+with no new dependency. It displays ADSR, AHDSR and custom envelopes from the
+host's sampled time/level points. The host owns interpolation, DSP, editing and
+Undo; this component is a read-only display. See gallery tab **38, Envelopes**.
+
+```cpp
+std::vector<cyui::Point> samples{{0, 0}, {.02, 1}, {.3, .4}, {.7, .4}, {1, 0}};
+const cyui::EnvelopeStage phases[]{
+    {{0, .02}, "A"}, {{.02, .3}, "D"}, {{.3, .7}, "S"}, {{.7, 1}, "R"}};
+cyui::EnvelopeData data{samples, {phases, 4}};
+data.playhead = .5; data.level = .4; // optional live host measurements
+cyui::EnvelopeOptions options;
+options.time = {0, 1}; options.levels = {0, 1}; options.timePower = .6;
+const auto hit = cyui::envelope("##env", data, cyui::dp(0, 180), options);
+// hit.mouse is time/level, even with a nonlinear time display.
+```
+
+Stage intervals must be finite, ordered and non-overlapping; zero-duration stages
+are allowed and have no hit/label area. Labels are caller-localized and appear
+only when they fit. Points are ordered within each finite run; gaps remain gaps.
+`timePower>0` controls only the display; 1 is linear and .6 expands short phases.
+`baseline` is in level units, clamped to `levels`. Options also select colorIndex,
+fillAlpha, gradient, grid, phaseLines and phaseLabels. NaN hides optional playhead
+or live-level markers; finite out-of-view markers are hidden as well.
+
+The result reports valid/hovered/clicked, inverse-mapped mouse values, the hovered
+stage index (`size_t(-1)` for none) and data bounds excluding padding/labels.
+Clicks do not edit the model. The parent retains wheel scrolling. Invalid ranges,
+stage/point order or budgets produce valid=false with no partial curve. Default
+budgets are 65,536 points and 64 stages, with hard caps of 262,144 and 1,024.
+Arrays are borrowed for the call; prepare a bounded preview outside the draw loop.
 
 ### Audio analysis displays {#audio-analysis-displays}
 

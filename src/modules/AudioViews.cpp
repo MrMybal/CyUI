@@ -105,6 +105,104 @@ WaveformResult waveform(const char *id, WaveformState &s, const WaveformData &da
     d->AddLine({x(playhead), f.bounds.min.y}, {x(playhead), f.bounds.max.y}, palette().accent, dp(2));
     return result;
 }
+EnvelopeResult envelope(const char *id, const EnvelopeData &data, ImVec2 size, const EnvelopeOptions &o) {
+    CanvasState canvas;
+    CanvasOptions options;
+    options.grid = options.navigation = false;
+    CanvasScope scope(id, canvas, size, options);
+    const auto frame = scope.frame();
+    auto *d = ImGui::GetWindowDrawList();
+    EnvelopeResult result;
+    if (!o.time.valid() || !o.levels.valid() || !std::isfinite(o.time.span()) ||
+        !std::isfinite(o.levels.span()) || !std::isfinite(o.baseline) ||
+        !std::isfinite(o.timePower) || o.timePower <= 0 || data.points.count < 2 ||
+        data.points.count > std::min<std::size_t>(o.maxPoints, 262144) ||
+        data.stages.count > std::min<std::size_t>(o.maxStages, 1024)) return result;
+    double previousEnd = -HUGE_VAL;
+    for (std::size_t i = 0; i < data.stages.count; ++i) {
+        const auto &time = data.stages[i].time;
+        if (!std::isfinite(time.min) || !std::isfinite(time.max) || time.max < time.min ||
+            time.min < previousEnd) return result;
+        previousEnd = time.max;
+    }
+    const bool labels = o.phaseLabels && data.stages.count;
+    const Rect r{{frame.bounds.min.x + dp(6), frame.bounds.min.y + dp(6) + (labels ? ImGui::GetFontSize() + dp(6) : 0)},
+                 {frame.bounds.max.x - dp(6), frame.bounds.max.y - dp(6)}};
+    const auto room = r.size();
+    if (room.x <= 0 || room.y <= 0) return result;
+    auto power = [](double v, double exponent) { return std::copysign(std::pow(std::abs(v), exponent), v); };
+    auto x = [&](double t) { return r.min.x + float(power((t - o.time.min) / o.time.span(), o.timePower)) * room.x; };
+    auto y = [&](double level) { return r.max.y - float((level - o.levels.min) / o.levels.span()) * room.y; };
+    std::vector<ImVec2> points;
+    points.reserve(data.points.count);
+    double previousTime = -HUGE_VAL;
+    for (std::size_t i = 0; i < data.points.count; ++i) {
+        const auto &p = data.points[i];
+        if (!std::isfinite(p.x) || !std::isfinite(p.y)) {
+            points.push_back({NAN, NAN}); previousTime = -HUGE_VAL; continue;
+        }
+        if (p.x < previousTime) return result;
+        const ImVec2 at{x(p.x), y(p.y)};
+        if (!std::isfinite(at.x) || !std::isfinite(at.y)) return result;
+        points.push_back(at); previousTime = p.x;
+    }
+    result.valid = true;
+    result.bounds = r;
+    const auto mouse = ImGui::GetIO().MousePos;
+    result.hovered = frame.hovered && r.contains(mouse);
+    result.clicked = result.hovered && ImGui::IsMouseClicked(0);
+    result.mouse = {o.time.min + power((mouse.x - r.min.x) / room.x, 1 / o.timePower) * o.time.span(),
+                    o.levels.min + (r.max.y - mouse.y) / room.y * o.levels.span()};
+    const auto color = categorical(o.colorIndex);
+    d->PushClipRect(r.min, r.max, true);
+    if (o.grid)
+        for (int i = 1; i < 4; ++i) {
+            const float yy = r.min.y + room.y * i / 4;
+            d->AddLine({r.min.x, yy}, {r.max.x, yy}, palette().grid, dp(1));
+        }
+    drawCurveFill(points, y(std::clamp(o.baseline, o.levels.min, o.levels.max)), {color, o.fillAlpha, o.gradient});
+    double previousBoundary = -HUGE_VAL;
+    if (o.phaseLines)
+        for (std::size_t i = 0; i < data.stages.count; ++i) {
+            const auto &time = data.stages[i].time;
+            for (const double boundary : {time.min, time.max}) {
+                if (boundary > o.time.min && boundary < o.time.max && boundary != previousBoundary)
+                    d->AddLine({x(boundary), r.min.y}, {x(boundary), r.max.y}, palette().grid, dp(1));
+                previousBoundary = boundary;
+            }
+        }
+    // One outline per finite run; no per-strip AA fringes inside the filled area.
+    for (std::size_t begin = 0; begin < points.size();) {
+        if (!std::isfinite(points[begin].x)) { ++begin; continue; }
+        auto end = begin + 1;
+        while (end < points.size() && std::isfinite(points[end].x)) ++end;
+        if (end - begin > 1) d->AddPolyline(points.data() + begin, int(end - begin), color, 0, dp(2));
+        begin = end;
+    }
+    const bool playhead = std::isfinite(data.playhead) && o.time.contains(data.playhead);
+    const bool level = std::isfinite(data.level) && o.levels.contains(data.level);
+    if (playhead) d->AddLine({x(data.playhead), r.min.y}, {x(data.playhead), r.max.y}, palette().accent, dp(1));
+    if (level) {
+        d->AddLine({r.min.x, y(data.level)}, {r.max.x, y(data.level)}, alpha(palette().textDim, .5f), dp(1));
+        d->AddCircleFilled({playhead ? x(data.playhead) : r.max.x - dp(3), y(data.level)}, dp(3), palette().accent);
+    }
+    d->PopClipRect();
+    for (std::size_t i = 0; i < data.stages.count; ++i) {
+        const auto &stage = data.stages[i];
+        if (stage.time.max <= stage.time.min) continue;
+        if (result.hovered && result.mouse.x >= stage.time.min &&
+            (result.mouse.x < stage.time.max || (i + 1 == data.stages.count && result.mouse.x == stage.time.max)))
+            result.stage = i;
+        const double first = std::max(o.time.min, stage.time.min), last = std::min(o.time.max, stage.time.max);
+        if (labels && last > first && stage.label && stage.label[0]) {
+            const float left = x(first), right = x(last), width = ImGui::CalcTextSize(stage.label).x;
+            if (width + dp(4) <= right - left)
+                d->AddText({(left + right - width) * .5f, frame.bounds.min.y + dp(6)}, palette().textDim, stage.label);
+        }
+    }
+    d->AddRect(frame.bounds.min, frame.bounds.max, palette().line, 0, 0, dp(1));
+    return result;
+}
 PlotResult spectrum(const char *id, PlotState &s, ArrayView<PlotSeries> data, ImVec2 size,
                     const PlotOptions &o) {
     s.x.logarithmic = true;

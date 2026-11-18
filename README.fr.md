@@ -65,6 +65,12 @@ dans l’application.
 
 AudioViews propose aussi un spectrogramme, les vues LUFS/LRA et crête vraie, un historique de corrélation, des points EQ éditables avec superposition gain/phase, ainsi que les courbes de dynamique et la réduction de gain. Ces ajouts sont disponibles dans les sources actuelles et l’onglet Analyse audio de la galerie.
 
+L’onglet **Enveloppes** (38) présente les courbes ADSR/AHDSR fournies par l’hôte,
+leurs phases et les repères de lecture. `cyui::envelope`, dans AudioViews, utilise
+le remplissage partagé de Plots, également accessible par `cyui::drawCurveFill`
+dans un canevas personnalisé. Soutien nul, points répétés et passages par zéro
+sont pris en charge. Voir la [recette C++](docs/AI_GUIDE.md#envelopes-and-reusable-curve-fills).
+
 ![Analyse audio : spectrogramme, LUFS, EQ et phase, dynamique, crête vraie et corrélation](docs/screenshots/audio-analysis.png)
 
 L’onglet Vues spectrales ajoute spectres remplis/dégradés, barres fréquentielles avec plancher dB, spectrogrammes défilants légendés, vue spatiale stéréo et vectorscopes à persistance.
@@ -208,11 +214,11 @@ Les dépendances entre modules sont sélectionnées automatiquement ; par exempl
 | `CyUI::Core` | Thèmes, localisation, filtres rapides, polices, icônes, boutons, champs, cartes, tableaux, disposition et notifications |
 | `CyUI::Audio` | Potentiomètres, faders et indicateurs de crête/RMS |
 | `CyUI::Canvas` | Grille, découpage, coordonnées double précision, déplacement et zoom |
-| `CyUI::Plots` | Graphiques linéaires/logarithmiques, lignes, points, paliers, barres, histogrammes et cartes de chaleur |
+| `CyUI::Plots` | Graphiques linéaires/logarithmiques, remplissage réutilisable de courbes, lignes, points, paliers, barres, histogrammes et cartes de chaleur |
 | `CyUI::Curves` | Images clés, poignées de Bézier, alignement, sélection et transactions d’édition |
 | `CyUI::Nodes` | Cartes et ports reliés, navigation et disposition du graphe |
 | `CyUI::Timeline` | Pistes de clips, ajustement des bords, marqueurs, tête de lecture et sélection de plage |
-| `CyUI::AudioViews` | Formes d’onde, spectre, spectrogramme, LUFS/crête vraie, corrélation, EQ/phase et dynamique |
+| `CyUI::AudioViews` | Enveloppes ADSR/AHDSR, formes d’onde, spectre, spectrogramme, LUFS/crête vraie, corrélation, EQ/phase et dynamique |
 | `CyUI::Code` | Vues de sources, coloration syntaxique, annotations et recherche |
 | `CyUI::CodeEditor` | Édition des sources avec le backend TextEditor MIT fourni |
 | `CyUI::Diff` | Comparaisons unifiées/côte à côte, différences dans les lignes et navigation entre blocs modifiés |

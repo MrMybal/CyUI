@@ -1346,6 +1346,72 @@ void audioAnalysisPage()
     ImGui::EndTable();
 }
 
+void envelopesPage()
+{
+    textDim(tr("Host-prepared curves. CyUI draws the envelope, phases and live markers.").c_str());
+    static float attack = .015f, hold = 0, decay = .6f, sustain = .35f, release = .25f, bend = 3;
+    static bool expand = true, gradient = false;
+    if (ImGui::BeginTable("##envelopeControls", 3, ImGuiTableFlags_SizingStretchSame)) {
+        auto control = [](const char *label, float &value, float maximum) {
+            ImGui::TableNextColumn(); textDim(tr(label).c_str());
+            ImGui::PushID(label); sliderBar("##value", &value, 0, maximum, "%.3f", -1); ImGui::PopID();
+        };
+        control("Attack", attack, 1); control("Hold", hold, 1); control("Decay", decay, 2);
+        control("Sustain", sustain, 1); control("Release", release, 2); control("Curvature", bend, 6);
+        ImGui::EndTable();
+    }
+    ImGui::Checkbox(trLabel("Expand short phases").c_str(), &expand); ImGui::SameLine();
+    ImGui::Checkbox(trLabel("Gradient fill").c_str(), &gradient);
+    const double a = attack, h = hold, d = decay, held = .35, r = release;
+    // Gallery-owned interpolation illustrates the host contract. CyUI receives the samples.
+    auto prepare = [&](double level) {
+        std::vector<Point> points;
+        for (int i = 0; i <= 32; ++i) points.push_back({a * i / 32, i / 32.});
+        points.push_back({a + h, 1}); // intentional repeated peak when Hold == 0
+        for (int i = 1; i <= 32; ++i)
+            points.push_back({a + h + d * i / 32, level + (1 - level) * std::pow(1 - i / 32., std::max(.1f, bend))});
+        points.push_back({a + h + d + held, level});
+        for (int i = 1; i <= 32; ++i) points.push_back({a + h + d + held + r * i / 32, level * (1 - i / 32.)});
+        points.push_back(points.back()); // repeated zero endpoint is also safe
+        return points;
+    };
+    const auto attackLabel = tr("Attack"), holdLabel = tr("Hold"), decayLabel = tr("Decay"),
+               sustainLabel = tr("Sustain"), releaseLabel = tr("Release");
+    const EnvelopeStage stages[]{
+        {{0, a}, attackLabel.c_str()}, {{a, a + h}, holdLabel.c_str()},
+        {{a + h, a + h + d}, decayLabel.c_str()}, {{a + h + d, a + h + d + held}, sustainLabel.c_str()},
+        {{a + h + d + held, a + h + d + held + r}, releaseLabel.c_str()}};
+    EnvelopeOptions options; options.time = {0, a + h + d + held + r};
+    options.timePower = expand ? .6 : 1; options.gradient = gradient; options.grid = true;
+    auto points = prepare(sustain);
+    EnvelopeData data{points, {stages, 5}};
+    data.playhead = a + h + d * .45;
+    data.level = sustain + (1 - sustain) * std::pow(.55, std::max(.1f, bend));
+    sectionTitle("AHDSR");
+    const float height = std::clamp(ImGui::GetContentRegionAvail().y - dp(190), dp(100), dp(220));
+    envelope("##ahdsr", data, {ImGui::GetContentRegionAvail().x, height}, options);
+    if (ImGui::BeginTable("##envelopeExamples", 2, ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextColumn(); sectionTitle(tr("Zero sustain").c_str());
+        auto zero = prepare(0); EnvelopeData zeroData{zero, {stages, 5}};
+        envelope("##zeroSustain", zeroData, dp(0, 150), options);
+        ImGui::TableNextColumn(); sectionTitle(tr("Custom canvas: bipolar fill").c_str());
+        {
+            CanvasState canvas; CanvasOptions canvasOptions; canvasOptions.grid = canvasOptions.navigation = false;
+            CanvasScope scope("##fillPrimitive", canvas, dp(0, 150), canvasOptions);
+            const auto bounds = scope.frame().bounds; const auto room = bounds.size();
+            const float baseline = bounds.min.y + room.y * .5f;
+            std::vector<ImVec2> line;
+            for (int i = 0; i <= 80; ++i)
+                line.push_back({bounds.min.x + room.x * i / 80, baseline - room.y * .38f * float(std::sin(i * .12))});
+            drawCurveFill(line, baseline, {palette().info, .25f, gradient});
+            auto *draw = ImGui::GetWindowDrawList();
+            draw->AddLine({bounds.min.x, baseline}, {bounds.max.x, baseline}, palette().grid, dp(1));
+            draw->AddPolyline(line.data(), int(line.size()), palette().info, 0, dp(2));
+        }
+        ImGui::EndTable();
+    }
+}
+
 void audioViewsPage()
 {
     sectionTitle(tr("Stereo waveform").c_str());
@@ -2381,6 +2447,7 @@ void moduleGallery(int selectedTab, const GalleryResources &resources) {
     page("Audio views",9,audioViewsPage);
     page("Audio analysis",22,audioAnalysisPage);
     page("Spectral displays",23,spectralViewsPage);
+    page("Envelopes",38,envelopesPage);
 #endif
 #if defined(CYUI_HAS_CODE)
     page("Code",10,[&]{codePage(resources.previewPagedCode);});

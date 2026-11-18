@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 7
+revision: 8
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -31,11 +31,11 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | --- | --- | --- | --- |
 | `CyUI::Audio` | `modules/Audio.h` | Knobs, faders, peak/RMS meters | Core |
 | `CyUI::Canvas` | `modules/Canvas.h` | Double coordinates, grid, clipping, pan/zoom | Core |
-| `CyUI::Plots` | `modules/Plots.h` | Linear/log axes, lines, steps, points, bars, histograms, heatmaps | Canvas |
+| `CyUI::Plots` | `modules/Plots.h` | Linear/log axes, reusable curve fills, lines, steps, points, bars, histograms, heatmaps | Canvas |
 | `CyUI::Curves` | `modules/Curves.h` | Keyframes, Bezier handles, selection, snap, copy/paste | Plots |
 | `CyUI::Nodes` | `modules/Nodes.h` | Cards, pins, links, layout, move/connect/remove requests | Canvas |
 | `CyUI::Timeline` | `modules/Timeline.h` | Lanes, clips, markers, ruler, move/trim, range selection | Canvas |
-| `CyUI::AudioViews` | `modules/AudioViews.h` | Waveforms, filled/band spectra, scrolling spectrograms, spatial/persistent scopes, meters, EQ and dynamics | Plots |
+| `CyUI::AudioViews` | `modules/AudioViews.h` | ADSR/AHDSR envelope displays, waveforms, filled/band spectra, scrolling spectrograms, spatial/persistent scopes, meters, EQ and dynamics | Plots |
 | `CyUI::Code` | `modules/Code.h` | Paged line contracts/builders, source viewer, 102 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
 | `CyUI::Diff` | `modules/Diff.h` | Unified/split diff, line numbers, hunk navigation, inline ranges | Code |
 | `CyUI::CodeEditor` | `modules/CodeEditor.h` | In-memory TextEditor and host-backed PagedCodeEditor (distinct capabilities) | Code + MIT TextEditor, C++20 |

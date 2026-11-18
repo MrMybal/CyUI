@@ -50,6 +50,35 @@ void plotQuad(ImDrawList *d, ImVec2 a, ImVec2 b, ImVec2 c, ImVec2 e, ImU32 ca, I
     for (auto offset : {0u, 1u, 2u, 0u, 2u, 3u}) d->PrimWriteIdx(ImDrawIdx(index + offset));
     d->PrimWriteVtx(a, uv, ca); d->PrimWriteVtx(b, uv, cb); d->PrimWriteVtx(c, uv, cc); d->PrimWriteVtx(e, uv, ce);
 }
+void fillCurveSegment(ImDrawList *d, ImVec2 a, ImVec2 b, float base, ImU32 first, ImU32 last, bool gradient) {
+    if (!(b.x > a.x) || (a.y == base && b.y == base)) return;
+    const auto lowFirst = gradient ? alpha(first, 0) : first;
+    const auto lowLast = gradient ? alpha(last, 0) : last;
+    if ((a.y < base && b.y > base) || (a.y > base && b.y < base)) {
+        // Split at the crossing: a single quad would be self-intersecting.
+        const double t = (double(base) - a.y) / (double(b.y) - a.y);
+        const ImVec2 crossing{float(double(a.x) + (double(b.x) - a.x) * t), base};
+        const auto middle = mix(first, last, float(t));
+        fillCurveSegment(d, a, crossing, base, first, gradient ? alpha(middle, 0) : middle, gradient);
+        fillCurveSegment(d, crossing, b, base, gradient ? alpha(middle, 0) : middle, last, gradient);
+    } else if (a.y <= base && b.y <= base) {
+        plotQuad(d, a, b, {b.x, base}, {a.x, base}, first, last, lowLast, lowFirst);
+    } else {
+        plotQuad(d, {a.x, base}, {b.x, base}, b, a, lowFirst, lowLast, last, first);
+    }
+}
+}
+void drawCurveFill(ArrayView<ImVec2> points, float baseline, const CurveFillOptions &o) {
+    if (!std::isfinite(baseline)) return;
+    const float opacity = std::isfinite(o.opacity) ? std::clamp(o.opacity, 0.f, 1.f) : 0.f;
+    const auto color = alpha(o.color ? o.color : palette().info, opacity);
+    if (!(color & IM_COL32_A_MASK)) return;
+    auto *d = ImGui::GetWindowDrawList();
+    for (std::size_t i = 1; i < points.count; ++i) {
+        const auto a = points[i - 1], b = points[i];
+        if (std::isfinite(a.x) && std::isfinite(a.y) && std::isfinite(b.x) && std::isfinite(b.y))
+            fillCurveSegment(d, a, b, baseline, color, color, o.gradient);
+    }
 }
 double Axis::fraction(double v) const {
     if (!range.valid() || !std::isfinite(v))
@@ -200,8 +229,7 @@ PlotResult plot(const char *id, PlotState &s, ArrayView<PlotSeries> series, ImVe
                         const double baseFraction = s.y.fraction(line.baseline);
                         const float base = std::isfinite(baseFraction) ? r.max.y - float(std::clamp(baseFraction, 0., 1.)) * room.y : r.max.y;
                         const float opacity = fillOpacity;
-                        plotQuad(d, p, q, {q.x, base}, {p.x, base}, alpha(first, opacity), alpha(last, opacity),
-                            alpha(last, line.gradient ? 0.f : opacity), alpha(first, line.gradient ? 0.f : opacity));
+                        fillCurveSegment(d, p, q, base, alpha(first, opacity), alpha(last, opacity), line.gradient);
                     }
                     d->AddLine(p, q, last, dp(1.5f));
                 }

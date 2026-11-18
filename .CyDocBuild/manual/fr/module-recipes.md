@@ -4,7 +4,7 @@ title: API et recettes des modules
 description: Données, gestes et retours d’action des vues spécialisées.
 section: API
 order: 21
-sourceRevision: 4
+sourceRevision: 5
 ---
 
 Les en-têtes utilisent le préfixe `cyui/` ; liez leurs [cibles correspondantes](doc:modules). Gallery.cpp, onglets 4–19, contient les exemples. Les callbacks et superpositions de l’hôte suivent les règles palette/dp/style.
@@ -73,6 +73,55 @@ Audio.h conserve knob/fader/meter et meterPosition. Le fader répartit sa plage 
 | `stereoScope(...)` | Vue carrée X/Y, plage symétrique commune autour de zéro |
 
 Waveform propose seek/plage, zoom molette, déplacement Shift+molette ou milieu. L’hôte décode, met les enveloppes en cache et calcule FFT/DSP hors dessin, en possédant les échantillons et leur synchronisation.
+
+### Enveloppes et remplissage réutilisable {#envelopes-and-reusable-curve-fills}
+
+En C++, `drawCurveFill(points, baseline, CurveFillOptions)` appartient à **Plots**.
+Cette fonction remplit une courbe fournie en **coordonnées écran**, dans la fenêtre
+et le clip courants, sans réserver d’item ni dessiner le contour. Utilisez
+`CanvasScope` ou votre propre canevas, puis dessinez le contour une seule fois.
+`color=0` choisit `palette().info` ; fournissez sinon une couleur issue de la
+palette. `opacity` est bornée à 0..1 (une valeur non finie désactive le remplissage)
+et `gradient` rend la ligne de base transparente. X doit croître dans chaque
+portion finie. Les X répétés et les queues nulles n’ajoutent aucune surface ;
+NaN/Inf interrompent le tracé, les segments inversés sont ignorés et les passages
+par la ligne de base sont séparés. Aucun liseré d’anticrénelage interne ni
+recouvrement des bandes. PlotStyle::area partage ce moteur de dessin.
+
+En C++, `envelope(id, EnvelopeData, size, EnvelopeOptions)` appartient à
+**AudioViews**, sans nouvelle dépendance. Ce composant affiche les enveloppes
+ADSR, AHDSR et personnalisées depuis les points temps/niveau de l’hôte. L’hôte
+garde l’interpolation, le DSP, l’édition et Undo ; cette vue est en lecture seule.
+L’onglet **38, Enveloppes** de la galerie montre son utilisation.
+
+```cpp
+std::vector<cyui::Point> samples{{0, 0}, {.02, 1}, {.3, .4}, {.7, .4}, {1, 0}};
+const cyui::EnvelopeStage phases[]{
+    {{0, .02}, "A"}, {{.02, .3}, "D"}, {{.3, .7}, "S"}, {{.7, 1}, "R"}};
+cyui::EnvelopeData data{samples, {phases, 4}};
+data.playhead = .5; data.level = .4; // mesures optionnelles de l’hôte
+cyui::EnvelopeOptions options;
+options.time = {0, 1}; options.levels = {0, 1}; options.timePower = .6;
+const auto hit = cyui::envelope("##env", data, cyui::dp(0, 180), options);
+// hit.mouse renvoie temps/niveau, même avec une échelle temporelle non linéaire.
+```
+
+Les phases doivent être finies, ordonnées et sans recouvrement. Une phase de durée
+nulle est acceptée, sans zone de survol ni libellé. L’hôte traduit les libellés,
+affichés seulement s’ils tiennent dans la phase. Les points sont ordonnés dans
+chaque portion finie ; les interruptions restent vides. `timePower>0` concerne
+uniquement l’affichage : 1 est linéaire, .6 élargit les phases courtes. `baseline`
+est exprimée en unités de niveau, bornée à `levels`. Les options comprennent aussi
+colorIndex, fillAlpha, gradient, grid, phaseLines et phaseLabels. NaN masque les
+repères optionnels de lecture/niveau ; les repères hors vue restent masqués.
+
+Le résultat fournit valid/hovered/clicked, la souris en temps/niveau, l’indice de
+phase survolée (`size_t(-1)` si aucune) et les limites de données hors marges et
+libellés. Un clic ne modifie pas le modèle et la molette reste au parent. Des
+plages, un ordre ou des budgets invalides renvoient valid=false sans courbe
+partielle. Budgets par défaut : 65 536 points et 64 phases ; plafonds absolus :
+262 144 points et 1 024 phases. Les tableaux sont empruntés pendant l’appel ;
+préparez un aperçu borné en dehors du dessin.
 
 ### Vues d’analyse audio {#audio-analysis-displays}
 
