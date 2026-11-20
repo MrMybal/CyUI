@@ -5,7 +5,7 @@ description: C++ code syntax and extensions for CyUI integrators.
 section: Guides
 parent: modules
 order: 30
-revision: 4
+revision: 5
 ---
 
 Link `CyUI::Code` (C++17) for the catalogue, lexer service and read-only views;
@@ -62,7 +62,7 @@ under the current workstation's native-run suspension.
 
 ## Built-in modes {#built-in-modes}
 
-`codeLanguages()` returns 102 owned metadata snapshots. The canonical list,
+`codeLanguages()` returns 104 built-in metadata snapshots before plugin registration. The canonical list,
 file associations and original shader profiles are in `data/code-languages.json`.
 It covers the Notepad++ syntax-mode list used by the host migration, plus HLSL,
 GLSL, Markdown, TSX and an Unreal C++ profile. Each mode has its own fixture.
@@ -171,6 +171,36 @@ Stack-trace continuation lines without a level remain normal; inferred multiline
 events and stripping escape sequences belong to a dedicated log-viewing host.
 Plugins can inherit `base = CodeLanguage::log` for other extensions, or supply a
 callback for a logger with different level names or classification rules.
+
+## Zig and Zig Object Notation {#zig-and-zon}
+
+The `zig` and `zon` built-in IDs select two profiles of the bundled Lexilla Zig
+lexer. Path detection uses the last extension, including `build.zig` and
+`build.zig.zon`. Exact filename associations are checked before extensions.
+Within each group, plugins take priority. Persist the string ID of a manual
+selection and pass that language to the view on subsequent edits.
+
+Zig colors declarations, calls, `@import`-style builtins, primitive types,
+arbitrary-width integers such as `i24`, numeric bases and exponents. Quoted
+identifiers, characters, escapes, raw multiline string lines, ordinary comments
+and both forms of documentation comments retain their lexical boundaries. ZON
+shares the literal syntax and adds `nan` and `inf` for data. Fields and enum
+members after a dot are identifiers. Source keywords, type names and builtins
+are specific to the Zig profile.
+
+Use `codeLanguageForPath(path)` for detection, `CodeLanguage::zig` or
+`CodeLanguage::zon` for a manual selection, and `highlightCode(source, language)`
+for raw UTF-8 byte spans. Pass the same language to `CodeDocument::setText`,
+`CodeEditor::setLanguage` or `DiffDocument::setTexts/setUnified`. Paged hosts
+supply contextual spans clipped to their UTF-8 fragments. CyUI provides syntax
+coloring offline. Symbol resolution, project indexing, ZLS, compilation and
+debugging belong to the host or CyCodeCore.
+
+Plugins can inherit either profile. Nonempty Lexilla word lists 0–3 replace
+keywords, keyword-colored literals, number-colored literals and named types
+respectively. The existing callback and declarative-rule precedence applies.
+See the [Zig language reference](https://ziglang.org/documentation/0.17.1/)
+and [Zig Object Notation in the standard library](https://ziglang.org/documentation/0.17.1/std/#std.zon).
 
 ## Verse {#verse}
 

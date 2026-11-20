@@ -4,6 +4,8 @@
 *.h text eol=lf
 *.py text eol=lf
 *.bat text eol=crlf
+# Unified diff context adds a space before original tabs and blank lines.
+tools/patches/*.patch text eol=lf whitespace=-space-before-tab,-blank-at-eol
 .githooks/* text eol=lf
 *.png binary
 *.jpg binary

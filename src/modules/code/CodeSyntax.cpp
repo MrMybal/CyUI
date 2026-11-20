@@ -117,6 +117,10 @@ std::vector<CodeToken> ruleTokens(std::string_view text,const CodeSyntaxRules &r
 namespace detail {
 TokenRole styleRole(std::string_view name) {
     auto has=[&](std::string_view part) { return name.find(part)!=name.npos; };
+    if (name == "SCE_ZIG_KW_PRIMARY" || name == "SCE_ZIG_KW_SECONDARY") return TokenRole::keyword;
+    if (name == "SCE_ZIG_KW_TERTIARY") return TokenRole::number;
+    if (name == "SCE_ZIG_ESCAPECHAR") return TokenRole::string;
+    if (name == "SCE_ZIG_IDENTIFIER_STRING") return TokenRole::text;
     if (has("ESCSEQ_") || has("ERR_ES_")) {
         auto foreground=name.substr(name.find(has("ESCSEQ_") ? "ESCSEQ_" : "ERR_ES_")+(has("ESCSEQ_") ? 7 : 7));
         if (foreground.substr(0,5)=="BOLD_") foreground.remove_prefix(5);
@@ -241,6 +245,8 @@ std::vector<CodeToken> highlightCode(std::string_view text,CodeLanguage language
     }
     if (!p || !p->module || language==CodeLanguage::plain || language==CodeLanguage::nfo) return text.empty() ? std::vector<CodeToken>{} : std::vector<CodeToken>{{0,text.size(),TokenRole::text}};
     auto styles=detail::lexSource(text,*p);
+    std::array<TokenRole, 256> roles;
+    roles.fill(TokenRole::count);
     std::unordered_set<std::string> functions(p->functions.begin(),p->functions.end());
     std::vector<CodeToken> tokens;
     for (std::size_t at=0;at<text.size();) {
@@ -248,7 +254,8 @@ std::vector<CodeToken> highlightCode(std::string_view text,CodeLanguage language
         while (end<text.size() && styles[end]==styles[at]) ++end;
         // No lexer may split a UTF-8 code point into conflicting output spans.
         while (end<text.size() && (static_cast<unsigned char>(text[end])&0xc0)==0x80) ++end;
-        const auto role=detail::styleRole((*p->styleNames)[styles[at]]);
+        auto &role = roles[styles[at]];
+        if (role == TokenRole::count) role = detail::styleRole((*p->styleNames)[styles[at]]);
         if (!functions.empty() && role==TokenRole::text) {
             for (std::size_t cursor=at;cursor<end;) {
                 const auto start=cursor;

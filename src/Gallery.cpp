@@ -1713,15 +1713,43 @@ void codePage(bool previewPaged)
     textDim(tr("Orange strings, green comments: shared code colors across languages.").c_str());
     static CodeDocument document;
     static CodeViewState state;
-    document.setText("// audio/Voice.cpp - read-only source with host annotations\n"
+    static const char *const paths[] = {"audio/Voice.cpp", "audio/voice.zig", "build.zig.zon"};
+    static const char *const sources[] = {
+                     "// audio/Voice.cpp - read-only source with host annotations\n"
                      "#include <algorithm>\n\n"
                      "float applyGain(float sample, float gainDb) {\n"
                      "    const float gain = dbToLinear(gainDb);\n"
                      "    return std::clamp(sample * gain, -1.0f, 1.0f);\n"
                      "}\n\n"
-                     "// Source data, diagnostics and file access belong to the host.\n", CodeLanguage::cpp);
+                     "// Source data, diagnostics and file access belong to the host.\n",
+        "//! Packed audio samples\n"
+        "const Voice = struct { sample: i24, muted: bool = false };\n\n"
+        "/// Return the absolute sample level.\n"
+        "pub fn level(voice: Voice) u24 {\n"
+        "    return if (voice.muted) 0 else @abs(voice.sample);\n"
+        "}\n\n"
+        "const message =\n"
+        "    \\\\Crête gauche\n"
+        "    \\\\// raw text, including @abs\n"
+        ";\n",
+        ".{\n"
+        "    .name = .audio_tools,\n"
+        "    .version = \"0.1.0\",\n"
+        "    .fingerprint = 0x9e26_54dc_1a00_42fe,\n"
+        "    .dependencies = .{ .dsp = .{ .path = \"../dsp\" } },\n"
+        "    .paths = .{ \"build.zig\", \"build.zig.zon\", \"src\" },\n"
+        "}\n"
+    };
+    static int sample = 0;
+    static std::uint64_t registryRevision = 0;
+    const bool switched = ImGui::Combo("##source-file", &sample, paths, IM_ARRAYSIZE(paths));
+    if (switched) state = {};
+    if (switched || registryRevision != codeLanguageRevision()) {
+        registryRevision = codeLanguageRevision();
+        document.setText(sources[sample], codeLanguageForPath(paths[sample]), sample + 1);
+    }
     CodeAnnotation note{1, 5, Tone::info, "Host-supplied diagnostic: inspect gain conversion"};
-    codeViewer("##source", state, document, dp(0, 205), {&note, 1});
+    codeViewer("##source", state, document, dp(0, 205), {&note, sample == 0 ? 1u : 0u});
 #if defined(CYUI_HAS_CODEEDITOR)
     space();
     sectionTitle(tr("Native code editor").c_str());

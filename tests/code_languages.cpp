@@ -1,4 +1,7 @@
 #include <cyui/modules/Code.h>
+#ifdef CYUI_HAS_DIFF
+#include <cyui/modules/Diff.h>
+#endif
 #ifdef CYUI_HAS_CODEEDITOR
 #include <cyui/modules/CodeEditor.h>
 #include <TextEditor.h>
@@ -21,7 +24,7 @@ static void catalogue() {
     const std::pair<CodeLanguage,const char*> fixtures[]={
 #include "CodeLanguageSamples.inc"
     };
-    const auto items=codeLanguages();check(items.size()==102,"Expected 102 built-in syntax modes");
+    const auto items=codeLanguages();check(items.size()==104,"Expected 104 built-in syntax modes");
     check(std::size(fixtures)==items.size(),"Each built-in mode needs an independent fixture");
     std::set<std::string> ids;std::set<CodeLanguage> values;
     for (const auto &item : items) {
@@ -69,7 +72,7 @@ static void catalogue() {
     const auto start=std::chrono::steady_clock::now();highlightCode(large,CodeLanguage::hlsl);
     const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     check(elapsed<5000,"Shader lexer exceeded five seconds for 10,000 lines");
-    std::cout<<"102 syntax fixtures; HLSL 10,000 lines: "<<elapsed<<" ms\n";
+    std::cout<<items.size()<<" syntax fixtures; HLSL 10,000 lines: "<<elapsed<<" ms\n";
 }
 static void extensions() {
     const auto builtinCount=codeLanguages().size();
@@ -182,10 +185,120 @@ static void verse() {
     editor.native().Redo();editor.refreshSyntax();check(editor.text()=="var Value:int = 7","Verse Redo failed");
 #endif
 }
+static void zigAndZon() {
+    const auto zig = CodeLanguage::zig, zon = CodeLanguage::zon;
+    static_assert(unsigned(CodeLanguage::verse) == 101 && unsigned(CodeLanguage::zig) == 102 &&
+                  unsigned(CodeLanguage::zon) == 103, "Persisted language IDs are append-only");
+    check(codeLanguageFromName("Zig") == zig && codeLanguageFromName("ZON") == zon, "Zig/ZON IDs");
+    check(codeLanguageForPath("src/Voice.ZIG") == zig && codeLanguageForPath("build.zig") == zig &&
+          codeLanguageForPath("data.zon") == zon && codeLanguageForPath("pkg\\BUILD.ZIG.ZON") == zon &&
+          codeLanguageForPath("build.zig.zon.bak") == CodeLanguage::plain, "Zig/ZON file associations");
+
+    // Check every byte of each marker, including the end of an escape or signed exponent.
+    auto expect = [](const std::string &source, CodeLanguage language,
+                     std::initializer_list<std::pair<std::string_view, TokenRole>> markers) {
+        const auto tokens = highlightCode(source, language);
+        for (const auto &[marker, expected] : markers) {
+            const auto begin = source.find(marker);
+            check(begin != source.npos, "Missing Zig/ZON marker: " + std::string(marker));
+            const auto token = std::find_if(tokens.begin(), tokens.end(), [&](const CodeToken &t) {
+                return t.start <= begin && t.start + t.length >= begin + marker.size();
+            });
+            check(token != tokens.end() && token->role == expected, "Zig/ZON role: " + std::string(marker));
+        }
+    };
+    using R = TokenRole;
+    const std::string source =
+        "//! @notCode( café\r\n/// fn docs\n// 0xbeef\n"
+        "const Packet = packed struct { tag: u7, delta: i37 };\n"
+        "pub fn @\"réglage\"(bytes: []const u8) !void {\n"
+        "\tconst a: comptime_int = 0b10_01 + 0o71 + 0xfA_Ce;\n"
+        "\tconst b: f64 = 0x1.fp-3 + 12.5e+2;\n"
+        "\tfor (bytes[0..2]) |v| { use(v +% 1); }\n"
+        "\tconst c = '\\u{1f3b5}'; const s = \"\\\"// @as\\x21\";\n"
+        "\tconst raw =\r\n\t    \\\\literal // @abs(\"é\")\r\n\t    \\\\again \\n\n\t;\n"
+        "\t_ = @as(usize, @intCast(a)); _ = @\"fn\";\n"
+        "\tif (true) return error.Empty;\n}\n";
+    expect(source, zig, {{"//! @notCode( café",R::comment},{"/// fn docs",R::comment},{"// 0xbeef",R::comment},
+        {"Packet",R::type},{"packed",R::keyword},{"u7",R::type},{"i37",R::type},{"@\"réglage\"",R::function},
+        {"comptime_int",R::type},{"0b10_01",R::number},{"0o71",R::number},{"0xfA_Ce",R::number},
+        {"0x1.fp-3",R::number},{"12.5e+2",R::number},{"..",R::text},{"+%",R::text},{"use",R::function},
+        {"'\\u{1f3b5}'",R::string},{"\"\\\"// @as\\x21\"",R::string},{"\\\\literal // @abs(\"é\")",R::string},
+        {"\\\\again \\n",R::string},{"@intCast",R::function},{"@\"fn\"",R::text},{"true",R::keyword},{"error",R::keyword}});
+    expect("i7field True inf class @\"name\\\"with quote\"", zig,
+           {{"i7field",R::text},{"True",R::text},{"inf",R::text},{"class",R::text},{"@\"name\\\"with quote\"",R::text}});
+    expect("//\nconst a = \"unfinished @as\nfn next() u0 { return 0; }", zig,
+           {{"const",R::keyword},{"unfinished @as",R::string},{"next",R::function},{"u0",R::type}});
+    expect("fn @\"clé\\\"🙂\"() void {} // 🎵", zig,
+           {{"@\"clé\\\"🙂\"",R::function},{"void",R::type},{"// 🎵",R::comment}});
+    expect(".{ .name = .synth, .nan = nan, .v = .{ -inf, true, null, 'é', \"//msg\" } }", zon,
+           {{".synth",R::text},{".nan",R::text},{"inf",R::number},{"true",R::keyword},{"null",R::keyword},
+            {"'é'",R::string},{"\"//msg\"",R::string}});
+    expect("nan", zon, {{"nan",R::number}});
+    expect("const fn u7 bool undefined @import(42)", zon,
+           {{"const",R::text},{"fn",R::text},{"u7",R::text},{"bool",R::text},{"undefined",R::text},{"@import",R::text}});
+    CodeDocument doc;
+    check(doc.setText(source, zig, 1) && doc.text() == source && !doc.setText(source, zig, 1),
+          "Zig viewer cache or UTF-8/CRLF round trip");
+    std::string large;
+    for (int line = 0; line < 10000; ++line) large += "    \\\\音 // fn @as\r\n";
+    large += "; const last: u24 = 1;";
+    expect(large, zig, {{"音 // fn @as",R::string},{"const",R::keyword},{"u24",R::type}});
+
+    CodeLanguageDefinition ext;
+    ext.id = "test/zig-dialect"; ext.name = "Zig dialect"; ext.base = zig;
+    ext.extensions = {"zig"}; ext.filenames = {"manifest.zon"}; ext.wordLists = {"custom fn"};
+    const auto custom = registerCodeLanguage(ext);
+    check(codeLanguageForPath("build.zig") == custom && codeLanguageForPath("manifest.zon") == custom &&
+          codeLanguageForPath("build.zig.zon") == zon, "Zig plugin association priority");
+    expect("custom const usize", custom, {{"custom",R::keyword},{"const",R::text},{"usize",R::type}});
+    expect("const", zig, {{"const",R::keyword}});
+    ext.base = zon; ext.wordLists = {}; registerCodeLanguage(ext);
+    check(role("nan",custom,"nan") == R::number && role("u7",custom,"u7") == R::text, "Inherited ZON");
+    ext.rules.emplace(); ext.rules->types = {"nan"}; registerCodeLanguage(ext);
+    check(role("nan",custom,"nan") == R::type, "Declarative rules override the ZON base");
+    ext.highlight = [](std::string_view text) { return std::vector<CodeToken>{{0,text.size(),R::comment}}; };
+    registerCodeLanguage(ext);
+    check(role("nan",custom,"nan") == R::comment, "Plugin callback overrides declarative rules");
+    unregisterCodeLanguage(ext.id);
+    check(codeLanguageForPath("manifest.zon") == zon && codeLanguageForPath("build.zig") == zig, "Zig/ZON restoration");
+#ifdef CYUI_HAS_CODEEDITOR
+    CodeEditor editor;
+    editor.setLanguageForPath("build.zig.zon"); editor.setText("nan"); editor.refreshSyntax();
+    using C = TextEditor::Color;
+    auto color = [&](std::size_t line, std::size_t column) { return editor.native().GetSharedSyntaxColor({line, column}); };
+    check(color(0,0) == C::number, "ZON editor detection");
+    editor.setLanguage(zig); editor.refreshSyntax();
+    check(color(0,0) == C::text, "Manual Zig selection on a ZON path");
+    editor.native().SelectAll(); editor.native().ReplaceTextInCurrentCursor("\\\\é // fn\nconst a: u7 = 3;");
+    editor.refreshSyntax();
+    check(color(0,3) == C::string && color(1,0) == C::keyword && color(1,9) == C::declaration, "Edited Zig spans");
+    editor.native().Undo(); editor.refreshSyntax();
+    check(editor.text() == "nan" && color(0,0) == C::text, "Undo after a Zig edit");
+    editor.native().Redo(); editor.refreshSyntax();
+    check(color(0,3) == C::string && color(1,9) == C::declaration, "Redo after a Zig edit");
+#endif
+#ifdef CYUI_HAS_DIFF
+    DiffDocument diff;
+    diff.setTexts("const a = 1;", "const a = @abs(x);", zig);
+    bool found = false;
+    for (const auto &row : diff.rows()) if (row.kind == DiffKind::added)
+        for (const auto &span : row.code.spans)
+            found |= span.role == R::function && row.code.text.substr(span.start, span.length) == "@abs";
+    check(found, "Zig diff did not use the shared builtin-function role");
+    diff.setUnified("@@ -1 +1 @@\n-inf\n+nan\n", zon);
+    int changes = 0;
+    for (const auto &row : diff.rows()) if (row.kind == DiffKind::added || row.kind == DiffKind::removed) {
+        check(row.code.spans.size() == 1 && row.code.spans.front().role == R::number, "ZON patch literal");
+        ++changes;
+    }
+    check(changes == 2, "Both sides of the ZON patch must be prepared");
+#endif
+}
 int main() {
     ImGui::CreateContext();
     try {
         check(role("// TODO keep this comment green\n",CodeLanguage::cpp,"TODO")==TokenRole::comment,"TODO marker escaped the common comment role");
-        catalogue();extensions();logs();verse();ImGui::DestroyContext();std::cout<<"Shared catalogue, shader types/intrinsics, plugin registration/rules/callbacks/removal and editor revisions passed\n";return 0; }
+        catalogue();extensions();logs();verse();zigAndZon();ImGui::DestroyContext();std::cout<<"Shared catalogue, Zig/ZON, shader types/intrinsics, plugin registration/rules/callbacks/removal and editor revisions passed\n";return 0; }
     catch (const std::exception &error) { std::cerr<<error.what()<<'\n';ImGui::DestroyContext();return 1; }
 }

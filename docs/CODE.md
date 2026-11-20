@@ -30,3 +30,7 @@ The maintained sources are in [.CyDocBuild/manual](../.CyDocBuild/manual/en/code
 ## Verse
 
 [Open the maintained guide](../Documentation/Documentation.html#/en/code).
+
+## Zig and Zig Object Notation
+
+[Open the maintained guide](../Documentation/Documentation.html#/en/code).

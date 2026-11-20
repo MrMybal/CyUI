@@ -4,7 +4,7 @@ title: Module API and recipes
 description: Module API and recipes for CyUI integrators.
 section: API
 order: 21
-revision: 5
+revision: 6
 ---
 
 All headers below use the `cyui/` prefix. Link the corresponding target described
@@ -367,7 +367,7 @@ uses screen coordinates within the current clip.
 `CodeDocument::setText(text, language, revision)` preserves original UTF-8 bytes,
 tabs, CRLF and final-newline state. Display lines expand tabs to four columns and
 carry lexical spans. Languages include plain, C++, C#, Python, JavaScript,
-TypeScript, Rust, GLSL, HLSL, JSON, Lua, SQL, INI and Markdown. Lexical coloring is a
+TypeScript, Rust, Zig, ZON, GLSL, HLSL, JSON, Lua, SQL, INI and Markdown. Lexical coloring is a
 presentation heuristic; supply semantic parser/LSP results as overlays when needed.
 
 - `setOverlays(SourceSpan[], revision)` accepts zero-based lines and raw UTF-8

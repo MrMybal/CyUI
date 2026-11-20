@@ -1214,5 +1214,40 @@
       "verse"
     ],
     "filenames": []
+  },
+  {
+    "id": "zig",
+    "name": "Zig",
+    "lexer": "zig",
+    "sample": "sample.zig",
+    "extensions": [
+      "zig"
+    ],
+    "filenames": [],
+    "wordLists": {
+      "0": "addrspace align allowzero and anyframe anytype asm break callconv catch comptime const continue defer else enum errdefer error export extern fn for if inline noalias noinline nosuspend opaque or orelse packed pub resume return linksection struct suspend switch test threadlocal try union unreachable var volatile while",
+      "1": "true false null undefined",
+      "2": "",
+      "3": "anyerror anyopaque bool c_int c_long c_longdouble c_longlong c_char c_short c_uint c_ulong c_ulonglong c_ushort comptime_float comptime_int f128 f16 f32 f64 f80 isize noreturn type usize void"
+    }
+  },
+  {
+    "id": "zon",
+    "name": "ZON",
+    "lexer": "zig",
+    "sample": "sample.zon",
+    "properties": {
+      "lexer.zig.zon": "1"
+    },
+    "extensions": [
+      "zon"
+    ],
+    "filenames": [],
+    "wordLists": {
+      "0": "",
+      "1": "true false null",
+      "2": "nan inf",
+      "3": ""
+    }
   }
 ]

@@ -4,7 +4,7 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 8
+revision: 9
 ---
 
 CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
@@ -36,7 +36,7 @@ without adding a dependency. See [FILTERING.md](doc:filtering).
 | `CyUI::Nodes` | `modules/Nodes.h` | Cards, pins, links, layout, move/connect/remove requests | Canvas |
 | `CyUI::Timeline` | `modules/Timeline.h` | Lanes, clips, markers, ruler, move/trim, range selection | Canvas |
 | `CyUI::AudioViews` | `modules/AudioViews.h` | ADSR/AHDSR envelope displays, waveforms, filled/band spectra, scrolling spectrograms, spatial/persistent scopes, meters, EQ and dynamics | Plots |
-| `CyUI::Code` | `modules/Code.h` | Paged line contracts/builders, source viewer, 102 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
+| `CyUI::Code` | `modules/Code.h` | Paged line contracts/builders, source viewer, 104 syntax modes, extensible registry, semantic overlays, annotations, search | Core + selected Lexilla engines + system threads |
 | `CyUI::Diff` | `modules/Diff.h` | Unified/split diff, line numbers, hunk navigation, inline ranges | Code |
 | `CyUI::CodeEditor` | `modules/CodeEditor.h` | In-memory TextEditor and host-backed PagedCodeEditor (distinct capabilities) | Code + MIT TextEditor, C++20 |
 | `CyUI::Inspector` | `modules/Inspector.h` | Typed properties, exact int64, validation, draft edits | Core |

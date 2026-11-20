@@ -898,7 +898,7 @@ uses screen coordinates within the current clip.
 `CodeDocument::setText(text, language, revision)` preserves original UTF-8 bytes,
 tabs, CRLF and final-newline state. Display lines expand tabs to four columns and
 carry lexical spans. Languages include plain, C++, C#, Python, JavaScript,
-TypeScript, Rust, GLSL, HLSL, JSON, Lua, SQL, INI and Markdown. Lexical coloring is a
+TypeScript, Rust, Zig, ZON, GLSL, HLSL, JSON, Lua, SQL, INI and Markdown. Lexical coloring is a
 presentation heuristic; supply semantic parser/LSP results as overlays when needed.
 
 - `setOverlays(SourceSpan[], revision)` accepts zero-based lines and raw UTF-8
@@ -1137,10 +1137,14 @@ automation tests, platform validation and current input/backend limitations.
 
 ## Shared C++ syntax catalogue and plugin engines
 
-`CyUI::Code` owns 102 built-in syntax modes, including HLSL, GLSL and Verse. CodeEditor,
+`CyUI::Code` owns 104 built-in syntax modes, including Zig, ZON, HLSL, GLSL and Verse. CodeEditor,
 CodeDocument and Diff share it. Read [CODE.md](CODE.md) before implementing a host
 syntax extension. Use `codeLanguages()` for menus and `codeLanguageForPath()` for
-associations; avoid maintaining a second list in the application.
+associations. For `.zig` / `build.zig` and `.zon` / `build.zig.zon`, persist
+the IDs `zig` / `zon` for manual choices. Pass the resolved language to the
+reader, editor and diff. Both profiles work offline. ZON adds `nan` and `inf`
+to the shared literal syntax. Semantic overlays, ZLS and build services belong
+to the host. See the [native syntax guide](../Documentation/Documentation.html#/en/code).
 
 Register `CodeLanguageDefinition` with declarative rules, a built-in base and word
 lists, or a host callback returning validated UTF-8 byte spans. Registration and

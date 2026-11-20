@@ -1,11 +1,11 @@
 ---
 id: code
 title: Syntaxe C++ et extensions
-description: Utiliser les 102 modes natifs et enregistrer une syntaxe applicative.
+description: Utiliser les 104 modes natifs et enregistrer une syntaxe applicative.
 section: Guides
 parent: modules
 order: 30
-sourceRevision: 4
+sourceRevision: 5
 ---
 
 Liez `CyUI::Code` (C++17) pour le catalogue, les lexers et les vues en lecture seule ; `CyUI::CodeEditor` (C++20) ajoute l’édition. Core seul ne compile ni ne lie de lexer. CMake résout les dépendances et exporte `CYUI_CODE_LANGUAGE_CATALOGUE=1`. Le catalogue commité se compile sans réseau ni Python, avec une seule instance compatible d’ImGui.
@@ -59,7 +59,7 @@ pendant la suspension des exécutions natives sur ce poste.
 
 ## Modes intégrés {#built-in-modes}
 
-`codeLanguages()` retourne 102 instantanés de métadonnées possédées. `data/code-languages.json` définit la liste canonique, les associations et les profils de shaders. Le catalogue couvre les modes de syntaxe de Notepad++ utilisés pour l’intégration, plus HLSL, GLSL, Markdown, TSX et un profil Unreal C++. Chaque mode possède un exemple. NFO s’affiche volontairement en texte brut : le décodage OEM relève de l’hôte. Internal Search colore une liste de diagnostics, sans moteur de recherche. Aucun composant UI, ABI de plugin ou format de configuration Notepad++ n’est inclus.
+`codeLanguages()` retourne 104 instantanés de métadonnées possédées. `data/code-languages.json` définit la liste canonique, les associations et les profils de shaders. Le catalogue couvre les modes de syntaxe de Notepad++ utilisés pour l’intégration, plus HLSL, GLSL, Markdown, TSX et un profil Unreal C++. Chaque mode possède un exemple. NFO s’affiche volontairement en texte brut : le décodage OEM relève de l’hôte. Internal Search colore une liste de diagnostics, sans moteur de recherche. Aucun composant UI, ABI de plugin ou format de configuration Notepad++ n’est inclus.
 
 `codeLanguageFromName(idOrName)` accepte IDs, noms et quelques alias, puis retombe sur plain. `codeLanguageForPath(path)` teste les noms exacts puis les extensions sans tenir compte de la casse. Ajoutez un contexte de projet pour les cas ambigus comme les en-têtes Unreal, ou un choix manuel. Les associations de plugins ont priorité ; leur retrait restaure les modes intégrés. Les conflits entre plugins sont déterministes par ID numérique stable.
 
@@ -119,6 +119,37 @@ d’édition de base diffèrent du TextEditor en mémoire ; consultez ses limite
 | Autres, y compris Info | text, normal |
 
 Seuls les mots complets comptent : ErrorCode, WarningCount et traceback ne sont pas des niveaux. Priorité à l’erreur, puis avertissement, puis verbosité. Les niveaux entre crochets, `LogTemp: Error:`, champs JSON et préfixes horodatés sont pris en compte. Les séquences ANSI CSI sont ignorées pour la détection mais les octets restent intacts. Les lignes visuelles repliées héritent de la couleur. Les continuations de pile sans niveau restent normales ; l’hôte gère les événements multilignes et l’élimination des échappements. Un plugin peut hériter de `CodeLanguage::log` ou fournir son callback.
+
+## Zig et Zig Object Notation {#zig-and-zon}
+
+Les identifiants intégrés `zig` et `zon` sélectionnent deux profils du lexer Zig
+de Lexilla fourni avec CyUI. La détection utilise la dernière extension, y compris
+pour `build.zig` et `build.zig.zon`. Le registre examine les noms exacts avant
+les extensions. Dans chaque groupe, les plugins sont prioritaires. Pour respecter
+un choix manuel, conservez son identifiant texte et réutilisez-le après les éditions.
+
+Le profil Zig colore les déclarations, les appels, les fonctions intégrées comme
+`@import`, les types primitifs, les entiers de largeur arbitraire comme `i24`,
+les bases numériques et les exposants. Il reconnaît les identifiants entre
+guillemets, les caractères, les échappements, les lignes de chaînes brutes et les
+trois formes de commentaires. ZON partage les littéraux et reconnaît en plus
+`nan` et `inf`. Les champs et membres d’énumération après un point sont des
+identifiants. Les mots-clés, types et fonctions de Zig relèvent du profil source.
+
+Utilisez `codeLanguageForPath(path)` pour la détection, `CodeLanguage::zig` ou
+`CodeLanguage::zon` pour un choix manuel et `highlightCode(source, language)`
+pour des plages en octets UTF-8. Passez le même langage à `CodeDocument::setText`,
+`CodeEditor::setLanguage` ou `DiffDocument::setTexts/setUnified`. Une vue paginée
+reçoit les plages contextualisées et découpées par son hôte. La coloration
+fonctionne hors ligne. La résolution de symboles, l’indexation, ZLS, la compilation
+et le débogage relèvent de l’application ou de CyCodeCore.
+
+Un plugin peut hériter de chacun des profils. Les listes Lexilla 0 à 3 remplacent
+respectivement les mots-clés, les littéraux colorés comme mots-clés, les littéraux
+numériques nommés et les types nommés. Une entrée vide conserve la liste héritée.
+Les priorités des callbacks et des règles déclaratives s’appliquent. Voir la
+[référence Zig](https://ziglang.org/documentation/0.17.1/) et la
+[documentation de ZON](https://ziglang.org/documentation/0.17.1/std/#std.zon).
 
 ## Verse {#verse}
 

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 
 
 def properties(path):
@@ -111,6 +112,10 @@ def generate(root, lexilla, scintilla, scite):
     for name in ('SciLexer.h','LexicalStyles.iface'): shutil.copy2(lexilla/'include'/name,vendor/'include'/name)
     shutil.copy2(lexilla/'License.txt', vendor/'License.txt')
     for source in {symbols[name][2] for name in selected}: shutil.copy2(source,vendor/'lexers'/source.name)
+    # Keep the Zig/ZON changes reproducible when refreshing the pinned upstream subset.
+    if 'zig' in selected:
+        subprocess.run(['git', 'apply', '--no-index', str(root.resolve()/'tools/patches/lexilla-zig.patch')],
+                       cwd=root, check=True)
     shutil.copytree(scintilla/'include',root/'third_party/scintilla/include',dirs_exist_ok=True)
     shutil.copy2(scintilla/'License.txt',root/'third_party/scintilla/License.txt')
     shutil.copy2(scite/'License.txt', root/'third_party/SciTE-Properties-License.txt')

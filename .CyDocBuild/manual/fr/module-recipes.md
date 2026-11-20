@@ -4,7 +4,7 @@ title: API et recettes des modules
 description: Données, gestes et retours d’action des vues spécialisées.
 section: API
 order: 21
-sourceRevision: 5
+sourceRevision: 6
 ---
 
 Les en-têtes utilisent le préfixe `cyui/` ; liez leurs [cibles correspondantes](doc:modules). Gallery.cpp, onglets 4–19, contient les exemples. Les callbacks et superpositions de l’hôte suivent les règles palette/dp/style.
@@ -335,7 +335,7 @@ emploie des coordonnées écran dans le clip courant.
 
 ### Code, édition et comparaison {#code-editing-and-git-style-diff-presentation}
 
-`CodeDocument::setText(text,language,revision)` conserve UTF-8 brut, tabulations, CRLF et présence du saut final. L’affichage développe les tabulations sur quatre colonnes et porte les spans lexicaux. Le catalogue commun propose [102 modes](doc:code), dont plain, C++, C#, Python, JavaScript, TypeScript, Rust, GLSL, HLSL, JSON, Lua, SQL, INI et Markdown. Ajoutez les résultats sémantiques/LSP comme superpositions lorsque nécessaire.
+`CodeDocument::setText(text,language,revision)` conserve UTF-8 brut, tabulations, CRLF et présence du saut final. L’affichage développe les tabulations sur quatre colonnes et porte les spans lexicaux. Le catalogue commun propose [104 modes](doc:code), dont plain, C++, C#, Python, JavaScript, TypeScript, Rust, Zig, ZON, GLSL, HLSL, JSON, Lua, SQL, INI et Markdown. Ajoutez les résultats sémantiques/LSP comme superpositions lorsque nécessaire.
 
 - setOverlays(SourceSpan[],revision) utilise des lignes depuis zéro et des offsets en octets UTF-8. Révisions périmées et offsets internes à un point de code sont refusés.
 - tokenColor(role,background) utilise la palette avec correction vers text pour le contraste ; paintCodeLine dessine les spans préparés.

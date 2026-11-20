@@ -56,6 +56,9 @@ Syntax source revisions and archive hashes are recorded in
 [code-syntax.lock.json](third_party/code-syntax.lock.json). Generated language data
 comes from the pinned SciTE properties and original CyUI shader profiles, with
 notices retained. No Notepad++ source, GPL configuration or plugin binary is bundled.
+The Zig and ZON profiles use the pinned Lexilla Zig lexer. The catalogue generator
+reapplies CyUI's [Zig lexer changes](tools/patches/lexilla-zig.patch) for ZON,
+numeric boundaries and identifier styling.
 The built-in list describes syntax modes; it does not imply a compiler, language
 server, debugger or compatibility with the Notepad++ plugin ABI.
 

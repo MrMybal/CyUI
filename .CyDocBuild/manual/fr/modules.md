@@ -4,7 +4,7 @@ title: Sélectionner les modules
 description: Cibles CMake, dépendances et contrats des composants optionnels.
 section: Guides
 order: 10
-sourceRevision: 8
+sourceRevision: 9
 ---
 
 CyUI 1.2 fournit un socle Dear ImGui et des modules d’interface sélectionnables. Le code CyUI est sous MIT. L’application conserve modèles, moteurs, fichiers, services, validation et historique Undo.
@@ -28,7 +28,7 @@ Les en-têtes ci-dessous sont relatifs à `include/cyui/`. Chaque cible porte le
 | Nodes | `modules/Nodes.h` | Cartes, ports, liens et propositions de déplacement/connexion/suppression | Canvas |
 | Timeline | `modules/Timeline.h` | Pistes, clips, marqueurs, règle, déplacement/rognage, plage | Canvas |
 | AudioViews | `modules/AudioViews.h` | Enveloppes ADSR/AHDSR, formes d’onde, spectres remplis/par bandes, spectrogrammes défilants, vues spatiales/persistantes, niveaux, EQ et dynamique | Plots |
-| Code | `modules/Code.h` | Contrats/constructeurs de fragments paginés ; Lecture de source, 102 syntaxes, registre, superpositions sémantiques, annotations, recherche | Core + Lexilla + threads système |
+| Code | `modules/Code.h` | Contrats/constructeurs de fragments paginés ; Lecture de source, 104 syntaxes, registre, superpositions sémantiques, annotations, recherche | Core + Lexilla + threads système |
 | Diff | `modules/Diff.h` | Comparaison unifiée/côte à côte, numéros, blocs et différences internes | Code |
 | CodeEditor | `modules/CodeEditor.h` | TextEditor en mémoire et PagedCodeEditor fourni par l’hôte (capacités distinctes) | Code + TextEditor MIT, C++20 |
 | Inspector | `modules/Inspector.h` | Propriétés typées, int64 exact, validation et brouillons | Core |
