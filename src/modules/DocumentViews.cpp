@@ -273,9 +273,18 @@ TranscriptResult transcript(const char *id, TranscriptState &s, const Transcript
     s.fetched = 0;
     s.firstVisible = s.lastVisible = first;
     float y = origin.y + float(transcriptPrefix(s, first) - s.scroll);
+    // GetContentRegionAvail() also drives Markdown wrapping, child widgets and tables.
+    // Give layout the same right edge as drawing and hit testing.
+    const auto contentRight = window->ContentRegionRect.Max.x, workRight = window->WorkRect.Max.x;
+    window->ContentRegionRect.Max.x = window->WorkRect.Max.x = origin.x + width;
     ImGui::PushClipRect(origin, {origin.x + width, origin.y + height}, true);
-    const auto savedClip = window->ClipRect;
-    window->ClipRect.ClipWith({origin, {origin.x + width, origin.y + height}});
+    if (ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+        ImGui::IsMouseHoveringRect(origin, {origin.x + width, origin.y + height})) {
+        for (auto &view : s.views) {
+            view.second.selectionBegin = view.second.selectionEnd = 0;
+            view.second.selecting = false;
+        }
+    }
     for (std::size_t n = first; n < source.count && y < origin.y + height; ++n) {
         ImGui::SetCursorScreenPos({origin.x, y});
         ++s.fetched;
@@ -464,8 +473,9 @@ TranscriptResult transcript(const char *id, TranscriptState &s, const Transcript
         s.heights[m.id] = {measured, signature, n, s.frame, m.role, m.content.substr(0, 70)};
         y = start.y + measured;
     }
-    window->ClipRect = savedClip;
     ImGui::PopClipRect();
+    window->ContentRegionRect.Max.x = contentRight;
+    window->WorkRect.Max.x = workRight;
     // Only local viewport coordinates reach ImGui. Logical history offsets stay in doubles/64-bit
     // scrollbar values, avoiding float precision loss in histories tens of millions of pixels tall.
     window->DC.CursorMaxPos.y = origin.y;

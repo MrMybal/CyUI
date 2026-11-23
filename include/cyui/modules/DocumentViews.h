@@ -101,6 +101,8 @@ struct DocumentHit {
     Rect bounds;
     std::string text;
     std::size_t begin = 0, end = 0;
+    ImFont *font = nullptr;
+    float fontSize = 0;
 };
 struct DocumentState {
     std::vector<CodeViewState> codeViews;
@@ -115,6 +117,7 @@ struct DocumentState {
     float scroll = 0, scrollMax = 0;
     ItemId resizingImage = 0;
     float resizingWidth = 0;
+    double selectionClickTime = -1; // identifies the press even if the view scrolls out of sight
 };
 struct DocumentResult {
     std::string link;

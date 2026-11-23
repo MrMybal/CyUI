@@ -2,6 +2,7 @@
 #include "cyui/modules/DocumentViews.h"
 #include <cctype>
 #include <cfloat>
+#include <cmath>
 
 namespace cyui {
 namespace {
@@ -143,7 +144,7 @@ struct DocumentRenderer {
             const bool hidden = (style & documentSpoiler) && !s.spoilers.count(r.spoiler);
             if (r.spaced && x > origin.x)
                 x += font->CalcTextSizeA(size, FLT_MAX, 0, " ").x;
-            std::size_t at = 0;
+            std::size_t at = 0, wordEnd = 0;
             while (at < shownText.size()) {
                 if (shownText[at] == '\n') {
                     x = origin.x;
@@ -152,34 +153,28 @@ struct DocumentRenderer {
                     any = true;
                     continue;
                 }
-                auto end = at;
                 const bool white = std::isspace(static_cast<unsigned char>(shownText[at])) != 0;
-                while (end < shownText.size() && shownText[end] != '\n' &&
-                       (std::isspace(static_cast<unsigned char>(shownText[end])) != 0) == white)
-                    end = nextDocumentChar(shownText, end);
-                float width =
-                    font->CalcTextSizeA(size, FLT_MAX, 0, shownText.data() + at, shownText.data() + end).x;
-                if (x > origin.x && x + width > right) {
+                if (at >= wordEnd) {
+                    wordEnd = at;
+                    while (wordEnd < shownText.size() && shownText[wordEnd] != '\n' &&
+                           (std::isspace(static_cast<unsigned char>(shownText[wordEnd])) != 0) == white)
+                        wordEnd = nextDocumentChar(shownText, wordEnd);
+                }
+                const char *remaining = nullptr;
+                const float limit = std::nextafter(std::max(0.f, right - x), FLT_MAX);
+                float width = font->CalcTextSizeA(size, limit, 0, shownText.data() + at,
+                                                  shownText.data() + wordEnd, &remaining).x;
+                auto end = std::size_t(remaining - shownText.data());
+                if (end < wordEnd && x > origin.x) {
                     x = origin.x;
                     y += line;
-                    if (white) {
-                        at = end;
-                        continue;
-                    }
+                    if (white)
+                        at = wordEnd;
+                    continue;
                 }
-                if (width > right - x) {
-                    end = at;
-                    width = 0;
-                    while (end < shownText.size() && shownText[end] != '\n') {
-                        const auto next = nextDocumentChar(shownText, end);
-                        const float w = font->CalcTextSizeA(size, FLT_MAX, 0, shownText.data() + end,
-                                                            shownText.data() + next)
-                                            .x;
-                        if (end > at && width + w > right - x)
-                            break;
-                        width += w;
-                        end = next;
-                    }
+                if (end == at) { // Even a column narrower than one glyph must make UTF-8 progress.
+                    end = nextDocumentChar(shownText, at);
+                    width = font->CalcTextSizeA(size, FLT_MAX, 0, shownText.data() + at, shownText.data() + end).x;
                 }
                 float sx = x;
                 if (runs.size() == 1 && at == 0 && end == shownText.size()) {
@@ -215,7 +210,7 @@ struct DocumentRenderer {
                         draw->AddLine({sx, y + size * .55f}, {sx + width, y + size * .55f}, color, dp(1));
                     s.hits.push_back({bounds, shownText.substr(at, end - at),
                                       r.sourceBegin + std::min(at, r.sourceEnd - r.sourceBegin),
-                                      r.sourceBegin + std::min(end, r.sourceEnd - r.sourceBegin)});
+                                      r.sourceBegin + std::min(end, r.sourceEnd - r.sourceBegin), font, size});
                 }
                 if ((hidden || !r.target.empty()) && !white) {
                     ScopedID wordId{int(at)};
@@ -239,7 +234,7 @@ struct DocumentRenderer {
                 x += width;
                 at = end;
                 any = true;
-                if (at < shownText.size() && x >= right) {
+                if (at < wordEnd) {
                     x = origin.x;
                     y += line;
                 }
@@ -367,42 +362,62 @@ struct DocumentRenderer {
         }
     }
     void selection() {
-        if (!o.selection)
+        if (!o.selection) {
+            s.selecting = false;
             return;
+        }
         auto &io = ImGui::GetIO();
+        s.selecting = s.selecting && s.selectionClickTime == io.MouseClickedTime[0] &&
+                      (ImGui::IsMouseDown(0) || ImGui::IsMouseReleased(0));
+        const bool pressed = ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered();
         const DocumentHit *near = nullptr;
-        float best = FLT_MAX;
-        for (const auto &h : s.hits) {
-            const float dx = std::max({h.bounds.min.x - io.MousePos.x, 0.f, io.MousePos.x - h.bounds.max.x}),
-                        dy = std::max({h.bounds.min.y - io.MousePos.y, 0.f, io.MousePos.y - h.bounds.max.y});
-            const float d = dx * dx + 16 * dy * dy;
-            if (d < best) {
-                near = &h;
-                best = d;
+        if (pressed || s.selecting) {
+            float bestY = FLT_MAX, bestX = FLT_MAX;
+            for (const auto &h : s.hits) {
+                if (hitDocument(h.bounds, io.MousePos) && ImGui::IsMouseHoveringRect(h.bounds.min, h.bounds.max)) {
+                    near = &h;
+                    break;
+                }
+                if (s.selecting) {
+                    const float dx = std::max({h.bounds.min.x - io.MousePos.x, 0.f, io.MousePos.x - h.bounds.max.x});
+                    const float dy = std::max({h.bounds.min.y - io.MousePos.y, 0.f, io.MousePos.y - h.bounds.max.y});
+                    if (dy < bestY || (dy == bestY && dx < bestX)) {
+                        near = &h;
+                        bestY = dy;
+                        bestX = dx;
+                    }
+                }
             }
         }
-        std::size_t at = 0;
-        if (near) {
+        if (s.selecting && !s.hits.empty() && io.MousePos.y < s.hits.front().bounds.min.y) {
+            s.selectionEnd = s.hits.front().begin;
+        } else if (s.selecting && !s.hits.empty() && io.MousePos.y >= s.hits.back().bounds.max.y) {
+            s.selectionEnd = s.hits.back().end;
+        } else if (near) {
             float width = 0;
             std::size_t index = 0;
             while (index < near->text.size()) {
                 const auto next = nextDocumentChar(near->text, index);
-                const float w = ImGui::CalcTextSize(near->text.data() + index, near->text.data() + next).x;
+                const float w = near->font->CalcTextSizeA(near->fontSize, FLT_MAX, 0, near->text.data() + index,
+                                                          near->text.data() + next).x;
                 if (io.MousePos.x < near->bounds.min.x + width + w * .5f)
                     break;
                 width += w;
                 index = next;
             }
-            at = near->begin + std::min(index, near->end - near->begin);
+            s.selectionEnd = near->begin + std::min(index, near->end - near->begin);
+            if (pressed) {
+                s.selectionBegin = s.selectionEnd;
+                s.selectionClickTime = io.MouseClickedTime[0];
+                s.selecting = true;
+            }
+        } else if (pressed) {
+            s.selectionBegin = s.selectionEnd = 0;
         }
-        if (hovered() && ImGui::IsMouseClicked(0) && near) {
-            s.selectionBegin = s.selectionEnd = at;
-            s.selecting = true;
-        }
-        if (s.selecting && ImGui::IsMouseDown(0) && near)
-            s.selectionEnd = at;
-        if (!ImGui::IsMouseDown(0))
+        if (ImGui::IsMouseReleased(0))
             s.selecting = false;
+        if (s.selectionBegin == s.selectionEnd)
+            return;
         const auto low = std::min(s.selectionBegin, s.selectionEnd),
                    high = std::max(s.selectionBegin, s.selectionEnd);
         float previousY = -FLT_MAX;
@@ -412,8 +427,8 @@ struct DocumentRenderer {
                            b = std::min(h.text.size(), high - h.begin);
                 if (b <= a)
                     continue;
-                const float x = ImGui::CalcTextSize(h.text.data(), h.text.data() + a).x,
-                            w = ImGui::CalcTextSize(h.text.data() + a, h.text.data() + b).x;
+                const float x = h.font->CalcTextSizeA(h.fontSize, FLT_MAX, 0, h.text.data(), h.text.data() + a).x,
+                            w = h.font->CalcTextSizeA(h.fontSize, FLT_MAX, 0, h.text.data() + a, h.text.data() + b).x;
                 ImGui::GetWindowDrawList()->AddRectFilled({h.bounds.min.x + x, h.bounds.min.y},
                                                           {h.bounds.min.x + x + w, h.bounds.max.y},
                                                           alpha(palette().selection, .5f));
@@ -422,7 +437,7 @@ struct DocumentRenderer {
                 result.selection += h.text.substr(a, b - a);
                 previousY = h.bounds.min.y;
             }
-        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && io.KeyCtrl &&
+        if (ImGui::IsWindowFocused() && io.KeyCtrl &&
             ImGui::IsKeyPressed(ImGuiKey_C) && !result.selection.empty())
             ImGui::SetClipboardText(result.selection.c_str());
     }

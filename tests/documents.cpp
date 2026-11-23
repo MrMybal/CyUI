@@ -41,6 +41,84 @@ void frame(F draw, ImVec2 mouse = {-100, -100}, int button = -1, bool down = fal
     if (escape)
         io.AddKeyEvent(ImGuiKey_Escape, false);
 }
+void transcriptSelectionAndWrap() {
+    using namespace cyui;
+    TranscriptState chat;
+    chat.follow = false;
+    std::vector<TranscriptMessage> rows{{11, "A", "Premier message avec **plusieurs mots**."},
+                                        {12, "B", "Deuxième message, sur la ligne suivante."}};
+    float width = 360, right = 0;
+    auto draw = [&] {
+        transcript("selection-wrap", chat, rows, {width, 500});
+        for (const auto *child : ImGui::GetCurrentWindow()->DC.ChildWindows)
+            if (child->Active && std::string(child->Name).find("##transcript") != std::string::npos)
+                right = child->DC.CursorStartPos.x + child->InnerRect.GetWidth() -
+                        2 * child->WindowPadding.x - ImGui::GetStyle().ScrollbarSize;
+    };
+    auto start = [&](ItemId id) {
+        const auto &r = chat.views.at(id).hits.front().bounds;
+        return ImVec2{r.min.x + 1, (r.min.y + r.max.y) / 2};
+    };
+    frame(draw);
+    const auto first = start(11), second = start(12);
+    frame(draw, first);
+    frame(draw, first, 0, true);
+    frame(draw, {second.x + 50, second.y});
+    check(chat.views.at(11).selecting && !chat.views.at(12).selecting &&
+              chat.views.at(11).selectionEnd == chat.views.at(11).hits.back().end &&
+              chat.views.at(12).selectionBegin == chat.views.at(12).selectionEnd,
+          "dragging out of a message keeps the selection in its original message");
+    frame(draw, second, 0, false);
+    frame(draw, second, 0, true);
+    frame(draw, {second.x + 50, second.y});
+    check(chat.views.at(11).selectionBegin == chat.views.at(11).selectionEnd &&
+              chat.views.at(12).selectionBegin != chat.views.at(12).selectionEnd,
+          "starting another selection clears the old message");
+    const auto &wordHit = chat.views.at(12).hits.front();
+    const auto expectedCopy = wordHit.text;
+    frame(draw, {wordHit.bounds.max.x - .1f, second.y}, 0, false);
+    auto &platform = ImGui::GetPlatformIO();
+    const auto oldCopy = platform.Platform_SetClipboardTextFn;
+    auto *oldUser = platform.Platform_ClipboardUserData;
+    std::string copied;
+    platform.Platform_ClipboardUserData = &copied;
+    platform.Platform_SetClipboardTextFn = [](ImGuiContext *ctx, const char *value) {
+        *static_cast<std::string *>(ctx->PlatformIO.Platform_ClipboardUserData) = value;
+    };
+    const auto copyMod = ImGui::GetIO().ConfigMacOSXBehaviors ? ImGuiMod_Super : ImGuiMod_Ctrl;
+    ImGui::GetIO().AddKeyEvent(copyMod, true);
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_C, true);
+    frame(draw);
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_C, false);
+    ImGui::GetIO().AddKeyEvent(copyMod, false);
+    frame(draw);
+    platform.Platform_SetClipboardTextFn = oldCopy;
+    platform.Platform_ClipboardUserData = oldUser;
+    check(copied == expectedCopy, "copy uses only the selected word from the second message");
+    const ImVec2 blank{first.x, second.y + 120};
+    frame(draw, blank, 0, true);
+    frame(draw, {blank.x + 40, blank.y});
+    check(!chat.views.at(11).selecting && !chat.views.at(12).selecting &&
+              chat.views.at(12).selectionBegin == chat.views.at(12).selectionEnd,
+          "clicking blank chat space clears selection without starting a drag");
+    frame(draw, blank, 0, false);
+
+    std::string word;
+    for (int i = 0; i < 37; ++i) word += "été";
+    rows[0].content = "Une réponse avec **du texte en gras** et un lien [" + word + "](https://example.org).";
+    for (float w : {360.f, 219.f, 480.f}) {
+        width = w;
+        frame(draw);
+        std::string displayed;
+        bool inside = true;
+        for (const auto &hit : chat.views.at(11).hits) {
+            inside &= hit.bounds.max.x <= right + .1f;
+            displayed += hit.text;
+        }
+        check(inside && displayed.find(word) != std::string::npos && displayed.back() == '.',
+              "wrapped text stays before the scrollbar and preserves every UTF-8 byte after resizing");
+    }
+}
 } // namespace
 int main(int argc, char **argv) {
     using namespace cyui;
@@ -58,6 +136,7 @@ int main(int argc, char **argv) {
     int width, height;
     io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
     io.Fonts->SetTexID(ImTextureID(1));
+    transcriptSelectionAndWrap();
     Document doc;
     const std::string source =
         "# Title\n\n**Bold *nested*** <u>under</u> ~~gone~~ ||secret|| <mark>marked</mark> <kbd>Ctrl</kbd> "
