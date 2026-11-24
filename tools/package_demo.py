@@ -24,6 +24,7 @@ NOTICES = (
     "third_party/miniz/LICENSE",
     "third_party/pugixml/LICENSE.md",
     "third_party/jetbrains-mono/OFL.txt",
+    "third_party/libvterm/LICENSE",
     "third_party/lexilla/License.txt",
     "third_party/scintilla/License.txt",
     "third_party/SciTE-Properties-License.txt",

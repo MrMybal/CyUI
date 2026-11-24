@@ -19,6 +19,7 @@ own copyright and licenses. Selecting a module does not relicense its dependenci
 | MD4C | MIT | Bundled CommonMark/GFM parser, only with DocumentViews | [License](third_party/md4c/LICENSE.md), [pinned source and C++ casts](third_party/md4c/UPSTREAM.md) |
 | pugixml 1.15 | MIT | XML parsing only with OfficeIO | [License](third_party/pugixml/LICENSE.md), [pinned version](third_party/pugixml/UPSTREAM.md) |
 | miniz inflate | MIT | Raw DEFLATE decompressor, only with DocumentIO | [License](third_party/miniz/LICENSE), [pinned source](third_party/miniz/UPSTREAM.md) |
+| libvterm, Vim variant | MIT | Bundled VT emulator, only with Terminal | [License](third_party/libvterm/LICENSE), [pinned source](third_party/libvterm/README.cyui.md) |
 | markdown-it-py and linkify-it-py | MIT | Python document parsing; external pure Python dependencies | Preserve the installed packages’ licenses, including mdurl and uc-micro-py notices |
 | ImGuizmo | MIT upstream | Optional host-supplied target | Preserve the license of the exact host dependency |
 | Chromium Embedded Framework | BSD-style, three conditions | Optional host-supplied SDK/runtime; no CEF binaries in this repository | Preserve the selected SDK's LICENSE.txt and Chromium CREDITS.html, plus its component notices |

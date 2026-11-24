@@ -25,6 +25,7 @@ struct GalleryResources {
     std::function<void(const char* page, const char* section)> openDocumentation;
     int previewDocumentMode = -1; // 0 Live, 1 Split, 2 Source, 3 Reading; applied once per change
     bool previewDocumentImage = false; // native in-window zoom example
+    std::function<bool()> drawTerminalSession; // optional live host terminal, false shows the preview
 };
 
 // selectTab >= 0 brings that page to the front once (again when the value
@@ -34,7 +35,7 @@ struct GalleryResources {
 // commands, diagnostics, documents, web), 20 layout, 21 filtering, 22 audio analysis, 23 spectral displays, 24 document editor, 25 media player, 26 spreadsheet, 27 paged document,
 // 28 data grid.
 // 30 hierarchy, 31 data view, 32 file picker, 33 virtual arrays,
-// 34 sets, 35 maps, 36 rich data view, 37 integrated editor workspace, 38 envelopes.
+// 34 sets, 35 maps, 36 rich data view, 37 integrated editor workspace, 38 envelopes, 39 terminal.
 CYUI_API void showGallery(bool *open = nullptr, int selectTab = -1);
 CYUI_API void showGallery(bool *open, int selectTab, const GalleryResources &resources);
 // Live palette editor; saves / loads .cytheme files.

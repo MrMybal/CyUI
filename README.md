@@ -211,6 +211,7 @@ adding a code editor, audio engine or browser.
 | `CyUI::Viewport` | Host-rendered scene surfaces, orbit camera and 2D transform controls |
 | `CyUI::Commands` | Searchable keyboard command palette |
 | `CyUI::Diagnostics` | Bounded logs, filters and diagnostic navigation |
+| `CyUI::Terminal` | Embeddable VT terminal with scrollback, selection and host-owned shell I/O |
 | `CyUI::DocumentViews` | Native Markdown/GFM, images, spoilers, tasks, tables and transcripts |
 | `CyUI::DocumentEditor` | Live/source/split/reading editor |
 | `CyUI::DocumentIO` | Markdown/CyMD buffers, HTML clipboard |

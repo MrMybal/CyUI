@@ -4,6 +4,9 @@
 
 #include <cyui/CyUI.h>
 #include "Help.h"
+#if defined(CYUI_DEMO_TERMINAL)
+#include "../terminal/TerminalDemo.h"
+#endif
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
@@ -299,6 +302,9 @@ struct App {
     }
     int page = 0;
     cyui::GalleryResources resources;
+#if defined(CYUI_DEMO_TERMINAL)
+    terminal_example::TerminalDemo terminal;
+#endif
     int galleryTab = -1;
     bool gallery = true;
     bool layoutChecked = false;
@@ -612,6 +618,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     app.resources.previewDocumentMode=documentMode;
     app.resources.previewDocumentImage=documentZoom;
     app.resources.previewCommands = !capturePath.empty() && tab == 16;
+#if defined(CYUI_DEMO_TERMINAL)
+    app.resources.drawTerminalSession = [&app] { return app.terminal.draw(); };
+#endif
     cyui::notify(tr("Welcome to the CyUI demo").c_str(), cyui::Tone::accent);
     auto done = false;
     bool captured = false;
@@ -629,6 +638,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
             break;
         // Hidden capture windows still need to render their requested frames.
         // Otherwise, minimised or locked interactive windows can wait.
+#if defined(CYUI_DEMO_TERMINAL)
+        app.terminal.pump();
+#endif
         if (capturePath.empty() && gOccluded && gSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
             ::Sleep(10);
             continue;

@@ -426,6 +426,7 @@ theme's style.
   - 4–19 the optional modules
   - 20 layout (the application shell), 21 filtering (menus and panels)
   - 38 envelopes (ADSR/AHDSR and reusable curve fills)
+  - 39 terminal (live shell in the native galleries, built-in VT preview elsewhere)
 - `showGallery(&open, selectTab, GalleryResources)`: the same, with host
   resources for the module pages: `texture`, `width` and `height` (Images,
   Viewport), `web` (a live Web backend) and `previewCommands`.
@@ -1005,6 +1006,32 @@ Link CyUI::ImGuizmo only when a compatible host target is supplied.
   returns a selected ID; LogState.levels masks debug/info/warning/error.
   `diagnosticList(id, rows, size)` displays source/line/column/message and returns
   a requested diagnostic ID. The host resolves source navigation.
+- `CyUI::Terminal` (`<cyui/modules/Terminal.h>`) is selected with `CYUI_MODULES=Terminal`.
+  The libvterm-backed grid supports UTF-8, scrollback, VT cursor and alternate-screen
+  modes, application mouse reporting, bracketed paste and ANSI colors mapped to the
+  CyUI palette. Use one `Terminal` and `TerminalViewState` per session and keep both
+  on the UI thread. Pull raw bytes from the host transport into `feed()`, draw the
+  grid, propagate cell dimensions when `terminalView()` returns true, and send
+  `takeInput()` back to the same transport. This includes VT replies as well as
+  keyboard and paste data. Keep pumping I/O while the panel is hidden.
+
+  ```cpp
+  // session, terminal and terminalViewState are owned by the application.
+  terminal.feed(session.read());
+  if (cyui::terminalView("##shell", terminal, terminalViewState, cyui::dp(0, 360)))
+      session.resize(terminal.size());
+  if (auto bytes = terminal.takeInput(); !bytes.empty())
+      session.write(bytes);
+  ```
+
+  The native gallery starts a local shell on explicit action. The host reference
+  is in `examples/terminal/`, with ConPTY on Windows 10 1809+ and a PTY on Linux
+  and macOS. The Windows choices are Windows PowerShell and CMD. On Linux and
+  macOS, use the configured `SHELL` or explicit Bash. On Windows/Linux, use
+  Ctrl+Shift+C/V for the clipboard, and on macOS Cmd+C/V also work. Shift+Page
+  Up/Down browse scrollback. Shift+drag selects text when an application requests
+  mouse reporting. `Terminal::text()` exports plain UTF-8 and `reset()` starts a
+  fresh screen and scrollback for a new connection.
 - `Document::setMarkdown` caches CommonMark/GFM blocks, nested inline styles,
   tasks, sized native images, spoilers, tables, anchors and code. `documentView`
   returns link/media/task/resize requests and selectable visible text. Assign

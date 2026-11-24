@@ -228,6 +228,7 @@ Les dépendances entre modules sont sélectionnées automatiquement ; par exempl
 | `CyUI::Viewport` | Surfaces de scène rendues par l’hôte, caméra orbitale et contrôles de transformation 2D |
 | `CyUI::Commands` | Palette de commandes au clavier avec recherche |
 | `CyUI::Diagnostics` | Journaux à taille limitée, filtres et navigation dans les diagnostics |
+| `CyUI::Terminal` | Terminal VT intégrable avec historique, sélection et connexion au shell gérée par l’application |
 | `CyUI::DocumentViews` | Markdown/GFM natif, images, spoilers, tâches, tableaux et conversations |
 | `CyUI::DocumentEditor` | Éditeur Direct/Source/Côte à côte/Lecture |
 | `CyUI::DocumentIO` | Tampons Markdown/CyMD, presse-papiers HTML |

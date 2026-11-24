@@ -4,6 +4,9 @@
 #include <cyui/Gallery.h>
 #include <cstdio>
 #include <cstdlib>
+#if defined(CYUI_DEMO_TERMINAL)
+#include "TerminalDemo.h"
+#endif
 
 int main(int argc, char **argv) {
     std::string capture, theme = "mid-grey";
@@ -58,12 +61,19 @@ int main(int argc, char **argv) {
     resources.width = 480;
     resources.height = 240;
     resources.imagePreviews.fill(resources.texture);
+#if defined(CYUI_DEMO_TERMINAL)
+    terminal_example::TerminalDemo terminal;
+    resources.drawTerminalSession = [&terminal] { return terminal.draw(); };
+#endif
     bool open = true;
     int frames = 0;
     while (open) {
         host.events();
         if (host.closeRequested)
             break;
+#if defined(CYUI_DEMO_TERMINAL)
+        terminal.pump();
+#endif
         host.newFrame();
         ImGui::NewFrame();
         const auto *viewport = ImGui::GetMainViewport();

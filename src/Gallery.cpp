@@ -2467,6 +2467,37 @@ void richDataViewPage() {
                             row.cells[column] = event.edit.value;
 }
 #endif
+#if defined(CYUI_HAS_TERMINAL)
+void terminalPage(const GalleryResources &resources) {
+    if (resources.drawTerminalSession && resources.drawTerminalSession()) return;
+    static Terminal preview;
+    static TerminalViewState state;
+    static bool initialized = false;
+    const auto hint = tr("Select a shell and start a session to run local commands.");
+    const float footerHeight = resources.drawTerminalSession
+        ? ImGui::CalcTextSize(hint.c_str(), nullptr, false, ImGui::GetContentRegionAvail().x).y + ImGui::GetStyle().ItemSpacing.y
+        : 0;
+    if (terminalView("##terminal-preview", preview, state,
+                     {0, std::max(dp(210), ImGui::GetContentRegionAvail().y - footerHeight)}, {false}) || !initialized) {
+        initialized = true;
+        preview.reset();
+        preview.feed("\x1b[1;36mCyUI Terminal\x1b[0m\r\n\r\n"
+                     "\x1b[32mdemo@cyui\x1b[0m:\x1b[34m~/workspace\x1b[0m$ ls -1\r\n"
+                     "\x1b[34mdocs/\x1b[0m\r\n\x1b[34mexamples/\x1b[0m\r\n"
+                     "\x1b[34msrc/\x1b[0m\r\nREADME.md\r\n\r\n"
+                     "\x1b[32mdemo@cyui\x1b[0m:\x1b[34m~/workspace\x1b[0m$ git status --short\r\n"
+                     " \x1b[33mM\x1b[0m docs/AI_GUIDE.md\r\n"
+                     "\x1b[32m??\x1b[0m examples/terminal/\r\n\r\n"
+                     "\x1b[32mdemo@cyui\x1b[0m:\x1b[34m~/workspace\x1b[0m$ ");
+    }
+    if (resources.drawTerminalSession) {
+        ImGui::PushStyleColor(ImGuiCol_Text, palette().textDim);
+        ImGui::TextWrapped("%s", hint.c_str());
+        ImGui::PopStyleColor();
+    }
+}
+#endif
+
 void moduleGallery(int selectedTab, const GalleryResources &resources) {
     (void)resources;
     auto page = [&](const char *label, int index, auto body) {
@@ -2527,6 +2558,9 @@ void moduleGallery(int selectedTab, const GalleryResources &resources) {
 #endif
 #if defined(CYUI_HAS_DIAGNOSTICS)
     page("Diagnostics",17,[]{static LogBuffer buffer;static LogState state;static bool init=false;if(!init){buffer.append(LogLevel::info,"Application initialized");buffer.append(LogLevel::warning,"Example warning");buffer.append(LogLevel::error,"Example diagnostic — no file is modified");init=true;}logView("##log",state,buffer,dp(0,210));std::vector<Diagnostic>rows{{1,LogLevel::warning,"example.cpp","Unused value",8,4},{2,LogLevel::error,"shader.hlsl","Example compiler diagnostic",12,3}};diagnosticList("##diagnostics",rows,dp(0,140));});
+#endif
+#if defined(CYUI_HAS_TERMINAL)
+    page("Terminal", 39, [&] { terminalPage(resources); });
 #endif
 #if defined(CYUI_HAS_DOCUMENTVIEWS)
     page("Documents",18,[&]{documentsPage(resources);});
