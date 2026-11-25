@@ -427,6 +427,8 @@ theme's style.
   - 20 layout (the application shell), 21 filtering (menus and panels)
   - 38 envelopes (ADSR/AHDSR and reusable curve fills)
   - 39 terminal (live shell in the native galleries, built-in VT preview elsewhere)
+  - 40 image comparison, 41 hex view, 42 video scopes and sparkline, 43 tasks,
+    44 search results and text marks, 45 graph navigation, 46 timeline overview
 - `showGallery(&open, selectTab, GalleryResources)`: the same, with host
   resources for the module pages: `texture`, `width` and `height` (Images,
   Viewport), `web` (a live Web backend) and `previewCommands`.
@@ -603,6 +605,14 @@ options.formatX = [](double hz) { return formatFrequency(hz); };
 auto hover = cyui::plot("##response", state, {&line, 1}, cyui::dp(0, 220), options);
 ```
 
+Use `sparkline(id, ArrayView<Point>, size, options)` for a compact trend with
+optional fixed limits and an area fill. Non-finite samples leave gaps.
+`videoScope(id, planes, size, options)` draws prepared row-major density planes
+as a luma waveform, RGB parade, or vectorscope. Rows run from top to bottom.
+Pass planes in R, G, B order for the parade. `ceiling` and `gamma` apply to
+all planes, and the hover result identifies the source bin. The host prepares
+the measurements and owns their color-space interpretation.
+
 ### Envelopes and reusable curve fills
 
 C++ `drawCurveFill(points, baseline, CurveFillOptions)` belongs to **Plots**. It
@@ -715,6 +725,18 @@ drag clips or their edges to move/trim. Locked clips/readOnly are respected.
 Blank drag selects a time interval; the ruler requests seeking. TimelineOptions
 supplies playhead, snap/minDuration, revision, formatTime, snapTime and drawClip.
 Time units and frame/sample rounding remain the application's responsibility.
+
+`TimelineOptions::overview` adds a draggable summary with pointer-centered
+wheel zoom and double-click to fit. `timelineNavigator` can also control a
+standalone visible range. `TimelineInterval` supplies clickable colored ranges,
+and `TimelineResult::interval` returns their ID. `snapTargets` uses a screen-space
+tolerance before falling back to the host's normal snap callback or grid.
+
+For graph navigation, set `NodeState::reveal` to center and select a node by
+its ID, or draw a filtered `nodeNavigator` with host descriptions. `graphChanges`
+shows host-prepared changes and provides navigation. Pass the same changes to
+`NodeOptions::changes` for colored graph overlays. To draw a removed element in
+the graph, supply its old geometry and use a read-only graph view.
 
 ### Audio controls and prepared signal views
 
@@ -980,11 +1002,25 @@ Folder parents and thumbnails are host data; querying/scanning/loading stays out
 | `transformGizmo(id, TransformState&, Transform2D, options)` | 2D move/scale/rotation overlay, projection/unprojection callbacks |
 | `gizmo3D(id, Gizmo3DState&, matrix, view, projection, rect, options)` | Optional host ImGuizmo adapter for column-major scene transforms |
 
-Image: wheel zooms, middle drag pans, double-click fits; the crop tool returns a
-rectangle, and Escape restores the previous selection. Gradient: double-click
+Image: wheel zooms at the pointer and double-click fits. In `ImageTool::inspect`,
+drag with the left button to pan. A short left click selects a pixel on release.
+Middle drag and Space+left pan in both tools. In `ImageTool::crop`, left drag
+returns a rectangle and Escape restores the previous selection. Use
+`imageViewToolbar(id, state)` for Fit, 100%, and center-anchored zoom buttons.
+Gradient: double-click
 adds an interpolated stop, drag moves it, right-click removes a stop when more
 than two remain. Host color editors change stop colors. Texture lifetime, color
 management and document transforms remain host-owned.
+
+`imageCompare(id, state, first, second, size, options)` supports synchronized
+side-by-side, wipe and blink comparisons. Both textures share the upper-left
+pixel origin and scale. Pass labels and optional `ImageAnnotation` rectangles in
+the first image's pixel coordinates. `ImageCompareResult::selected` requests
+selection by ID. The wipe handle owns its left drag. Supply prepared textures
+for different renderings of the same source, including difference maps.
+Python exposes `image_viewport`, `image_view_toolbar` and `image_compare` in
+`cyui_modules.images`. Custom Python canvases can enable `left_pan=True` when
+the active tool leaves the left button available.
 
 The transform gizmo's handles are ImGui items: over a canvas (imageViewport,
 viewport, CanvasScope) they take the hover and the click, so nothing underneath reacts.
@@ -1032,6 +1068,24 @@ Link CyUI::ImGuizmo only when a compatible host target is supplied.
   Up/Down browse scrollback. Shift+drag selects text when an application requests
   mouse reporting. `Terminal::text()` exports plain UTF-8 and `reset()` starts a
   fresh screen and scrollback for a new connection.
+- `taskRow` and `taskPanel` (`CyUI::Diagnostics`) display host-owned task rows with
+  status, progress and an optional `LogBuffer`. Keep `TaskPanelState` per panel.
+  Handle `TaskPanelResult::cancel` in the application and publish subsequent
+  status changes through the rows. An empty progress value animates a running task.
+  Python offers `task_row` and `task_panel` in `cyui_modules.diagnostics`.
+- `CyUI::HexView` (`<cyui/modules/HexView.h>`) displays a virtual 64-bit byte
+  source in read-only hex and ASCII columns. Link `CyUI::HexView` or select
+  `CYUI_MODULES=HexView`. Set `HexSource::size` and provide a nonblocking `read`
+  callback over memory or a host paging cache. The callback can return a short
+  read while pages are pending. Supply `HexHighlight` ranges in file coordinates.
+  Set `HexViewState::reveal` to bring an offset on screen, or use the hex offset
+  field. `HexViewResult::selection` is a byte range. The clipboard is bounded.
+- `searchResults` (`CyUI::Code`) groups prepared `SearchHit` records by source,
+  displays marked excerpts, and reports the selected and requested reveal IDs.
+  Supply a `CodeDocument` preview through `SearchResultsOptions::preview` for a
+  selected hit. `annotatedText` independently displays selectable `TextMark`
+  ranges over plain UTF-8. Marks use half-open byte ranges with aligned UTF-8
+  boundaries. Advance the text revision whenever a large document changes.
 - `Document::setMarkdown` caches CommonMark/GFM blocks, nested inline styles,
   tasks, sized native images, spoilers, tables, anchors and code. `documentView`
   returns link/media/task/resize requests and selectable visible text. Assign

@@ -2,6 +2,7 @@
 #include "cyui/modules/Canvas.h"
 #include <string>
 #include <functional>
+#include <optional>
 
 namespace cyui {
 struct CYUI_API Axis {
@@ -68,4 +69,31 @@ struct HeatmapResult {
     bool clicked = false;
 };
 CYUI_API HeatmapResult heatmap(const char *id, ArrayView<float>, int columns, int rows, Range values, ImVec2 size);
+
+struct SparklineOptions {
+    std::optional<Range> y;
+    int colorIndex = 0;
+    bool fill = true;
+};
+// Compact plot of ordered samples. Non-finite values leave visible gaps.
+CYUI_API PlotResult sparkline(const char *id, ArrayView<Point>, ImVec2 size = {},
+                             const SparklineOptions & = {});
+
+enum class VideoScopeMode { lumaWaveform, rgbParade, vectorscope };
+struct VideoScopePlane {
+    ArrayView<float> density; // row-major, row 0 at the top. Positive values are counts or intensities.
+    int columns = 0, rows = 0;
+};
+struct VideoScopeOptions {
+    VideoScopeMode mode = VideoScopeMode::lumaWaveform;
+    float ceiling = 1;        // common reference intensity for all planes
+    float gamma = .5f;
+};
+struct VideoScopeResult {
+    int plane = -1, row = -1, column = -1;
+    float density = 0;
+};
+// One plane for luma or chroma; three planes (R, G, B) for the parade.
+CYUI_API VideoScopeResult videoScope(const char *id, ArrayView<VideoScopePlane>, ImVec2 size = {},
+                                    const VideoScopeOptions & = {});
 } // namespace cyui

@@ -1,6 +1,7 @@
 #pragma once
 #include "cyui/modules/Canvas.h"
 #include <functional>
+#include <optional>
 #include <string>
 
 namespace cyui {
@@ -44,6 +45,21 @@ struct NodeFragment {
 struct NodeSelection {
     std::vector<ItemId> nodes, groups, links, reroutes;
 };
+enum class GraphChangeKind { added, modified, removed };
+struct GraphChange {
+    ItemId id = 0;
+    GraphChangeKind kind = GraphChangeKind::modified;
+    bool link = false;
+    std::string title, detail;
+};
+struct NodeNavigationItem {
+    ItemId id = 0;
+    std::string title, detail;
+};
+struct NodeNavigationState {
+    TextFilter filter;
+    std::optional<ItemId> selected;
+};
 struct NodeResult {
     Edit<std::vector<NodeMove>> moved;
     ItemId connectFrom = 0, connectTo = 0; // valid when connect
@@ -55,6 +71,7 @@ struct NodeResult {
     Edit<std::vector<NodeReroute>> reroutes;
     std::vector<ItemId> removeGroups, removeReroutes;
     std::vector<ItemId> removeLinks;
+    std::optional<ItemId> revealed;
 };
 struct NodeState {
     CanvasState canvas;
@@ -77,6 +94,7 @@ struct NodeState {
     Point contextPosition;
     std::string groupLabel;
     std::vector<ItemId> selectedGroups, selectedLinks, selectedReroutes;
+    std::optional<ItemId> reveal; // center and select this node during the next draw
 };
 struct NodeOptions {
     bool readOnly = false;
@@ -90,6 +108,7 @@ struct NodeOptions {
     ArrayView<NodeReroute> reroutes;
     std::function<ItemId()> allocateId; // fresh, nonzero IDs across nodes, pins, links and overlays
     bool moveGroupContents = true;
+    ArrayView<GraphChange> changes; // host supplies before/after differences, including any visible ghosts
 };
 CYUI_API NodeFragment copyNodeSelection(ArrayView<ItemId>, ArrayView<Node>, ArrayView<NodeLink>,
                                         ArrayView<NodeGroup> = {}, ArrayView<NodeReroute> = {});
@@ -106,4 +125,9 @@ CYUI_API NodeResult nodeEditor(const char *id, NodeState &, const std::vector<No
 // Layout produces positions; the host decides whether and how to commit them.
 CYUI_API std::vector<NodeMove> arrangeNodes(const std::vector<Node> &, const std::vector<NodeLink> &,
                                             Point spacing = {240, 130});
+CYUI_API std::optional<ItemId> nodeNavigator(const char *id, NodeNavigationState &, NodeState &,
+                                             ArrayView<NodeNavigationItem>, ImVec2 size = {});
+// Returns the selected change index. Selecting an existing node requests a reveal.
+CYUI_API std::optional<std::size_t> graphChanges(const char *id, NodeState &, ArrayView<GraphChange>,
+                                                ImVec2 size = {});
 } // namespace cyui

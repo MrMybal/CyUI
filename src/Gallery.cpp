@@ -2498,6 +2498,188 @@ void terminalPage(const GalleryResources &resources) {
 }
 #endif
 
+#if defined(CYUI_HAS_IMAGES)
+void imageComparisonPage(const GalleryResources &resources) {
+    static ImageCompareState comparison;
+    static std::optional<ItemId> selected;
+    const int width = resources.width > 0 ? resources.width : 480;
+    const int height = resources.height > 0 ? resources.height : 320;
+    const auto a = resources.imagePreviews[0] ? resources.imagePreviews[0] : resources.texture;
+    const auto b = resources.imagePreviews[1] ? resources.imagePreviews[1] : resources.texture;
+    const ImageData before{a, width, height};
+    ImageData after{b, width, height};
+    if (a == b) { after.uvMin.x = 1; after.uvMax.x = 0; }
+    const std::vector<ImageAnnotation> regions{
+        {1, {{width * .16f, height * .19f}, {width * .49f, height * .48f}}, 1, tr("Region A")},
+        {2, {{width * .57f, height * .50f}, {width * .83f, height * .80f}}, 3, tr("Region B")},
+    };
+    textDim("%s", tr("Drag the image to pan. Drag the divider to compare.").c_str());
+    ImageCompareOptions options;
+    options.annotations = regions;
+    options.selected = selected;
+    if (const auto result = imageCompare("##images", comparison, before, after, dp(0, 330), options); result.selected)
+        selected = result.selected;
+}
+#endif
+
+#if defined(CYUI_HAS_HEXVIEW)
+void hexPage() {
+    static HexViewState state;
+    const HexSource source{1024 * 1024, [](std::uint64_t offset, std::uint8_t *data, std::size_t count) {
+        constexpr std::string_view header = "CyUI  |  Virtual byte preview\n";
+        for (std::size_t n = 0; n < count; ++n) {
+            const auto address = offset + n;
+            data[n] = address < header.size() ? std::uint8_t(header[std::size_t(address)])
+                                              : std::uint8_t((address * 37 + address / 29) & 255);
+        }
+        return count;
+    }};
+    const std::vector<HexHighlight> highlights{
+        {{0, 30}, 1, tr("Header")}, {{0x40, 36}, 3, tr("Payload")}, {{0xAC, 11}, 4, tr("Footer")},
+    };
+    HexViewOptions options;
+    options.highlights = highlights;
+    textDim("%s", tr("Select bytes in either column. Right-click to copy.").c_str());
+    hexView("##binary", state, source, dp(0, 390), options);
+}
+#endif
+
+#if defined(CYUI_HAS_PLOTS)
+void scopeDisplaysPage() {
+    static const auto data = [] {
+        std::array<std::vector<float>, 4> planes;
+        constexpr int width = 96, height = 64;
+        for (auto &plane : planes) plane.resize(width * height);
+        for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+            const double t = double(x) / width, h = double(y) / height;
+            for (int channel = 0; channel < 3; ++channel) {
+                const auto drift = (h - .5 - .24 * std::sin(t * 9 + channel * .7)) * (10 + channel * 2);
+                planes[channel][y * width + x] = float(std::exp(-drift * drift));
+            }
+            const double vx = (t - .5) * 2, vy = (h - .5) * 2;
+            const double distance1 = std::hypot(vx - .32, vy + .26), distance2 = std::hypot(vx + .29, vy - .19);
+            planes[3][y * width + x] = float(std::exp(-18 * distance1 * distance1) + .7 * std::exp(-24 * distance2 * distance2));
+        }
+        return planes;
+    }();
+    static int mode = 1;
+    const auto luma = tr("Luma waveform"), rgb = tr("RGB parade"), vector = tr("Vectorscope");
+    const char *modes[]{luma.c_str(), rgb.c_str(), vector.c_str()};
+    segmented("##scope-mode", modes, 3, &mode);
+    const std::array<VideoScopePlane, 3> planes{{{data[mode == 2 ? 3 : 0], 96, 64}, {data[1], 96, 64}, {data[2], 96, 64}}};
+    VideoScopeOptions scope;
+    scope.mode = VideoScopeMode(mode);
+    videoScope("##scope", {planes.data(), planes.size()}, dp(0, 245), scope);
+    static const std::vector<Point> trend = [] {
+        std::vector<Point> points;
+        for (int t = 0; t < 64; ++t)
+            points.push_back({double(t), t >= 23 && t <= 25 ? NAN : .6 + .28 * std::sin(t * .22) * std::cos(t * .13)});
+        return points;
+    }();
+    sectionTitle(tr("Signal history").c_str());
+    sparkline("##trend", trend, dp(0, 64), {{Range{0, 1}}, 2, true});
+}
+#endif
+
+#if defined(CYUI_HAS_DIAGNOSTICS)
+void tasksPage() {
+    static LogBuffer log;
+    static TaskPanelState state;
+    static bool initialized = false, canceled = false;
+    if (!initialized) {
+        log.append(LogLevel::info, "Prepared 128 source frames", "decode");
+        log.append(LogLevel::info, "Preview cache warmed", "render");
+        log.append(LogLevel::warning, "One thumbnail will be retried", "preview");
+        state.selected = 2;
+        initialized = true;
+    }
+    const std::vector<TaskRowData> rows{
+        {1, tr("Read source"), tr("128 frames detected"), TaskStatus::succeeded, 1.f},
+        {2, tr("Build previews"), tr("Rendering thumbnails"), canceled ? TaskStatus::canceled : TaskStatus::running, .58f, !canceled, &log},
+        {3, tr("Export preview"), tr("Waiting for previews"), TaskStatus::queued},
+    };
+    if (taskPanel("##jobs", state, rows, dp(0, 386)).cancel) {
+        canceled = true;
+        log.append(LogLevel::info, "Canceled by request", "render");
+    }
+}
+#endif
+
+#if defined(CYUI_HAS_CODE)
+void searchResultsPage() {
+    static SearchResultsState state;
+    static AnnotatedTextState annotations;
+    static CodeDocument preview, worker;
+    if (preview.lines().empty()) {
+        preview.setText("// Keep the existing preview until decoding completes.\nconst auto frame = decode(source);\nrender(frame);", CodeLanguage::cpp);
+        worker.setText("def load_preview(source):\n    frame = decode(source)\n    return frame", CodeLanguage::python);
+        state.selected = 1;
+    }
+    const std::vector<SearchHit> hits{
+        {1, "preview.cpp", "const auto frame = decode(source);", 2, 20, {{1, 19, 25, Tone::info, {}}}},
+        {2, "preview.cpp", "render(frame);", 3, 8, {{2, 7, 12, Tone::info, {}}}},
+        {3, "worker.py", "    frame = decode(source)", 2, 13, {{3, 12, 18, Tone::info, {}}}},
+    };
+    SearchResultsOptions options;
+    options.preview = [&](const SearchHit &hit) { return hit.source == "worker.py" ? &worker : &preview; };
+    if (const auto result = searchResults("##search", state, hits, dp(0, 250), options); result.reveal)
+        annotations.selected = result.reveal;
+    constexpr std::string_view note = "Click a marked range to select it.\nUse the context menu to copy the text.";
+    const std::vector<TextMark> marks{{1, 8, 20, Tone::info, tr("Selection")}, {2, 43, 55, Tone::warning, tr("Copy")}};
+    annotatedText("##marks", annotations, note, marks, dp(0, 82), 1);
+}
+#endif
+
+#if defined(CYUI_HAS_NODES)
+void graphNavigationPage() {
+    static NodeState state;
+    static NodeNavigationState navigation;
+    const std::vector<Node> nodes{
+        {1, {35, 68}, "Source", {}, {{11, "Texture", 1}}, 1},
+        {2, {278, 114}, "Resize", {{21, "Input", 1}}, {{22, "Texture", 1}}, 2},
+        {3, {518, 64}, "Preview", {{31, "Input", 1}}, {}, 3},
+    };
+    const std::vector<NodeLink> links{{41, 11, 21, 1}, {42, 22, 31, 1}};
+    const std::vector<NodeNavigationItem> items{{1, "Source", "Read the texture"}, {2, "Resize", "Fit to preview"}, {3, "Preview", "Output"}};
+    const std::vector<GraphChange> changes{{2, GraphChangeKind::modified, false, "Resize", "Updated output size"},
+                                           {42, GraphChangeKind::added, true, "Resize → Preview", "New connection"}};
+    nodeNavigator("##navigation", navigation, state, items, dp(0, 83));
+    graphChanges("##changes", state, changes, dp(0, 96));
+    NodeOptions options;
+    options.readOnly = true;
+    options.changes = changes;
+    nodeEditor("##graph", state, nodes, links, dp(0, 245), options);
+}
+#endif
+
+#if defined(CYUI_HAS_TIMELINE)
+void timelineNavigationPage() {
+    static TimelineState state;
+    static double cursor = 3.25;
+    static std::optional<ItemId> active;
+    static std::vector<TimelineClip> clips{{1, 1, 1, 2.5, "Opening", 1}, {2, 1, 4.5, 3, "Main take", 2}, {3, 2, 8.25, 4, "Titles", 3}};
+    const std::vector<TimelineLane> lanes{{1, "Video", 54}, {2, "Overlay", 54}};
+    const std::vector<TimelineInterval> intervals{{1, {1.4, 2.1}, tr("Opening"), 1},
+                                                   {2, {5.1, 6.65}, tr("Review"), 2},
+                                                   {3, {9.7, 11.2}, tr("Titles"), 3}};
+    const std::vector<double> targets{1.4, 2.1, 3.5, 5.1, 6.65, 9.7, 11.2};
+    TimelineOptions options;
+    options.playhead = cursor;
+    options.overview = Range{0, 16};
+    options.intervals = intervals;
+    options.snapTargets = targets;
+    options.snap = .25;
+    const auto result = timeline("##timeline", state, lanes, clips, {}, dp(0, 310), options);
+    if (result.seek) cursor = result.time;
+    if (result.clips.committed()) clips = result.clips.value;
+    if (result.interval) {
+        active = result.interval;
+        for (const auto &interval : intervals) if (interval.id == active) cursor = interval.time.min;
+    }
+    for (const auto &interval : intervals) if (interval.id == active) textDim("%s", interval.label.c_str());
+}
+#endif
+
 void moduleGallery(int selectedTab, const GalleryResources &resources) {
     (void)resources;
     auto page = [&](const char *label, int index, auto body) {
@@ -2544,7 +2726,19 @@ void moduleGallery(int selectedTab, const GalleryResources &resources) {
     page("Assets",13,[&]{assetsPage(resources);});
 #endif
 #if defined(CYUI_HAS_IMAGES)
-    page("Images",14,[&]{static GradientState gradient;static std::vector<GradientStop>stops; if(stops.empty())stops={{1,0,vec(palette().info)},{2,.5,vec(palette().accent)},{3,1,vec(palette().success)}};auto e=gradientEditor("##gradient",gradient,stops,dp(0,56));if(e.committed())stops=e.value;static ImageState state;ImageData image{resources.texture,resources.width?resources.width:256,resources.height?resources.height:256};imageViewport("##image",state,image,dp(0,330),ImageTool::crop);});
+    page("Images", 14, [&] {
+        static GradientState gradient;
+        static std::vector<GradientStop> stops;
+        static ImageState state;
+        static bool crop = false;
+        if (stops.empty()) stops = {{1, 0, vec(palette().info)}, {2, .5, vec(palette().accent)}, {3, 1, vec(palette().success)}};
+        auto edit = gradientEditor("##gradient", gradient, stops, dp(0, 56));
+        if (edit.committed()) stops = std::move(edit.value);
+        toggleSwitch(trLabel("Crop").c_str(), &crop);
+        imageViewToolbar("##image-tools", state);
+        const ImageData image{resources.texture, resources.width ? resources.width : 256, resources.height ? resources.height : 256};
+        imageViewport("##image", state, image, dp(0, 330), crop ? ImageTool::crop : ImageTool::inspect);
+    });
 #endif
 #if defined(CYUI_HAS_VIEWPORT)
     page("Viewport",15,[&]{textDim(tr("Alt-left drag: orbit. Middle drag: pan. Wheel: dolly. Renderer and scene remain host-owned.").c_str());static ViewportState state;ImageData image{resources.texture,resources.width?resources.width:256,resources.height?resources.height:256};viewport("##viewport",state,image,dp(0,220));textDim(tr("2D transform overlay: move center, scale corners, rotate top handle.").c_str());{CanvasState canvas;CanvasOptions o;o.grid=true;o.navigation=false;CanvasScope scope("##transform",canvas,dp(0,200),o);static TransformState transformState;static Transform2D value{{150,90},{150,70},.2};TransformOptions options;const auto origin=scope.frame().bounds.min;options.project=[=](Point p){return ImVec2(origin.x+float(p.x),origin.y+float(p.y));};options.unproject=[=](ImVec2 p){return Point{p.x-origin.x,p.y-origin.y};};auto edit=transformGizmo("##gizmo",transformState,value,options);if(edit.committed())value=edit.value;}
@@ -2601,6 +2795,27 @@ void moduleGallery(int selectedTab, const GalleryResources &resources) {
 #endif
 #if defined(CYUI_HAS_FILEPICKER)
     page("File picker", 32, filePickerPage);
+#endif
+#if defined(CYUI_HAS_IMAGES)
+    page("Image comparison", 40, [&] { imageComparisonPage(resources); });
+#endif
+#if defined(CYUI_HAS_HEXVIEW)
+    page("Hex view", 41, hexPage);
+#endif
+#if defined(CYUI_HAS_PLOTS)
+    page("Video scopes", 42, scopeDisplaysPage);
+#endif
+#if defined(CYUI_HAS_DIAGNOSTICS)
+    page("Tasks", 43, tasksPage);
+#endif
+#if defined(CYUI_HAS_CODE)
+    page("Search results", 44, searchResultsPage);
+#endif
+#if defined(CYUI_HAS_NODES)
+    page("Graph navigation", 45, graphNavigationPage);
+#endif
+#if defined(CYUI_HAS_TIMELINE)
+    page("Timeline overview", 46, timelineNavigationPage);
 #endif
 }
 

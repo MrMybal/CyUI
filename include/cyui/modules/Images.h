@@ -1,5 +1,7 @@
 #pragma once
 #include "cyui/modules/Canvas.h"
+#include <optional>
+#include <string>
 
 namespace cyui {
 struct ImageData {
@@ -13,6 +15,7 @@ struct ImageState {
     bool fitPending = true, cropping = false;
     Point start;
     Rect crop, before;
+    std::optional<double> zoomRequest; // applied about the viewport center on the next draw
 };
 struct ImageResult {
     int pixelX = -1, pixelY = -1;
@@ -21,6 +24,37 @@ struct ImageResult {
 };
 CYUI_API ImageResult imageViewport(const char *id, ImageState &, const ImageData &, ImVec2 size,
                           ImageTool tool = ImageTool::inspect);
+// Buttons issue requests on the same state used by imageViewport or imageCompare.
+CYUI_API void imageViewToolbar(const char *id, ImageState &);
+
+enum class ImageCompareMode { sideBySide, wipe, blink };
+struct ImageAnnotation {
+    ItemId id = 0;
+    Rect region;                  // pixels in the first image's coordinate system
+    int colorIndex = 0;
+    std::string label;
+};
+struct ImageCompareState {
+    ImageState view;
+    ImageCompareMode mode = ImageCompareMode::wipe;
+    float divider = .5f;
+    bool draggingDivider = false;
+    ImVec2 previousPaneSize{};
+};
+struct ImageCompareOptions {
+    const char *firstLabel = "Before", *secondLabel = "After";
+    ArrayView<ImageAnnotation> annotations;
+    std::optional<ItemId> selected;
+    double blinkSeconds = .6;
+};
+struct ImageCompareResult {
+    std::optional<ItemId> selected;
+    bool dividerChanged = false;
+};
+// Both sources share a pixel scale and a view transform. Their top-left pixels align at (0, 0).
+CYUI_API ImageCompareResult imageCompare(const char *id, ImageCompareState &, const ImageData &first,
+                                         const ImageData &second, ImVec2 size = {},
+                                         const ImageCompareOptions & = {});
 struct GradientStop {
     ItemId id = 0;
     double position = 0;

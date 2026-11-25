@@ -1,10 +1,87 @@
 #include "cyui/modules/Nodes.h"
 #include "ModuleInternal.h"
+#include <climits>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
 
 namespace cyui {
+namespace {
+ImU32 changeColor(GraphChangeKind kind) {
+    if (kind == GraphChangeKind::added) return palette().success;
+    if (kind == GraphChangeKind::removed) return palette().error;
+    return palette().warning;
+}
+
+const char *changeLabel(GraphChangeKind kind) {
+    if (kind == GraphChangeKind::added) return "Added";
+    if (kind == GraphChangeKind::removed) return "Removed";
+    return "Modified";
+}
+
+float nodeHeight(const Node &node, const NodeOptions &options) {
+    const auto rows = std::max<std::size_t>({1, node.inputs.size(), node.outputs.size()});
+    return dp(options.header) + dp(options.row) * float(rows) + dp(8);
+}
+} // namespace
+
+std::optional<ItemId> nodeNavigator(const char *id, NodeNavigationState &state, NodeState &graph,
+                                    ArrayView<NodeNavigationItem> items, ImVec2 size) {
+    ScopedID scope(id);
+    filterBox("##nodes-filter", state.filter);
+    std::vector<std::size_t> matches;
+    bool hasSelection = false;
+    for (std::size_t n = 0; n < items.count; ++n) {
+        if (state.filter.matches(items[n].title, items[n].detail)) matches.push_back(n);
+        hasSelection |= state.selected == items[n].id;
+    }
+    if (!hasSelection) state.selected.reset();
+    std::optional<ItemId> action;
+    if (ImGui::BeginChild("##nodes", size, ImGuiChildFlags_Borders)) {
+        if (matches.empty()) textDim("%s", tr("No results").c_str());
+        ImGuiListClipper clip;
+        clip.Begin(int(std::min<std::size_t>(matches.size(), INT_MAX)));
+        while (clip.Step()) for (int index = clip.DisplayStart; index < clip.DisplayEnd; ++index) {
+            const auto &item = items[matches[std::size_t(index)]];
+            ItemScope key(item.id);
+            const auto caption = item.title + "###result";
+            if (ImGui::Selectable(caption.c_str(), state.selected == item.id)) state.selected = graph.reveal = action = item.id;
+            if (!item.detail.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", item.detail.c_str());
+        }
+    }
+    ImGui::EndChild();
+    return action;
+}
+
+std::optional<std::size_t> graphChanges(const char *id, NodeState &state, ArrayView<GraphChange> changes, ImVec2 size) {
+    ScopedID scope(id);
+    std::optional<std::size_t> action;
+    if (ImGui::BeginTable("##changes", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, size)) {
+        ImGui::TableSetupColumn(trLabel("Change").c_str(), ImGuiTableColumnFlags_WidthFixed, dp(100));
+        ImGui::TableSetupColumn(trLabel("Name").c_str());
+        ImGui::TableHeadersRow();
+        ImGuiListClipper clip;
+        clip.Begin(int(std::min<std::size_t>(changes.count, INT_MAX)));
+        while (clip.Step()) for (int index = clip.DisplayStart; index < clip.DisplayEnd; ++index) {
+            const auto &change = changes[std::size_t(index)];
+            ItemScope key{std::size_t(index)};
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            textColoured(changeColor(change.kind), "%s", tr(changeLabel(change.kind)).c_str());
+            ImGui::TableNextColumn();
+            const auto caption = change.title + "###change";
+            if (ImGui::Selectable(caption.c_str(), !change.link && selected(state.selection, change.id),
+                                  ImGuiSelectableFlags_SpanAllColumns)) {
+                action = std::size_t(index);
+                if (!change.link && change.kind != GraphChangeKind::removed) state.reveal = change.id;
+            }
+            if (!change.detail.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", change.detail.c_str());
+        }
+        ImGui::EndTable();
+    }
+    return action;
+}
+
 std::vector<NodeMove> arrangeNodes(const std::vector<Node> &nodes, const std::vector<NodeLink> &links,
                                    Point gap) {
     std::unordered_map<ItemId, ItemId> owners;
@@ -63,8 +140,10 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
                       const std::vector<NodeLink> &links, ImVec2 size, const NodeOptions &o) {
     NodeResult result;
     ScopedID viewScope(id);
-    CanvasScope scope(id, s.canvas, size);
-    const auto f = scope.frame();
+    CanvasOptions canvasOptions;
+    canvasOptions.grid = false;
+    CanvasScope scope(id, s.canvas, size, canvasOptions);
+    auto f = scope.frame();
     auto *d = ImGui::GetWindowDrawList();
     auto &io = ImGui::GetIO();
     auto clearSelection = [&] {
@@ -73,6 +152,27 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
         s.selectedLinks.clear();
         s.selectedReroutes.clear();
     };
+    if (s.reveal && !s.dragging && !s.boxing && !s.wiring && !s.overlayMode && !s.canvas.panning) {
+        const auto requested = *s.reveal;
+        const auto node = std::find_if(nodes.begin(), nodes.end(), [requested](const Node &n) { return n.id == requested; });
+        if (node != nodes.end()) {
+            const auto room = f.bounds.size();
+            const double height = nodeHeight(*node, o);
+            s.canvas.view.origin = {node->position.x + (dp(o.width) - room.x / s.canvas.view.zoom) * .5,
+                                    node->position.y + (height - room.y / s.canvas.view.zoom) * .5};
+            f.mouse = s.canvas.view.world(io.MousePos, f.bounds.min);
+            clearSelection();
+            s.selection.push_back(requested);
+            result.revealed = requested;
+        }
+        s.reveal.reset();
+    }
+    drawCanvasGrid(f.bounds, s.canvas.view);
+    std::unordered_map<ItemId, const GraphChange *> nodeChanges, linkChanges;
+    for (std::size_t n = 0; n < o.changes.count; ++n) {
+        const auto &change = o.changes[n];
+        (change.link ? linkChanges : nodeChanges).emplace(change.id, &change);
+    }
     auto pick = [&](std::vector<ItemId> &values, ItemId key, bool additive) {
         if (!selected(values, key) || io.KeyCtrl) {
             if (!additive)
@@ -199,8 +299,7 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
         const auto found = moved.find(n.id);
         const Point pos = found != moved.end() ? found->second : n.position;
         const auto a = s.canvas.view.screen(pos, f.bounds.min);
-        const float h =
-            header + row * std::max<std::size_t>(1, std::max(n.inputs.size(), n.outputs.size())) + dp(8) * z;
+        const float h = nodeHeight(n, o) * z;
         cards.push_back({&n, {a, {a.x + w, a.y + h}}});
         for (std::size_t i = 0; i < n.inputs.size(); ++i)
             pins.push_back({n.inputs[i].id, n.id, {a.x, a.y + header + row * (float(i) + .5f)}, false});
@@ -254,7 +353,9 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
         if (box.max.x < f.bounds.min.x || box.min.x > f.bounds.max.x || box.max.y < f.bounds.min.y ||
             box.min.y > f.bounds.max.y)
             continue;
-        wire(a->p, b->p, selected(s.selectedLinks, l.id) ? palette().accent : categorical(l.colorIndex));
+        const auto change = linkChanges.find(l.id);
+        const auto ink = change != linkChanges.end() ? changeColor(change->second->kind) : categorical(l.colorIndex);
+        wire(a->p, b->p, selected(s.selectedLinks, l.id) ? palette().accent : ink);
         if (!f.hovered || io.MousePos.x < box.min.x - linkDistance ||
             io.MousePos.x > box.max.x + linkDistance || io.MousePos.y < box.min.y - linkDistance ||
             io.MousePos.y > box.max.y + linkDistance)
@@ -292,8 +393,15 @@ NodeResult nodeEditor(const char *id, NodeState &s, const std::vector<Node> &nod
         d->AddRectFilled(c.rect.min, {c.rect.max.x, c.rect.min.y + header},
                          mix(palette().bg2, categorical(c.n->colorIndex), .35f), dp(4) * z);
         const bool picked = chosen.count(c.n->id) != 0;
-        d->AddRect(c.rect.min, c.rect.max, picked ? palette().accent : palette().line, dp(4) * z, 0,
-                   dp(picked ? 2.f : 1.f));
+        const auto change = nodeChanges.find(c.n->id);
+        const auto outline = change == nodeChanges.end() ? palette().line : changeColor(change->second->kind);
+        d->AddRect(c.rect.min, c.rect.max, picked ? palette().accent : outline, dp(4) * z, 0,
+                   dp(picked || change != nodeChanges.end() ? 2.f : 1.f));
+        if (change != nodeChanges.end()) {
+            d->AddCircleFilled({c.rect.max.x - dp(9) * z, c.rect.min.y + header * .5f}, dp(3) * z, outline);
+            if (f.hovered && c.rect.contains(io.MousePos) && !change->second->detail.empty())
+                ImGui::SetTooltip("%s", change->second->detail.c_str());
+        }
         clippedText(d, {c.rect.min.x + dp(8) * z, c.rect.min.y + dp(5) * z}, w - dp(16) * z, palette().text,
                     c.n->label.c_str());
         for (std::size_t i = 0; i < c.n->inputs.size(); ++i)

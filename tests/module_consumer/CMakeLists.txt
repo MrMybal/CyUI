@@ -40,6 +40,8 @@ if(CYUI_SELECTED_MODULE STREQUAL "Audio" OR CYUI_SELECTED_MODULE STREQUAL "Galle
     target_compile_definitions(consumer PRIVATE CYUI_TEST_${upper}=1)
 elseif(CYUI_SELECTED_MODULE STREQUAL "Terminal")
     add_executable(consumer "${CYUI_ROOT}/tests/terminal.cpp")
+elseif(CYUI_SELECTED_MODULE STREQUAL "HexView")
+    add_executable(consumer "${CYUI_ROOT}/tests/reusable_widgets.cpp")
 elseif(CYUI_SELECTED_MODULE MATCHES "^(Hierarchy|DataView|FilePicker|Inspector|Nodes|Timeline|Commands)$")
     add_executable(consumer "${CYUI_ROOT}/tests/editor_modules.cpp")
 else()

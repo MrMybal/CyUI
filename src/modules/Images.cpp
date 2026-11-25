@@ -1,39 +1,71 @@
 #include "cyui/modules/Images.h"
+#include "cyui/CoreWidgets.h"
+#include <limits>
 
 namespace cyui {
+namespace {
+bool valid(const ImageData &image) { return image.width > 0 && image.height > 0; }
+
+void applyView(ImageState &state, Point extent, ImVec2 top, ImVec2 room, bool fit) {
+    if (state.fitPending || fit) {
+        state.canvas.view.fit({}, extent, room, dp(12));
+        state.fitPending = false;
+    }
+    if (state.zoomRequest) {
+        const double zoom = *state.zoomRequest;
+        if (std::isfinite(zoom) && zoom > 0)
+            state.canvas.view.zoomAt({top.x + room.x * .5f, top.y + room.y * .5f},
+                                     std::clamp(zoom, .05, 64.), top);
+        state.zoomRequest.reset();
+    }
+}
+
+void drawImage(ImDrawList *draw, const ImageData &image, const CanvasView &view, ImVec2 origin, const Rect &clip) {
+    if (!valid(image)) return;
+    const auto a = view.screen({}, origin), b = view.screen({double(image.width), double(image.height)}, origin);
+    const float tile = dp(16);
+    const float left = std::max(a.x, clip.min.x), top = std::max(a.y, clip.min.y);
+    const float right = std::min(b.x, clip.max.x), bottom = std::min(b.y, clip.max.y);
+    if (right <= left || bottom <= top) return;
+    const float startX = left - std::fmod(left - a.x, tile), startY = top - std::fmod(top - a.y, tile);
+    int row = std::fmod((top - a.y) / tile, 2.f) >= 1.f;
+    const int firstColumn = std::fmod((left - a.x) / tile, 2.f) >= 1.f;
+    for (float y = startY; y < bottom; y += tile, ++row) {
+        int column = firstColumn;
+        for (float x = startX; x < right; x += tile, ++column) {
+            draw->AddRectFilled({std::max(x, left), std::max(y, top)},
+                                {std::min(x + tile, right), std::min(y + tile, bottom)},
+                                (row + column) % 2 ? palette().bg2 : palette().bg3);
+        }
+    }
+    if (image.texture) draw->AddImage(image.texture, a, b, image.uvMin, image.uvMax);
+}
+} // namespace
+
 ImageResult imageViewport(const char *id, ImageState &s, const ImageData &image, ImVec2 size,
                           ImageTool tool) {
     CanvasOptions options;
     options.grid = false;
+    options.leftPan = tool == ImageTool::inspect && valid(image);
     CanvasScope scope(id, s.canvas, size, options);
     const auto f = scope.frame();
     auto *d = ImGui::GetWindowDrawList();
     auto &io = ImGui::GetIO();
     ImageResult result;
-    if (image.width <= 0 || image.height <= 0)
-        return result;
-    if (s.fitPending || (f.hovered && ImGui::IsMouseDoubleClicked(0))) {
-        s.canvas.view.fit({0, 0}, {double(image.width), double(image.height)}, f.bounds.size(), dp(12));
-        s.fitPending = false;
+    if (s.cropping && (tool != ImageTool::crop || s.canvas.panning || !valid(image) || io.AppFocusLost)) {
+        s.cropping = false;
+        s.crop = s.before;
+        result.crop = {EditPhase::cancel, s.before};
     }
-    const auto a = s.canvas.view.screen({0, 0}, f.bounds.min),
-               b = s.canvas.view.screen({double(image.width), double(image.height)}, f.bounds.min);
-    const float tile = dp(16);
-    const float left = std::max(a.x, f.bounds.min.x), top = std::max(a.y, f.bounds.min.y),
-                right = std::min(b.x, f.bounds.max.x), bottom = std::min(b.y, f.bounds.max.y);
-    for (float y = top; y < bottom; y += tile)
-        for (float x = left; x < right; x += tile) {
-            const int index = int((x - left) / tile) + int((y - top) / tile);
-            d->AddRectFilled({x, y}, {std::min(x + tile, right), std::min(y + tile, bottom)},
-                             index % 2 ? palette().bg2 : palette().bg3);
-        }
-    if (image.texture)
-        d->AddImage(image.texture, a, b, image.uvMin, image.uvMax);
+    if (!valid(image)) return result;
+    applyView(s, {double(image.width), double(image.height)}, f.bounds.min, f.bounds.size(),
+              f.hovered && !s.canvas.panning && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
+    drawImage(d, image, s.canvas.view, f.bounds.min, f.bounds);
     const auto mouse = s.canvas.view.world(io.MousePos, f.bounds.min);
     if (f.hovered && mouse.x >= 0 && mouse.y >= 0 && mouse.x < image.width && mouse.y < image.height) {
         result.pixelX = int(mouse.x);
         result.pixelY = int(mouse.y);
-        result.clicked = ImGui::IsMouseClicked(0);
+        result.clicked = options.leftPan ? f.leftClicked : !s.canvas.panning && ImGui::IsMouseClicked(0);
     }
     if (tool == ImageTool::crop && !s.canvas.panning) {
         if (result.clicked) {
@@ -66,6 +98,116 @@ ImageResult imageViewport(const char *id, ImageState &s, const ImageData &image,
                    high = s.canvas.view.screen({s.crop.max.x, s.crop.max.y}, f.bounds.min);
         d->AddRectFilled(low, high, palette().selection);
         d->AddRect(low, high, palette().accent, 0, 0, dp(2));
+    }
+    return result;
+}
+
+void imageViewToolbar(const char *id, ImageState &state) {
+    ScopedID scope(id);
+    if (button(trLabel("Fit").c_str())) {
+        state.fitPending = true;
+        state.zoomRequest.reset();
+    }
+    ImGui::SameLine();
+    if (button("100%##image-actual")) state.zoomRequest = 1.;
+    ImGui::SameLine();
+    if (iconButton(icon::zoomOut, tr("Zoom out").c_str())) state.zoomRequest = state.canvas.view.zoom / 1.25;
+    ImGui::SameLine();
+    if (iconButton(icon::zoomIn, tr("Zoom in").c_str())) state.zoomRequest = state.canvas.view.zoom * 1.25;
+    ImGui::SameLine();
+    textDim("%.0f%%", state.canvas.view.zoom * 100.);
+}
+
+ImageCompareResult imageCompare(const char *id, ImageCompareState &state, const ImageData &first,
+                                const ImageData &second, ImVec2 size, const ImageCompareOptions &options) {
+    ScopedID scope(id);
+    const auto side = tr("Side by side"), wipe = tr("Wipe"), blink = tr("Blink");
+    const char *modes[]{side.c_str(), wipe.c_str(), blink.c_str()};
+    int mode = std::clamp(int(state.mode), 0, 2);
+    if (combo(trLabel("Comparison##image-mode").c_str(), &mode, modes, 3, dp(144)))
+        state.mode = ImageCompareMode(mode);
+    imageViewToolbar("##view", state.view);
+
+    const auto top = ImGui::GetCursorScreenPos();
+    const auto available = ImGui::GetContentRegionAvail();
+    const float width = std::max(dp(1), size.x > 0 ? size.x : available.x + size.x);
+    const float height = std::max(dp(1), size.y > 0 ? size.y : available.y + size.y);
+    const bool paired = state.mode == ImageCompareMode::sideBySide;
+    const bool wiping = state.mode == ImageCompareMode::wipe;
+    const ImVec2 room{paired ? width * .5f : width, height};
+    auto &io = ImGui::GetIO();
+    if (!std::isfinite(state.divider)) state.divider = .5f;
+    state.divider = std::clamp(state.divider, 0.f, 1.f);
+    const bool handle = wiping && std::abs(io.MousePos.x - (top.x + width * state.divider)) <= dp(9);
+    const bool rightPane = paired && io.MousePos.x >= top.x + room.x;
+    if (state.previousPaneSize.x > 0 && !state.view.fitPending && state.view.canvas.view.zoom > 0) {
+        state.view.canvas.view.origin.x += (state.previousPaneSize.x - room.x) * .5 / state.view.canvas.view.zoom;
+        state.view.canvas.view.origin.y += (state.previousPaneSize.y - room.y) * .5 / state.view.canvas.view.zoom;
+    }
+    state.previousPaneSize = room;
+    CanvasOptions canvasOptions;
+    canvasOptions.grid = false;
+    canvasOptions.leftPan = !handle && !state.draggingDivider;
+    canvasOptions.zoomOriginOffset.x = rightPane ? room.x : 0;
+    CanvasScope canvas("##comparison", state.view.canvas, {width, height}, canvasOptions);
+    const auto &frame = canvas.frame();
+    ImageCompareResult result;
+    if (frame.hovered && handle && !state.view.canvas.panning && !ImGui::IsKeyDown(ImGuiKey_Space) &&
+        ImGui::IsMouseClicked(ImGuiMouseButton_Left)) state.draggingDivider = true;
+    if (!wiping || !ImGui::IsMouseDown(ImGuiMouseButton_Left) || io.AppFocusLost) state.draggingDivider = false;
+    if (state.draggingDivider) {
+        const auto split = std::clamp((io.MousePos.x - top.x) / width, 0.f, 1.f);
+        result.dividerChanged = split != state.divider;
+        state.divider = split;
+    }
+    if ((handle && frame.hovered) || state.draggingDivider) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (!valid(first) && !valid(second)) return result;
+    const Point extent{double(std::max(first.width, second.width)), double(std::max(first.height, second.height))};
+    applyView(state.view, extent, top, room,
+              frame.hovered && !handle && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left));
+    auto *draw = ImGui::GetWindowDrawList();
+    const auto &view = state.view.canvas.view;
+    const float split = top.x + width * (paired ? .5f : state.divider);
+    const bool click = frame.leftClicked && !state.draggingDivider;
+    float smallest = std::numeric_limits<float>::infinity();
+    const auto pane = [&](const ImageData &image, ImVec2 origin, Rect clip, const char *label, bool labelOnRight) {
+        if (clip.size().x <= 0) return;
+        draw->PushClipRect(clip.min, clip.max, true);
+        drawImage(draw, image, view, origin, clip);
+        const auto screen = [&](ImVec2 p) { return view.screen({p.x, p.y}, origin); };
+        for (std::size_t n = 0; n < options.annotations.count; ++n) {
+            const auto &annotation = options.annotations[n];
+            if (annotation.region.size().x <= 0 || annotation.region.size().y <= 0) continue;
+            const Rect box{screen(annotation.region.min), screen(annotation.region.max)};
+            const bool selected = options.selected == annotation.id;
+            const auto color = selected ? palette().accent : categorical(annotation.colorIndex);
+            if (selected) draw->AddRectFilled(box.min, box.max, alpha(color, .18f));
+            draw->AddRect(box.min, box.max, color, 0, 0, dp(selected ? 2.f : 1.f));
+            const float area = box.size().x * box.size().y;
+            if (frame.hovered && clip.contains(io.MousePos) && box.contains(io.MousePos) && area < smallest) {
+                smallest = area;
+                if (click) result.selected = annotation.id;
+                if (!annotation.label.empty() && !state.draggingDivider) ImGui::SetTooltip("%s", annotation.label.c_str());
+            }
+        }
+        if (label && *label) {
+            const auto title = tr(label);
+            const auto textSize = ImGui::CalcTextSize(title.c_str());
+            const float x = labelOnRight ? clip.max.x - textSize.x - dp(12) : clip.min.x + dp(12);
+            draw->AddRectFilled({x - dp(5), top.y + dp(5)}, {x + textSize.x + dp(5), top.y + textSize.y + dp(11)}, palette().bg2, dp(3));
+            draw->AddText({x, top.y + dp(8)}, palette().text, title.c_str());
+        }
+        draw->PopClipRect();
+    };
+    if (wiping || paired) {
+        pane(first, top, {top, {split, top.y + height}}, options.firstLabel, false);
+        pane(second, {paired ? split : top.x, top.y}, {{split, top.y}, {top.x + width, top.y + height}}, options.secondLabel, true);
+        draw->AddLine({split, top.y}, {split, top.y + height}, wiping ? palette().accent : palette().lineStrong, dp(2));
+        if (wiping) draw->AddCircleFilled({split, top.y + height * .5f}, dp(5), palette().accent);
+    } else {
+        const double seconds = std::isfinite(options.blinkSeconds) ? std::clamp(options.blinkSeconds, .1, 10.) : .6;
+        const bool alternate = std::fmod(ImGui::GetTime(), seconds * 2) >= seconds;
+        pane(alternate ? second : first, top, frame.bounds, alternate ? options.secondLabel : options.firstLabel, false);
     }
     return result;
 }

@@ -14,6 +14,8 @@ struct CYUI_API CanvasView {
 struct CanvasState {
     CanvasView view;
     bool panning = false;
+    int panButton = -1;
+    ImVec2 panStart{};
 };
 struct CanvasOptions {
     bool grid = true, navigation = true, spacePan = true;
@@ -23,12 +25,15 @@ struct CanvasOptions {
     // An unclaimed wheel scrolls the window underneath.
     bool claimWheel = false;
     bool drawBackground = true; // allow a caller to paint its own frame
+    bool leftPan = false;       // short left clicks remain available to the caller
+    ImVec2 zoomOriginOffset{};  // e.g. the second pane of a synchronized comparison
 };
 struct CanvasFrame {
     Rect bounds;
     bool hovered = false, focused = false;
     Point mouse;
     float wheel = 0; // itemWheel() of the canvas item; 0 when its navigation used it
+    bool leftClicked = false; // a completed short click when leftPan is enabled
 };
 // Reserves an ImGui item, handles navigation and clips all drawing until destruction.
 class CYUI_API CanvasScope {

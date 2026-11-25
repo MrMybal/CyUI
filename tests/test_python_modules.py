@@ -273,6 +273,56 @@ class Environment(unittest.TestCase):
 
 @unittest.skipIf(i is None, 'imgui-bundle is required for real UI frame tests')
 class Frames(unittest.TestCase):
+    def test_task_panel_follows_selection(self):
+        from cyui_modules.diagnostics import TaskPanelState, TaskRowData, task_panel
+        state = TaskPanelState(selected=0)
+        log = LogBuffer()
+        log.append('info', 'Frame ready')
+        rows = [TaskRowData(0, 'Preview', 'Decoding', 'running', .5, True, log)]
+        result = self.frame(lambda: task_panel('tasks', state, rows, (500, 350)))
+        self.assertEqual(result['selected'], 0)
+        self.assertEqual(len(state.log.rows), 1)
+        result = self.frame(lambda: task_panel('tasks', state, [], (500, 350)))
+        self.assertTrue(result['selection_changed'])
+        self.assertEqual(state.log.rows, [])
+
+    def test_image_left_pan_and_wipe_capture(self):
+        from cyui_modules.images import ImageCompareState, ImageData, ImageState, image_compare, image_viewport
+        io = i.get_io()
+        previous = io.delta_time
+        io.delta_time = .4
+        try:
+            state = ImageState(fit_pending=False)
+            image = ImageData(width=480, height=320)
+            draw = lambda: image_viewport('left-pan', state, image, (400, 240))
+            self.frame(draw, (80, 80))
+            self.assertFalse(self.frame(draw, (80, 80), (0, True))['clicked'])
+            self.frame(draw, (122, 110))
+            self.assertEqual(state.canvas.view.origin, (-42., -30.))
+            self.assertFalse(self.frame(draw, (122, 110), (0, False))['clicked'])
+            self.frame(draw, (122, 110), (0, True))
+            self.assertTrue(self.frame(draw, (122, 110), (0, False))['clicked'])
+
+            state = ImageCompareState()
+            def compare():
+                result = image_compare('wipe-test', state, image, image, (400, 240))
+                return result, tuple(i.get_item_rect_min())
+            _, top = self.frame(compare)
+            midpoint = top[0] + 200, top[1] + 80
+            drag = top[0] + 280, top[1] + 80
+            origin = state.view.canvas.view.origin
+            self.frame(compare, midpoint, (0, True))
+            result, _ = self.frame(compare, drag)
+            self.assertTrue(result['divider_changed'])
+            self.assertAlmostEqual(state.divider, .7)
+            self.assertEqual(state.view.canvas.view.origin, origin)
+            self.frame(compare, drag, (0, False))
+            for mode in ('side_by_side', 'blink'):
+                state.mode = mode
+                self.frame(compare)
+        finally:
+            io.delta_time = previous
+
     def test_spectral_rendering_navigation_and_persistence(self):
         ramp = ColorRamp(colors=[c.palette().info, c.palette().error])
         self.assertEqual(sample_ramp(ramp, -1), c.palette().info)

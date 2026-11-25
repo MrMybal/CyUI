@@ -16,7 +16,7 @@ DEPENDENCIES = {
     'Nodes': ['Canvas'], 'Timeline': ['Canvas'], 'AudioViews': ['Plots'],
     'Code': [], 'Diff': ['Code'], 'CodeEditor': ['Code'], 'Inspector': [],
     'Assets': [], 'Images': ['Canvas'], 'Viewport': ['Images'], 'Commands': [],
-    'Diagnostics': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor', 'DataGrid'],
+    'Diagnostics': [], 'HexView': [], 'DocumentViews': ['Code', 'Images'], 'DocumentEditor': ['DocumentViews', 'CodeEditor', 'DataGrid'],
     'DocumentIO': ['DocumentViews'], 'DocumentWeb': ['DocumentViews', 'Web'], 'Media': ['Images'], 'Web': [], 'DataGrid': [], 'Spreadsheet': ['DataGrid'],
     'RichDocument': ['DocumentEditor', 'DataGrid'], 'OfficeIO': ['RichDocument', 'Spreadsheet', 'DocumentIO'],
     'Hierarchy': [], 'DataView': ['Inspector'], 'FilePicker': [],
@@ -94,7 +94,8 @@ def prepare_plugin(output, modules=('Core',), gallery=False, module_name='CyUI')
     shutil.copytree(ROOT/'third_party/jetbrains-mono', library/'third_party/jetbrains-mono')
     sources = ['src/Theme.cpp', 'src/Widgets.cpp', 'src/Layout.cpp', 'src/Filter.cpp', 'src/Numeric.cpp']
     sources += [f'src/modules/{name}.cpp' for name in selected]
-    support = {'Inspector': 'InspectorData', 'Nodes': 'NodeData', 'Timeline': 'TimelineData', 'Commands': 'CommandRegistry'}
+    support = {'Inspector': 'InspectorData', 'Nodes': 'NodeData', 'Timeline': 'TimelineData',
+               'Commands': 'CommandRegistry', 'Plots': 'PlotDisplays', 'Code': 'CodeSearch'}
     sources += [f'src/modules/{unit}.cpp' for module, unit in support.items() if module in selected]
     if 'CodeEditor' in selected:
         sources.append('src/modules/PagedCodeEditor.cpp')

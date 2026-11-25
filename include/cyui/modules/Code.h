@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include "cyui/Core.h"
 #include "cyui/Interaction.h"
 #include <string>
@@ -124,4 +125,42 @@ struct CodeViewResult {
 };
 CYUI_API CodeViewResult codeViewer(const char *id, CodeViewState &, const CodeDocument &, ImVec2 size = {},
                           ArrayView<CodeAnnotation> annotations = {});
+
+struct TextMark {
+    ItemId id = 0;
+    std::size_t begin = 0, end = 0; // absolute UTF-8 byte boundaries, half-open
+    Tone tone = Tone::info;
+    std::string label;
+};
+struct AnnotatedTextState {
+    std::vector<std::size_t> lineOffsets;
+    std::uint64_t revision = 0;
+    std::size_t length = 0;
+    std::optional<ItemId> selected;
+};
+// A clipped, scrollable plain-text view. Click a mark to select it; use its menu to copy it.
+// Supply a nonzero revision for a large document and advance it whenever text changes.
+CYUI_API std::optional<ItemId> annotatedText(const char *id, AnnotatedTextState &, std::string_view text,
+                                             ArrayView<TextMark>, ImVec2 size = {}, std::uint64_t revision = 0);
+
+struct SearchHit {
+    ItemId id = 0;
+    std::string source, excerpt;
+    std::size_t line = 0, column = 0; // one-based for display, 0 when unknown
+    std::vector<TextMark> highlights;
+};
+struct SearchResultsState {
+    TextFilter filter;
+    std::optional<ItemId> selected, previewed;
+    CodeViewState preview;
+};
+struct SearchResultsOptions {
+    // Return a stable prepared preview for the current hit, or null to show its excerpt.
+    std::function<const CodeDocument *(const SearchHit &)> preview;
+};
+struct SearchResultsResult {
+    std::optional<ItemId> selected, reveal;
+};
+CYUI_API SearchResultsResult searchResults(const char *id, SearchResultsState &, ArrayView<SearchHit>,
+                                          ImVec2 size = {}, const SearchResultsOptions & = {});
 } // namespace cyui

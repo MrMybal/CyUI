@@ -45,7 +45,8 @@ class UnrealPackage(unittest.TestCase):
             self.assertNotIn('/*CYUI_MODULES*/', rules)
             sources = list((output/'Source/CyUI/Private').glob('CyUILibrary_*.cpp'))
             syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
-            self.assertEqual(len(sources), 11+len(syntax_units))
+            self.assertEqual(len(sources), 12+len(syntax_units))
+            self.assertTrue((output/'ThirdParty/CyUI/src/modules/CodeSearch.cpp').is_file())
             self.assertTrue((output/'ThirdParty/CyUI/third_party/code-syntax.lock.json').is_file())
             self.assertEqual((output/'ThirdParty/CyUI/src/fonts/JetBrainsMonoRegular.inc').read_bytes(), (ROOT/'src/fonts/JetBrainsMonoRegular.inc').read_bytes())
             self.assertEqual((output/'ThirdParty/CyUI/third_party/jetbrains-mono/OFL.txt').read_bytes(), (ROOT/'third_party/jetbrains-mono/OFL.txt').read_bytes())
@@ -77,6 +78,8 @@ class UnrealPackage(unittest.TestCase):
             chosen = package.prepare_plugin(output, ['All'], True)
             self.assertEqual(set(chosen), set(package.DEPENDENCIES))
             self.assertTrue((output/'ThirdParty/CyUI/src/Gallery.cpp').is_file())
+            self.assertTrue((output/'ThirdParty/CyUI/src/modules/PlotDisplays.cpp').is_file())
+            self.assertTrue((output/'ThirdParty/CyUI/src/modules/HexView.cpp').is_file())
             self.assertTrue((output/'ThirdParty/CyUI/third_party/texteditor/LICENSE').is_file())
             self.assertIn('"GALLERY"', (output/'Source/CyUI/CyUI.Build.cs').read_text())
 
@@ -97,7 +100,8 @@ class UnrealPackage(unittest.TestCase):
             output.rename(relocated)
             bridges = list((relocated/'Private').glob('CyUILibrary_*.cpp'))
             syntax_units=list((ROOT/'src/modules/code').glob('*.cpp'))+list((ROOT/'third_party/lexilla').rglob('*.cxx'))
-            self.assertEqual(len(bridges), 11+len(syntax_units))
+            self.assertEqual(len(bridges), 12+len(syntax_units))
+            self.assertTrue((relocated/'Library/src/modules/CodeSearch.inl').is_file())
             self.assertFalse(list((relocated/'Library').rglob('*.cxx')))
             self.assertTrue((relocated/'Library/src/modules/code/CodeSyntax.inl').is_file())
             for bridge in bridges:

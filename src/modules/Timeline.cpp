@@ -3,11 +3,85 @@
 #include <cstdio>
 
 namespace cyui {
+std::optional<double> snapTimelineTarget(double time, ArrayView<double> targets, double tolerance) {
+    if (!std::isfinite(time) || !std::isfinite(tolerance) || tolerance < 0) return {};
+    std::optional<double> nearest;
+    for (std::size_t index = 0; index < targets.count; ++index) {
+        const double distance = std::abs(targets[index] - time);
+        if (distance < tolerance || (!nearest && distance == tolerance)) {
+            nearest = targets[index];
+            tolerance = distance;
+        }
+    }
+    return nearest;
+}
+
+bool timelineNavigator(const char *id, TimelineNavigatorState &state, Range domain, Range &visible,
+                       ArrayView<TimelineInterval> intervals, ImVec2 size, std::optional<double> playhead) {
+    if (!domain.valid() || !std::isfinite(domain.span())) { state.dragging = false; return false; }
+    const auto before = visible;
+    if (size.y <= 0) size.y = dp(32);
+    CanvasState canvas;
+    CanvasOptions options;
+    options.grid = options.navigation = false;
+    options.claimWheel = true;
+    CanvasScope surface(id, canvas, size, options);
+    const auto &frame = surface.frame();
+    const auto bounds = frame.bounds;
+    const float width = bounds.size().x;
+    const auto &mouse = ImGui::GetIO().MousePos;
+    const auto x = [&](double time) {
+        return bounds.min.x + width * float(std::clamp((time - domain.min) / domain.span(), 0., 1.));
+    };
+    const auto time = domain.min + std::clamp(double((mouse.x - bounds.min.x) / width), 0., 1.) * domain.span();
+    const auto place = [&](double start, double span) {
+        span = std::min(domain.span(), span);
+        const auto lo = std::clamp(start, domain.min, std::max(domain.min, domain.max - span));
+        const Range next{lo, std::min(domain.max, lo + span)};
+        if (next.valid()) visible = next;
+    };
+    if (!visible.valid() || !std::isfinite(visible.span()) || visible.span() >= domain.span()) visible = domain;
+    else place(visible.min, visible.span());
+    if (frame.hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        visible = domain;
+        state.dragging = false;
+    } else if (frame.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        state.grab = visible.contains(time) ? time - visible.min : visible.span() * .5;
+        state.dragging = true;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::GetIO().AppFocusLost) state.dragging = false;
+    if (state.dragging) place(time - state.grab, visible.span());
+    if (frame.wheel) {
+        const auto zoomed = detail::zoomView(visible, time, std::exp(-frame.wheel * .15), domain.span());
+        place(zoomed.min, zoomed.span());
+    }
+    auto *draw = ImGui::GetWindowDrawList();
+    const auto &p = palette();
+    for (std::size_t n = 0; n < intervals.count; ++n) {
+        const auto &interval = intervals[n];
+        if (!interval.time.valid() || interval.time.max <= domain.min || interval.time.min >= domain.max) continue;
+        draw->AddRectFilled({x(interval.time.min), bounds.min.y + dp(6)},
+                            {std::max(x(interval.time.min) + dp(1), x(interval.time.max)), bounds.max.y - dp(6)},
+                            alpha(categorical(interval.colorIndex), .65f), dp(2));
+    }
+    const ImVec2 start{x(visible.min), bounds.min.y + dp(2)}, end{x(visible.max), bounds.max.y - dp(2)};
+    draw->AddRectFilled(start, end, p.selection, dp(3));
+    draw->AddRect(start, end, p.accent, dp(3), 0, dp(1));
+    if (playhead && std::isfinite(*playhead) && domain.contains(*playhead))
+        draw->AddLine({x(*playhead), bounds.min.y}, {x(*playhead), bounds.max.y}, p.warning, dp(1));
+    if (frame.hovered || state.dragging) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    return before.min != visible.min || before.max != visible.max;
+}
+
 TimelineResult timeline(const char *id, TimelineState &s, const std::vector<TimelineLane> &lanes,
                         const std::vector<TimelineClip> &clips, ArrayView<TimelineMarker> markers,
                         ImVec2 size, const TimelineOptions &o) {
     TimelineResult result;
     ScopedID viewScope(id);
+    if (o.overview && o.overview->valid() && std::isfinite(o.overview->span())) {
+        timelineNavigator("##overview", s.navigator, *o.overview, s.view, o.intervals, {size.x, dp(32)}, o.playhead);
+        if (size.y > 0) size.y = std::max(dp(30), size.y - dp(32) - ImGui::GetStyle().ItemSpacing.y);
+    } else s.navigator.dragging = false;
     CanvasState canvas;
     CanvasOptions options;
     options.grid = options.navigation = false;
@@ -27,11 +101,17 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
         markers = s.markerPreview;
     if (!s.view.valid())
         s.view = {0, 10};
-    const float head = std::min(dp(150), r.size().x * .3f), ruler = ImGui::GetFrameHeight();
+    const float head = std::min(dp(150), r.size().x * .3f), ticksHeight = ImGui::GetFrameHeight();
+    const float ruler = ticksHeight + (o.intervals.count ? dp(15) : 0);
     const float left = r.min.x + head, width = std::max(dp(1), r.max.x - left);
     auto x = [&](double t) { return left + float((t - s.view.min) / s.view.span()) * width; };
-    const double mouse = s.view.min + (io.MousePos.x - left) / width * s.view.span();
-    auto snap = [&](double t) { return io.KeyAlt ? t : o.snapTime ? o.snapTime(t) : snapValue(t, o.snap); };
+    const auto timeAtMouse = [&] { return s.view.min + (io.MousePos.x - left) / width * s.view.span(); };
+    auto snap = [&](double t) {
+        if (io.KeyAlt) return t;
+        if (const auto target = snapTimelineTarget(t, o.snapTargets, s.view.span() * dp(o.snapDistance) / width))
+            return *target;
+        return o.snapTime ? o.snapTime(t) : snapValue(t, o.snap);
+    };
     auto clear = [&] {
         s.mode = 0;
         s.active = 0;
@@ -48,7 +128,7 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
         else if (io.KeyShift)
             s.view = detail::panView(s.view, -f.wheel * s.view.span() * .1);
         else
-            s.view = detail::zoomView(s.view, mouse, std::exp(-f.wheel * .15));
+            s.view = detail::zoomView(s.view, timeAtMouse(), std::exp(-f.wheel * .15));
     }
     if (f.hovered && ImGui::IsMouseClicked(2))
         s.panning = true;
@@ -56,6 +136,7 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
         s.panning = false;
     if (s.panning)
         s.view = detail::panView(s.view, -io.MouseDelta.x / width * s.view.span());
+    const double mouse = timeAtMouse();
     struct Row {
         ItemId id;
         float top, bottom;
@@ -93,6 +174,18 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
     const auto &shown = s.mode > 0 ? s.preview : clips;
     const TimelineClip *hit = nullptr;
     const TimelineMarker *hitMarker = nullptr;
+    const TimelineInterval *hitInterval = nullptr;
+    for (std::size_t n = 0; n < o.intervals.count; ++n) {
+        const auto &item = o.intervals[n];
+        if (!item.time.valid() || item.time.max <= s.view.min || item.time.min >= s.view.max) continue;
+        const float a = std::max(left, x(item.time.min));
+        const Rect band{{a, r.min.y + ticksHeight + dp(2)},
+                        {std::min(r.max.x, std::max(a + dp(2), x(item.time.max))), r.min.y + ruler - dp(2)}};
+        const bool hover = f.hovered && band.contains(io.MousePos);
+        d->AddRectFilled(band.min, band.max, alpha(categorical(item.colorIndex), hover ? .85f : .55f), dp(2));
+        if (hover && (!hitInterval || item.time.span() < hitInterval->time.span())) hitInterval = &item;
+    }
+    if (hitInterval && !hitInterval->label.empty()) ImGui::SetTooltip("%s", hitInterval->label.c_str());
     int edge = 1;
     const Row *hoveredLane = nullptr;
     for (const auto &row : rows)
@@ -138,7 +231,8 @@ TimelineResult timeline(const char *id, TimelineState &s, const std::vector<Time
     d->AddLine({x(o.playhead), r.min.y}, {x(o.playhead), r.max.y}, palette().accent, dp(2));
     if (f.hovered && ImGui::IsMouseClicked(0)) {
         s.focused = true;
-        if (!o.readOnly && hitMarker) {
+        if (hitInterval) result.interval = hitInterval->id;
+        else if (!o.readOnly && hitMarker) {
             s.markerMoving = true;
             s.markerId = hitMarker->id;
             s.grab = mouse;

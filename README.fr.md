@@ -224,11 +224,12 @@ Les dépendances entre modules sont sélectionnées automatiquement ; par exempl
 | `CyUI::Diff` | Comparaisons unifiées/côte à côte, différences dans les lignes et navigation entre blocs modifiés |
 | `CyUI::Inspector` | Propriétés typées, validation et brouillons de modification |
 | `CyUI::Assets` | Arborescences, grilles/listes, vignettes, filtrage et glisser-déposer |
-| `CyUI::Images` | Navigation dans les images, damier, recadrage et points de dégradé |
+| `CyUI::Images` | Navigation, comparaison A/B synchronisée, annotations, recadrage et dégradés |
 | `CyUI::Viewport` | Surfaces de scène rendues par l’hôte, caméra orbitale et contrôles de transformation 2D |
 | `CyUI::Commands` | Palette de commandes au clavier avec recherche |
 | `CyUI::Diagnostics` | Journaux à taille limitée, filtres et navigation dans les diagnostics |
 | `CyUI::Terminal` | Terminal VT intégrable avec historique, sélection et connexion au shell gérée par l’application |
+| `CyUI::HexView` | Vue hex/ASCII virtualisée en lecture seule, sélection et surbrillance de plages |
 | `CyUI::DocumentViews` | Markdown/GFM natif, images, spoilers, tâches, tableaux et conversations |
 | `CyUI::DocumentEditor` | Éditeur Direct/Source/Côte à côte/Lecture |
 | `CyUI::DocumentIO` | Tampons Markdown/CyMD, presse-papiers HTML |

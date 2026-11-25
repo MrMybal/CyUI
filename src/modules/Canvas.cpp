@@ -71,21 +71,44 @@ CanvasScope::CanvasScope(const char *id, CanvasState &s, ImVec2 size, const Canv
     if (!std::isfinite(s.view.zoom) || s.view.zoom <= 0)
         s.view.zoom = 1;
     if (o.navigation) {
-        if (frame_.hovered && (ImGui::IsMouseClicked(2) ||
-                               (o.spacePan && ImGui::IsKeyDown(ImGuiKey_Space) && ImGui::IsMouseClicked(0))))
-            s.panning = true;
-        if (!ImGui::IsMouseDown(2) && !ImGui::IsMouseDown(0))
+        if (s.panButton < 0 && frame_.hovered) {
+            const bool left = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+            const bool space = left && o.spacePan && ImGui::IsKeyDown(ImGuiKey_Space);
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || space || (left && o.leftPan)) {
+                s.panButton = space || (left && o.leftPan && !ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
+                    ? ImGuiMouseButton_Left : ImGuiMouseButton_Middle;
+                s.panStart = io.MousePos;
+                s.panning = s.panButton == ImGuiMouseButton_Middle || space;
+            }
+        }
+        const bool held = s.panButton >= 0 && ImGui::IsMouseDown(s.panButton) && !io.AppFocusLost;
+        if (!held) {
+            frame_.leftClicked = frame_.hovered && s.panButton == ImGuiMouseButton_Left && !s.panning &&
+                !io.AppFocusLost && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+                !ImGui::IsMouseDragPastThreshold(ImGuiMouseButton_Left, dp(3));
+            s.panButton = -1;
             s.panning = false;
-        if (s.panning) {
-            s.view.origin.x -= io.MouseDelta.x / s.view.zoom;
-            s.view.origin.y -= io.MouseDelta.y / s.view.zoom;
+        } else if (ImGui::IsMousePosValid()) {
+            ImVec2 delta = ImGui::IsMouseClicked(s.panButton) ? ImVec2{} : io.MouseDelta;
+            if (!s.panning && ImGui::IsMouseDragging(s.panButton, dp(3))) {
+                s.panning = true;
+                delta = {io.MousePos.x - s.panStart.x, io.MousePos.y - s.panStart.y};
+            }
+            if (s.panning) {
+                s.view.origin.x -= delta.x / s.view.zoom;
+                s.view.origin.y -= delta.y / s.view.zoom;
+            }
         }
         if (frame_.wheel != 0) {
             const double z =
                 std::clamp(s.view.zoom * std::exp(frame_.wheel * .15), double(o.minZoom), double(o.maxZoom));
-            s.view.zoomAt(io.MousePos, z, frame_.bounds.min);
+            s.view.zoomAt(io.MousePos, z, {frame_.bounds.min.x + o.zoomOriginOffset.x,
+                                          frame_.bounds.min.y + o.zoomOriginOffset.y});
             frame_.wheel = 0;
         }
+    } else {
+        s.panButton = -1;
+        s.panning = false;
     }
     frame_.mouse = s.view.world(io.MousePos, frame_.bounds.min);
     auto *d = ImGui::GetWindowDrawList();

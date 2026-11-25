@@ -3,6 +3,7 @@
 #include "cyui/Interaction.h"
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <string>
 
 namespace cyui {
@@ -54,4 +55,25 @@ struct Diagnostic {
 };
 // Returns the clicked diagnostic's ID, 0 for none: give diagnostics nonzero IDs.
 CYUI_API ItemId diagnosticList(const char *id, ArrayView<Diagnostic>, ImVec2 size = {});
+
+enum class TaskStatus { queued, running, succeeded, warning, failed, canceled };
+struct TaskRowData {
+    ItemId id = 0;
+    std::string title, detail;
+    TaskStatus status = TaskStatus::queued;
+    std::optional<float> progress; // normalized, empty is indeterminate for a running task
+    bool canCancel = false;
+    const LogBuffer *log = nullptr;
+};
+struct TaskPanelState {
+    TextFilter filter;
+    std::optional<ItemId> selected;
+    LogState log;
+};
+struct TaskPanelResult {
+    std::optional<ItemId> selected, cancel;
+    bool selectionChanged = false;
+};
+CYUI_API bool taskRow(const char *id, const TaskRowData &, bool selected = false, ImVec2 size = {});
+CYUI_API TaskPanelResult taskPanel(const char *id, TaskPanelState &, ArrayView<TaskRowData>, ImVec2 size = {});
 } // namespace cyui

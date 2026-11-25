@@ -207,11 +207,12 @@ adding a code editor, audio engine or browser.
 | `CyUI::Diff` | Unified/split comparisons, inline changes and hunk navigation |
 | `CyUI::Inspector` | Typed properties, virtual Array/Set/Map editors, optional/enum/flags, validation and draft edits |
 | `CyUI::Assets` | Folder trees, grids/lists, thumbnails, filtering and drag/drop |
-| `CyUI::Images` | Image navigation, checkerboard, crop and gradient stops |
+| `CyUI::Images` | Image navigation, synchronized A/B comparisons, annotations, crop and gradients |
 | `CyUI::Viewport` | Host-rendered scene surfaces, orbit camera and 2D transform controls |
 | `CyUI::Commands` | Searchable keyboard command palette |
 | `CyUI::Diagnostics` | Bounded logs, filters and diagnostic navigation |
 | `CyUI::Terminal` | Embeddable VT terminal with scrollback, selection and host-owned shell I/O |
+| `CyUI::HexView` | Virtual read-only hex/ASCII view with selection, offset navigation and range highlights |
 | `CyUI::DocumentViews` | Native Markdown/GFM, images, spoilers, tasks, tables and transcripts |
 | `CyUI::DocumentEditor` | Live/source/split/reading editor |
 | `CyUI::DocumentIO` | Markdown/CyMD buffers, HTML clipboard |

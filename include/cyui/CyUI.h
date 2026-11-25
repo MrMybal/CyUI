@@ -85,6 +85,9 @@
 #if defined(CYUI_HAS_TERMINAL)
 #include "cyui/modules/Terminal.h"
 #endif
+#if defined(CYUI_HAS_HEXVIEW)
+#include "cyui/modules/HexView.h"
+#endif
 #if defined(CYUI_HAS_DOCUMENTVIEWS)
 #include "cyui/modules/DocumentViews.h"
 #endif
