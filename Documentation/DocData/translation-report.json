@@ -67,7 +67,7 @@
       "id": "source-include-cyui-cyui-h",
       "title": "CyUI.h",
       "locale": "fr",
-      "expectedRevision": "6651b64aed97"
+      "expectedRevision": "0fdc4d8eeee2"
     },
     {
       "id": "source-include-cyui-export-h",
@@ -193,7 +193,7 @@
       "id": "source-include-cyui-modules-code-h",
       "title": "Code.h",
       "locale": "fr",
-      "expectedRevision": "8d0dbd17105a"
+      "expectedRevision": "6399abd06588"
     },
     {
       "id": "source-include-cyui-modules-codeeditor-h",
@@ -235,7 +235,7 @@
       "id": "source-include-cyui-modules-diagnostics-h",
       "title": "Diagnostics.h",
       "locale": "fr",
-      "expectedRevision": "f7c3cf2f7866"
+      "expectedRevision": "6e8a95214519"
     },
     {
       "id": "source-include-cyui-modules-diff-h",
@@ -274,6 +274,12 @@
       "expectedRevision": "d1fe3f0e7332"
     },
     {
+      "id": "source-include-cyui-modules-hexview-h",
+      "title": "HexView.h",
+      "locale": "fr",
+      "expectedRevision": "5d102945cc7c"
+    },
+    {
       "id": "source-include-cyui-modules-hierarchy-h",
       "title": "Hierarchy.h",
       "locale": "fr",
@@ -283,7 +289,7 @@
       "id": "source-include-cyui-modules-images-h",
       "title": "Images.h",
       "locale": "fr",
-      "expectedRevision": "95b2a0f75516"
+      "expectedRevision": "432d7c4d7558"
     },
     {
       "id": "source-include-cyui-modules-inspector-h",
@@ -301,7 +307,7 @@
       "id": "source-include-cyui-modules-nodes-h",
       "title": "Nodes.h",
       "locale": "fr",
-      "expectedRevision": "10f0779d4252"
+      "expectedRevision": "7b408375c855"
     },
     {
       "id": "source-include-cyui-modules-officeio-h",
@@ -319,7 +325,7 @@
       "id": "source-include-cyui-modules-plots-h",
       "title": "Plots.h",
       "locale": "fr",
-      "expectedRevision": "7e09aaa4b708"
+      "expectedRevision": "656714b2f3b7"
     },
     {
       "id": "source-include-cyui-modules-richdocument-h",
@@ -332,6 +338,12 @@
       "title": "Spreadsheet.h",
       "locale": "fr",
       "expectedRevision": "5a9dc87911ba"
+    },
+    {
+      "id": "source-include-cyui-modules-terminal-h",
+      "title": "Terminal.h",
+      "locale": "fr",
+      "expectedRevision": "d2a64d2050cc"
     },
     {
       "id": "source-include-cyui-modules-timeline-h",

@@ -4,7 +4,7 @@ title: Manuel CyUI
 description: Un socle Dear ImGui commun pour les outils de bureau C++ et Python.
 section: Découvrir
 order: 0
-sourceRevision: 3
+sourceRevision: 4
 ---
 
 CyUI est une bibliothèque de widgets thématisés construite sur **Dear ImGui 1.92+**, avec des modules C++ et Python sélectionnables. Elle s’adresse aux développeurs d’éditeurs, d’outils créatifs et d’utilitaires de bureau qui recherchent contrôles cohérents, localisation et vues spécialisées. L’hôte conserve moteur de rendu, données, moteurs métier et historique Undo.
@@ -40,7 +40,7 @@ L’onglet **Vues spectrales** (23) complète ces composants avec spectres rempl
 
 ## Plateformes et statut {#platforms}
 
-La version actuelle est **1.2.0**. Le projet ne déclare pas de label alpha/bêta et son développement est actif.
+La version actuelle de la bibliothèque est **1.3.0**. Le projet ne déclare pas de label alpha/bêta et son développement est actif.
 
 | Composant | Disponibilité |
 | --- | --- |

@@ -4,10 +4,10 @@ title: Select optional modules
 description: Select optional modules for CyUI integrators.
 section: Guides
 order: 10
-revision: 9
+revision: 10
 ---
 
-CyUI 1.2 provides a common Dear ImGui foundation and independently selectable
+CyUI 1.3 provides a common Dear ImGui foundation and independently selectable
 interface modules. All CyUI code is MIT licensed. Applications own their models,
 engines, files, services, validation and Undo history.
 

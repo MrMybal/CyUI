@@ -12,7 +12,7 @@
     </td>
     <td width="300" align="right" valign="top">
       <p><sub>Library license</sub><br><a href="LICENSE"><strong>MIT</strong></a></p>
-      <p><sub>Versions</sub><br><a href="VERSION.md"><strong>Library 1.2.0</strong><br><strong>Demo 1.2.0</strong></a><br><strong>IN DEVELOPMENT</strong></p>
+      <p><sub>Versions</sub><br><a href="VERSION.md"><strong>Library 1.3.0</strong><br><strong>Demo 1.2.0</strong></a><br><strong>IN DEVELOPMENT</strong></p>
       <p><a href="https://github.com/MrMybal/CyUI/releases/download/v1.2.0/CyUI-Demo-1.2.0-windows-x64.zip"><strong>Download the demo</strong></a><br><sub>Windows x64 · portable</sub></p>
     </td>
   </tr>
@@ -24,7 +24,7 @@ A themed, modular UI library on top of **Dear ImGui 1.92+** for developers of
 desktop editors, creative software and technical tools. Build a consistent C++
 or Python interface, starting with Core and selecting the modules your application uses.
 
-> **IN DEVELOPMENT · Library 1.2.0 · Demo 1.2.0**
+> **IN DEVELOPMENT · Library 1.3.0 · Demo 1.2.0**
 >
 > Try the published Windows gallery, then integrate the library into your own
 > application. The current sources include the bilingual CyDoc manual; the

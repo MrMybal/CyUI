@@ -4,7 +4,7 @@ title: CyUI manual
 description: A common Dear ImGui foundation for C++ and Python desktop tools.
 section: Start
 order: 0
-revision: 3
+revision: 4
 ---
 
 CyUI is a themed widget library on top of **Dear ImGui 1.92+**, with independently selectable C++ and Python interface modules. It serves developers of editors, creative tools and desktop utilities who need consistent controls, localization and specialized views. The host application keeps its renderer, data, engines and Undo history.
@@ -38,7 +38,7 @@ The native gallery contains Text, Buttons, Controls, Containers, Canvas, Plots, 
 
 ## Platforms and status {#platforms}
 
-The current version is **1.2.0**. The project does not declare an alpha/beta label; development is active.
+The current library version is **1.3.0**. The project does not declare an alpha/beta label; development is active.
 
 | Component | Availability |
 | --- | --- |

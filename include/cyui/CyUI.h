@@ -23,8 +23,8 @@
 #include "cyui/Widgets.h"
 #include "cyui/Gallery.h"
 
-#define CYUI_VERSION "1.2.0"
-#define CYUI_VERSION_NUM 10200
+#define CYUI_VERSION "1.3.0"
+#define CYUI_VERSION_NUM 10300
 
 #if defined(CYUI_HAS_HIERARCHY)
 #include "cyui/modules/Hierarchy.h"

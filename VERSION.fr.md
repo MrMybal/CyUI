@@ -6,13 +6,29 @@
 
 | Composant | Version | Disponibilité |
 | --- | --- | --- |
-| Bibliothèque C++ et paquet Python | 1.2.0 | Version actuelle des sources dans CMake et `pyproject.toml`. |
+| Bibliothèque C++ et paquet Python | 1.3.0 | Version des sources C++ et du paquet Python construit depuis ce dépôt. |
 | Démo autonome de la galerie | 1.2.0 | Build portable Windows x64 / DirectX 11 publié. |
 | Lecteur CyDoc embarqué | 0.1.0 | Dépendance de documentation des builds actuels, avec les modules image et gallery. |
 
 **CyUI est en développement actif.** Le projet ne déclare pas de statut produit
 Alpha, Bêta ou Stable. Le numéro de version de la bibliothèque et le marquage de
 la publication de la démo n’établissent ni une API stable ni une validation des plateformes.
+
+## Bibliothèque 1.3.0 — changements depuis la 1.2.0
+
+- **Code et Diff.** Le catalogue partagé compte 104 modes, avec la prise en charge native de Verse, de Zig (`.zig`) et de ZON (`.zon`). Lecteur, éditeur et Diff utilisent les mêmes règles de coloration. Les vues gagnent la police JetBrains Mono embarquée, le zoom et de nouvelles couleurs. Le nouvel éditeur paginé reçoit les portions de fichier fournies par l’application. Les deux colonnes d’un diff défilent désormais ensemble.
+- **Audio.** Les nouvelles vues affichent sonie LUFS/LRA, crête vraie, corrélation, réponse d’égalisation, spectrogrammes défilants et tracés spatiaux à persistance. `drawCurveFill` remplit une courbe et `envelope` affiche des enveloppes ADSR, AHDSR ou personnalisées. Couleurs, marges, cadre et positions de phase sont configurables. Une poignée peut ajuster simultanément le déclin et le sustain en un geste que l’hôte peut annuler.
+- **Inspecteurs et graphes.** Les modules Hierarchy, DataView et FilePicker ajoutent des vues réutilisables. L’inspecteur accepte des champs personnalisés, des tableaux imbriqués virtualisés, des dictionnaires et des ensembles typés. Dans les graphes, le copier-coller conserve les groupes, les liaisons et les points de reroutage sélectionnés.
+- **Markdown et chat.** L’éditeur natif propose les modes visuel, source, scindé et lecture. Il gère les tableaux, les pièces jointes et les documents `.md` et `.cymd`. La conversation virtualisée accepte des messages chargés à la demande. La sélection de texte et le retour à la ligne au bord de la barre de défilement ont été corrigés. Une démo SDL3 illustre ces usages.
+- **Grilles et bureautique.** DataGrid, Spreadsheet et RichDocument ajoutent l’édition de cellules, les formules de tableur et les documents paginés. OfficeIO lit et écrit en mémoire un sous-ensemble des formats ODT, DOCX, ODS, XLSX, FODT et FODS et signale les pertes de conversion reconnues.
+- **Terminal et outils d’inspection.** Le terminal interactif gère les séquences VT, la sélection et l’historique. L’exemple hôte le relie à un shell via ConPTY sous Windows ou un pseudo-terminal sous Linux et macOS. Les nouveaux widgets comprennent une vue hexadécimale paginée, la comparaison d’images, l’édition de dégradés, les résultats de recherche groupés et le suivi des tâches.
+- **Documentation.** Le manuel CyDoc français/anglais indexe l’API publique et se consulte hors ligne. Il accompagne les nouvelles compilations de la démo, les paquets Python et Unreal et la vitrine statique bilingue.
+
+### Autres correctifs
+
+- Les interrupteurs peuvent recevoir le focus avec Tab et s’activer avec Espace. Entrée et Échap agissent sur la boîte de dialogue au premier plan lorsque plusieurs boîtes sont imbriquées.
+- L’éditeur Markdown conserve la position du curseur et de la sélection autour des caractères UTF-8 multioctets, y compris les emoji, dans les modes source et scindé.
+- Dans les grandes grilles, l’historique d’une modification de cellule conserve uniquement les données de la cellule modifiée. Les références entre feuilles suivent correctement les insertions de lignes et de colonnes et le renommage d’une feuille.
 
 ## Démo 1.2.0 publiée
 
@@ -28,19 +44,6 @@ la galerie Windows et sa somme de contrôle SHA-256. Son contenu documenté incl
 [Téléchargez le ZIP Windows x64](https://github.com/MrMybal/CyUI/releases/download/v1.2.0/CyUI-Demo-1.2.0-windows-x64.zip)
 et [sa somme de contrôle](https://github.com/MrMybal/CyUI/releases/download/v1.2.0/CyUI-Demo-1.2.0-windows-x64.zip.sha256).
 Extrayez toute l’archive avant de lancer l’exécutable.
-
-## Sources actuelles après la démo publiée
-
-La version des sources reste 1.2.0. Les sources plus récentes incluent le manuel
-CyDoc anglais/français complet, les références indexées des en-têtes publics et
-les points d’entrée de l’aide locale. Les builds actuels de la démo, les wheels
-Python et les paquets Unreal incluent le lecteur et ses ressources. La vitrine
-statique actualisée l’inclut également.
-
-Ces ajouts des sources ne font pas partie de l’ancien ZIP 1.2.0 publié.
-Compilez les sources actuelles pour utiliser cette intégration de l’aide ;
-la lecture du manuel exporté ne nécessite ni outils de compilation, ni serveur,
-ni connexion.
 
 ## Limites documentées
 
@@ -69,6 +72,5 @@ le [guide Web](Documentation/Documentation.html#/fr/web) et le
 
 ## Problèmes et retours
 
-Les notes de publication 1.2.0 ne fournissent pas de liste détaillée des bugs.
 Consultez le [suivi des problèmes](https://github.com/MrMybal/CyUI/issues) pour
 les signalements et échanges.

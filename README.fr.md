@@ -12,7 +12,7 @@
     </td>
     <td width="300" align="right" valign="top">
       <p><sub>Licence de la bibliothèque</sub><br><a href="LICENSE"><strong>MIT</strong></a></p>
-      <p><sub>Versions</sub><br><a href="VERSION.fr.md"><strong>Bibliothèque 1.2.0</strong><br><strong>Démo 1.2.0</strong></a><br><strong>EN DÉVELOPPEMENT</strong></p>
+      <p><sub>Versions</sub><br><a href="VERSION.fr.md"><strong>Bibliothèque 1.3.0</strong><br><strong>Démo 1.2.0</strong></a><br><strong>EN DÉVELOPPEMENT</strong></p>
       <p><a href="https://github.com/MrMybal/CyUI/releases/download/v1.2.0/CyUI-Demo-1.2.0-windows-x64.zip"><strong>Télécharger la démo</strong></a><br><sub>Windows x64 · portable</sub></p>
     </td>
   </tr>
@@ -25,7 +25,7 @@ pour les développeurs d’éditeurs de bureau, de logiciels créatifs et d’ou
 techniques. Construisez une interface cohérente en C++ ou en Python, en partant
 de Core et en sélectionnant les modules utiles à votre application.
 
-> **EN DÉVELOPPEMENT · Bibliothèque 1.2.0 · Démo 1.2.0**
+> **EN DÉVELOPPEMENT · Bibliothèque 1.3.0 · Démo 1.2.0**
 >
 > Essayez la galerie Windows publiée, puis intégrez la bibliothèque à votre
 > application. Les sources actuelles incluent le manuel bilingue CyDoc ; la démo

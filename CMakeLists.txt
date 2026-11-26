@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16...3.31)
-project(CyUI VERSION 1.2.0 LANGUAGES CXX)
+project(CyUI VERSION 1.3.0 LANGUAGES CXX)
 
 # Catalog edits must rebuild Core even when a compiler's include scanner cannot
 # discover generated .inc dependencies (for example localized MSVC output).

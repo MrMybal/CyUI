@@ -6,13 +6,29 @@
 
 | Component | Version | Availability |
 | --- | --- | --- |
-| C++ library and Python package | 1.2.0 | Current source version in CMake and `pyproject.toml`. |
+| C++ library and Python package | 1.3.0 | Version of the C++ sources and the Python package built from this repository. |
 | Standalone gallery demo | 1.2.0 | Published portable Windows x64 / DirectX 11 build. |
 | Bundled CyDoc reader | 0.1.0 | Documentation dependency in current source builds, with image and gallery modules. |
 
 **CyUI is in active development.** The project does not declare an Alpha, Beta
 or Stable product stage. The library's version number and the published demo's
 release flag do not establish a stable API or platform validation.
+
+## Library 1.3.0 — changes since 1.2.0
+
+- **Code and Diff.** The shared catalogue has 104 syntax modes, with native support for Verse, Zig (`.zig`) and ZON (`.zon`). The reader, editor and Diff use the same highlighting rules. Code views gain bundled JetBrains Mono, zoom controls and updated syntax colors. A new paged editor reads file ranges supplied by the host. The two columns of a split diff now scroll together.
+- **Audio.** New views display LUFS/LRA loudness, true peak, correlation, EQ response, scrolling spectrograms and spatial traces with persistence. `drawCurveFill` fills curves and `envelope` displays ADSR, AHDSR and custom envelopes. Hosts can set colors, margins, frame appearance and phase positions. A handle can adjust decay and sustain together in one undoable host gesture.
+- **Inspectors and graphs.** Hierarchy, DataView and FilePicker provide reusable views. The inspector supports custom fields, virtualized nested arrays, typed maps and sets. Graph clipboard operations preserve selected groups, links and reroute points.
+- **Markdown and chat.** The native editor offers live, source, split and reading modes, with tables, attachments and support for `.md` and `.cymd` documents. The virtualized transcript can load messages on demand. Text selection and line wrapping at the scrollbar have been fixed. A standalone SDL3 demo shows these workflows.
+- **Grids and office documents.** DataGrid, Spreadsheet and RichDocument add cell editing, spreadsheet formulas and paginated documents. OfficeIO reads and writes a subset of ODT, DOCX, ODS, XLSX, FODT and FODS in memory and reports recognized conversion losses.
+- **Terminal and inspection tools.** The interactive VT terminal supports text selection and scrollback. The reference host connects it to a shell through ConPTY on Windows or a pseudo-terminal on Linux and macOS. New widgets include a paged hex viewer, image comparison, a gradient editor, grouped search results and task progress.
+- **Documentation.** The English/French CyDoc manual indexes the public API and works offline. Current demo builds, Python and Unreal packages, and the bilingual static showcase include the manual.
+
+### Other fixes
+
+- Toggle switches can receive focus with Tab and activate with Space. Enter and Escape act on the topmost dialog when modals are nested.
+- The Markdown editor preserves caret and selection positions around multibyte UTF-8 characters, including emoji, in source and split modes.
+- On large grids, undo history for a cell edit stores only the changed cell’s data. Cross-sheet references now follow row and column insertions and sheet renames correctly.
 
 ## Published demo 1.2.0
 
@@ -28,17 +44,6 @@ the Windows gallery and its SHA-256 checksum. Its documented contents include:
 [Download the Windows x64 ZIP](https://github.com/MrMybal/CyUI/releases/download/v1.2.0/CyUI-Demo-1.2.0-windows-x64.zip)
 and [its checksum](https://github.com/MrMybal/CyUI/releases/download/v1.2.0/CyUI-Demo-1.2.0-windows-x64.zip.sha256).
 Extract the whole archive before running the executable.
-
-## Current sources after the published demo
-
-The source version remains 1.2.0. The newer sources include the complete
-English/French CyDoc manual, indexed public-header references and local help
-entry points. Current demo builds, Python wheels and Unreal packaging include
-the reader and its resources. The refreshed static showcase also includes it.
-
-These source additions are not part of the older published 1.2.0 demo ZIP.
-Build from current sources to use this help integration; reading the exported
-manual itself needs no build tools, server or connection.
 
 ## Documented limitations
 
@@ -65,5 +70,4 @@ See the [platforms guide](Documentation/Documentation.html#/en/overview/platform
 
 ## Bugs and feedback
 
-The published 1.2.0 release notes do not provide a bug-by-bug list. Consult the
-[issue tracker](https://github.com/MrMybal/CyUI/issues) for reports and discussion.
+Report bugs or discuss them in the [issue tracker](https://github.com/MrMybal/CyUI/issues).
